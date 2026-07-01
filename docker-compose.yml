@@ -1,0 +1,44 @@
+services:
+  codemind:
+    build:
+      context: ./code-mind-app
+    environment:
+      SERVER_SERVLET_CONTEXT_PATH: /codemind-app
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - codemind-jobs:/root/.js-logic-extractor
+      - codemind-output:/app/output
+    expose:
+      - "8085"
+
+  storyforge-backend:
+    build:
+      context: ./usp-ai-ba/backend
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - storyforge-data:/data
+    expose:
+      - "8000"
+
+  gateway:
+    build:
+      context: .
+      dockerfile: deploy/gateway.Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - codemind
+      - storyforge-backend
+
+volumes:
+  codemind-jobs:
+  codemind-output:
+  storyforge-data:

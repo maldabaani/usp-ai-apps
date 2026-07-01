@@ -2,6 +2,8 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 
+import { environment } from '../../environments/environment';
+
 export interface JobSummary {
   job_id: string;
   ppm_number: string;
@@ -127,7 +129,7 @@ export interface IngestStatus {
   errors: string[];
 }
 
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = environment.apiBaseUrl;
 
 @Injectable({ providedIn: 'root' })
 export class StoryForgeService {

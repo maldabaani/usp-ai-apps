@@ -69,7 +69,7 @@
     btnCancel.style.display = active ? 'inline-block' : 'none';
     if (job.phase === 'COMPLETED') {
       btnExport.style.display = 'inline-block';
-      btnExport.href = '/api/v1/extraction-jobs/' + jobId + '/export';
+      btnExport.href = apiUrl('/api/v1/extraction-jobs/' + jobId + '/export');
     } else {
       btnExport.style.display = 'none';
     }
@@ -79,7 +79,7 @@
     btnCancel.disabled = true;
     btnCancel.textContent = 'Stopping…';
     try {
-      await fetch('/api/v1/extraction-jobs/' + jobId + '/cancel', { method: 'POST' });
+      await fetch(apiUrl('/api/v1/extraction-jobs/' + jobId + '/cancel'), { method: 'POST' });
     } catch (e) {
       console.error('Cancel request failed', e);
     } finally {
@@ -134,7 +134,7 @@
 
   async function loadFailedFiles() {
     try {
-      const res = await fetch('/api/v1/extraction-jobs/' + jobId + '/failed-files');
+      const res = await fetch(apiUrl('/api/v1/extraction-jobs/' + jobId + '/failed-files'));
       if (!res.ok) return;
       const failed = await res.json();
       if (!failed.length) return;
@@ -176,7 +176,7 @@
 
     try {
       const res = await fetch(
-        '/api/v1/extraction-jobs/' + jobId + '/output-file?relativePath=' + encodeURIComponent(outputRelPath)
+        apiUrl('/api/v1/extraction-jobs/' + jobId + '/output-file?relativePath=' + encodeURIComponent(outputRelPath))
       );
       if (!res.ok) {
         viewerBody.innerHTML = '<p class="viewer-error-msg">File not found.</p>';
@@ -294,8 +294,8 @@
   async function refresh() {
     try {
       const [jobRes, filesRes] = await Promise.all([
-        fetch('/api/v1/extraction-jobs/' + jobId),
-        fetch('/api/v1/extraction-jobs/' + jobId + '/output-files'),
+        fetch(apiUrl('/api/v1/extraction-jobs/' + jobId)),
+        fetch(apiUrl('/api/v1/extraction-jobs/' + jobId + '/output-files')),
       ]);
       if (jobRes.ok) renderJob(await jobRes.json());
       if (filesRes.ok) renderFiles(await filesRes.json());

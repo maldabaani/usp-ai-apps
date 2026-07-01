@@ -47,7 +47,7 @@ PDFs / Codebase ───▶ │   Ingestion (one-time)  │ ───▶ Chroma
                                                          - sf_jpa_entities
                                                               │
                                                               ▼
-SDD PDF ───▶ POST /assess ───▶  LangGraph pipeline (pipeline/graph.py)
+SDD PDF ───▶ POST /api/assess ───▶  LangGraph pipeline (pipeline/graph.py)
                                   analyze ─▶ clarify ─▶ generate ─▶ review ─▶ export_document | create_ado | create_notion
                                      │           │          │          │              │             │             │
                               extract text  ambiguity   Claude    human edit      .docx file    ADO MCP      Notion API
@@ -56,7 +56,7 @@ SDD PDF ───▶ POST /assess ───▶  LangGraph pipeline (pipeline/gra
                                                                                  default)      OUTPUT_MODE=ado)   notion)
                                                               │
                                                               ▼
-                                                   Angular SPA (poll /assess/status)
+                                                   Angular SPA (poll /api/assess/status)
 ```
 
 The graph is checkpointed (`MemorySaver`, keyed by `job_id`) and interrupts before `generate_node` and before whichever of `export_document_node` / `create_ado_node` / `create_notion_node` is selected by `OUTPUT_MODE`, so jobs can pause for human clarification/review and resume later via dedicated endpoints. Every node-to-node edge is conditional on `status`: if any node fails and sets `status == "error"`, the graph routes straight to `END` instead of letting downstream nodes run against incomplete state.
@@ -66,16 +66,16 @@ The graph is checkpointed (`MemorySaver`, keyed by `job_id`) and interrupts befo
 ```
 backend/
   api/
-    main.py                 FastAPI app factory, CORS, router registration, /health
-    job_registry.py         In-memory registry for /assess jobs (list + metadata)
-    ingest_jobs.py           In-memory registry for /ingest jobs (progress + status)
+    main.py                 FastAPI app factory, CORS, router registration (all under /api), /health
+    job_registry.py         In-memory registry for /api/assess jobs (list + metadata)
+    ingest_jobs.py           In-memory registry for /api/ingest jobs (progress + status)
     routers/
-      assess.py              POST /assess, GET /assess/jobs, GET /assess/status/{job_id}
-      clarify.py              POST /clarify/answer/{job_id}
-      review.py               POST /review/approve/{job_id}
-      ado.py                  GET /ado/status/{job_id}
-      export.py                GET /export/document/{job_id}
-      ingest.py                POST /ingest/pdfs, POST /ingest/code, GET /ingest/status/{job_id}
+      assess.py              POST /api/assess, GET /api/assess/jobs, GET /api/assess/status/{job_id}
+      clarify.py              POST /api/clarify/answer/{job_id}
+      review.py               POST /api/review/approve/{job_id}
+      ado.py                  GET /api/ado/status/{job_id}
+      export.py                GET /api/export/document/{job_id}
+      ingest.py                POST /api/ingest/pdfs, POST /api/ingest/code, GET /api/ingest/status/{job_id}
   scripts/
     setup_notion_database.py  One-off script: creates the Notion "StoryForge Epics" database, prints NOTION_DATABASE_ID
   pipeline/
@@ -233,14 +233,14 @@ npx serve -s dist/storyforge-ui/browser -l 4300   # -s enables SPA history-mode 
 Before running assessments, index your manuals and codebase:
 
 ```bash
-curl -X POST http://localhost:8000/ingest/pdfs -H "Content-Type: application/json" \
+curl -X POST http://localhost:8000/api/ingest/pdfs -H "Content-Type: application/json" \
   -d '{"folder_path": "/path/to/user-manuals"}'
 
-curl -X POST http://localhost:8000/ingest/code -H "Content-Type: application/json" \
+curl -X POST http://localhost:8000/api/ingest/code -H "Content-Type: application/json" \
   -d '{"repo_path": "/path/to/monorepo"}'
 ```
 
-Both return `{"job_id": ..., "status": "pending"}` immediately; poll `GET /ingest/status/{job_id}` for progress/completion. Re-running an ingestion job does not deduplicate against previous runs — chunks are simply re-added.
+Both return `{"job_id": ..., "status": "pending"}` immediately; poll `GET /api/ingest/status/{job_id}` for progress/completion. Re-running an ingestion job does not deduplicate against previous runs — chunks are simply re-added.
 
 **Code chunking rules** (`backend/ingestion/ingest_code.py`):
 - **Java** — chunked by whole class AND by individual method. Files annotated `@Entity` are indexed into both `sf_codebase` and `sf_jpa_entities`. Layer is inferred from `@RestController`/`@Service`/`@Repository`/`@Entity`/`@Configuration` annotations. `*Test.java` and `*IT.java` files are excluded.
@@ -251,21 +251,21 @@ Both return `{"job_id": ..., "status": "pending"}` immediately; poll `GET /inges
 
 ## API reference
 
-All endpoints are served under the FastAPI app created in `backend/api/main.py`.
+All endpoints are served under the FastAPI app created in `backend/api/main.py`, with all routers registered under an `/api` prefix (so a reverse proxy can route by path prefix). `/health` is also exposed unprefixed for direct container healthchecks.
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/health` | Liveness check → `{"status": "ok"}` |
-| `POST` | `/ingest/pdfs` | Body: `{"folder_path": str}`. Starts background PDF ingestion → `{"job_id", "status": "pending"}` |
-| `POST` | `/ingest/code` | Body: `{"repo_path": str}`. Starts background code ingestion → `{"job_id", "status": "pending"}` |
-| `GET` | `/ingest/status/{job_id}` | → `{"status", "progress", "errors", "result"}` (`result` is `null` until the job finishes, then holds `files_processed`/`chunks_indexed`/etc.). 404 if unknown |
-| `POST` | `/assess` | Multipart form: `file` (PDF), `ppm_number`, `ppm_name`, `system_name`, `review_mode` (bool, default `false`). Starts the pipeline in the background → `{"job_id"}` |
-| `GET` | `/assess/jobs` | List all submitted assessment jobs with live `status` + `story_count` |
-| `GET` | `/assess/status/{job_id}` | Full `StoryForgeState` for the job. 404 if unknown |
-| `POST` | `/clarify/answer/{job_id}` | Body: `{"answers": {question: answer}}`. 409 if job isn't awaiting clarification. Resumes the pipeline → `{"status": "generating"}` |
-| `POST` | `/review/approve/{job_id}` | Body: `{"approved_stories": [...]}`. 409 if job wasn't run with `review_mode=true`. Resumes the pipeline → `{"status": "creating"}` |
-| `GET` | `/ado/status/{job_id}` | → `{"ado_results", "errors"}`. 404 if unknown |
-| `GET` | `/export/document/{job_id}` | Downloads the generated `.docx` (`OUTPUT_MODE=document`). 404 if the job is unknown or the document isn't generated yet. Linked from the status page via the "Download Document" button shown once the job reaches `done` |
+| `GET` | `/health` (also `/api/health`) | Liveness check → `{"status": "ok"}` |
+| `POST` | `/api/ingest/pdfs` | Body: `{"folder_path": str}`. Starts background PDF ingestion → `{"job_id", "status": "pending"}` |
+| `POST` | `/api/ingest/code` | Body: `{"repo_path": str}`. Starts background code ingestion → `{"job_id", "status": "pending"}` |
+| `GET` | `/api/ingest/status/{job_id}` | → `{"status", "progress", "errors", "result"}` (`result` is `null` until the job finishes, then holds `files_processed`/`chunks_indexed`/etc.). 404 if unknown |
+| `POST` | `/api/assess` | Multipart form: `file` (PDF), `ppm_number`, `ppm_name`, `system_name`, `review_mode` (bool, default `false`). Starts the pipeline in the background → `{"job_id"}` |
+| `GET` | `/api/assess/jobs` | List all submitted assessment jobs with live `status` + `story_count` |
+| `GET` | `/api/assess/status/{job_id}` | Full `StoryForgeState` for the job. 404 if unknown |
+| `POST` | `/api/clarify/answer/{job_id}` | Body: `{"answers": {question: answer}}`. 409 if job isn't awaiting clarification. Resumes the pipeline → `{"status": "generating"}` |
+| `POST` | `/api/review/approve/{job_id}` | Body: `{"approved_stories": [...]}`. 409 if job wasn't run with `review_mode=true`. Resumes the pipeline → `{"status": "creating"}` |
+| `GET` | `/api/ado/status/{job_id}` | → `{"ado_results", "errors"}`. 404 if unknown |
+| `GET` | `/api/export/document/{job_id}` | Downloads the generated `.docx` (`OUTPUT_MODE=document`). 404 if the job is unknown or the document isn't generated yet. Linked from the status page via the "Download Document" button shown once the job reaches `done` |
 
 ## Generated story JSON schema
 

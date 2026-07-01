@@ -1,5 +1,15 @@
 <header class="sf-header">
   <a routerLink="/" class="sf-brand">StoryForge AI</a>
+  <nav class="sf-tabs">
+    <a
+      routerLink="/"
+      routerLinkActive="active"
+      [routerLinkActiveOptions]="{ exact: true }"
+      class="sf-tab"
+      >AI BA</a
+    >
+    <a routerLink="/codemind" routerLinkActive="active" class="sf-tab">CodeMind</a>
+  </nav>
 </header>
 
 <main>

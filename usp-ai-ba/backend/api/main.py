@@ -32,14 +32,13 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    app.include_router(ingest.router)
-    app.include_router(assess.router)
-    app.include_router(clarify.router)
-    app.include_router(review.router)
-    app.include_router(ado.router)
-    app.include_router(export.router)
+    app.include_router(ingest.router, prefix="/api")
+    app.include_router(assess.router, prefix="/api")
+    app.include_router(clarify.router, prefix="/api")
+    app.include_router(review.router, prefix="/api")
+    app.include_router(ado.router, prefix="/api")
+    app.include_router(export.router, prefix="/api")
 
-    @app.get("/health")
     async def health():
         return {
             "status": "ok",
@@ -48,6 +47,9 @@ def create_app() -> FastAPI:
             "ado_configured": bool(settings.ADO_ORGANIZATION and settings.ADO_PROJECT),
             "anthropic_configured": bool(settings.ANTHROPIC_API_KEY),
         }
+
+    app.get("/health")(health)
+    app.get("/api/health")(health)
 
     return app
 

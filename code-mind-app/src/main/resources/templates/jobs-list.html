@@ -2,8 +2,10 @@
 <html xmlns:th="http://www.thymeleaf.org">
 <head>
     <meta charset="UTF-8"/>
+    <meta name="context-path" th:content="@{/}"/>
     <title>CodeMind</title>
     <link rel="stylesheet" th:href="@{/css/app.css}"/>
+    <script th:src="@{/js/context.js}"></script>
 </head>
 <body>
 <div th:replace="~{fragments :: topnav('jobs', ${recentJobId})}"></div>
@@ -82,13 +84,13 @@
 <script>
 function clearAllData() {
     if (!confirm('Delete ALL jobs, output files, and cached data?\n\nThis cannot be undone.')) return;
-    fetch('/api/v1/extraction-jobs', { method: 'DELETE' })
+    fetch(apiUrl('/api/v1/extraction-jobs'), { method: 'DELETE' })
         .then(() => location.reload())
         .catch(err => alert('Clear failed: ' + err));
 }
 function deleteJob(jobId) {
     if (!confirm('Delete this job and all its output files?')) return;
-    fetch('/api/v1/extraction-jobs/' + jobId, { method: 'DELETE' })
+    fetch(apiUrl('/api/v1/extraction-jobs/' + jobId), { method: 'DELETE' })
         .then(() => location.reload())
         .catch(err => alert('Delete failed: ' + err));
 }

@@ -2,8 +2,10 @@
 <html xmlns:th="http://www.thymeleaf.org">
 <head>
     <meta charset="UTF-8"/>
+    <meta name="context-path" th:content="@{/}"/>
     <title>Ask All &middot; CodeMind</title>
     <link rel="stylesheet" th:href="@{/css/app.css}"/>
+    <script th:src="@{/js/context.js}"></script>
 </head>
 <body>
 <div th:replace="~{fragments :: topnav('ask-global', null)}"></div>

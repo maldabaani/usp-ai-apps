@@ -44,7 +44,7 @@
     let sources = [];
 
     try {
-      const response = await fetch('/api/v1/ask/stream', {
+      const response = await fetch(apiUrl('/api/v1/ask/stream'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question }),

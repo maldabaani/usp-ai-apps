@@ -43,7 +43,7 @@
     let sources = [];
 
     try {
-      const response = await fetch('/api/v1/extraction-jobs/' + jobId + '/qa/stream', {
+      const response = await fetch(apiUrl('/api/v1/extraction-jobs/' + jobId + '/qa/stream'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question }),
