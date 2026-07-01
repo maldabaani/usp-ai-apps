@@ -1,0 +1,169 @@
+<div class="sf-page">
+  <div class="sf-review-header">
+    <div>
+      <h1>Review Generated Stories</h1>
+      <p class="sf-review-sub" *ngIf="stories.length">
+        {{ stories.length }} epic{{ stories.length !== 1 ? 's' : '' }} &mdash; edit any field before approving
+      </p>
+    </div>
+    <button class="sf-btn" [disabled]="submitting || loading || !stories.length" (click)="approve()">
+      {{ submitting ? 'Submitting…' : 'Approve & Submit' }}
+    </button>
+  </div>
+
+  <p *ngIf="loading" class="sf-muted-text">Loading stories…</p>
+  <p *ngIf="loadError" class="sf-error-text">{{ loadError }}</p>
+
+  <!-- Story cards -->
+  <div class="sf-story-card" *ngFor="let story of stories; let si = index">
+
+    <!-- Story header (always visible) -->
+    <div class="sf-story-header" (click)="toggleStory(si)">
+      <div class="sf-story-header-left" (click)="$event.stopPropagation()">
+        <span class="sf-epic-num">Epic {{ si + 1 }}</span>
+        <input class="sf-input sf-epic-title-input"
+               [(ngModel)]="story.epic_title"
+               placeholder="Epic title" />
+      </div>
+      <div class="sf-story-header-right">
+        <button class="sf-icon-btn sf-delete-btn"
+                title="Remove this epic"
+                (click)="removeStory(si); $event.stopPropagation()">&#x1F5D1;</button>
+        <span class="sf-chevron">{{ expandedStory === si ? '&#9660;' : '&#9658;' }}</span>
+      </div>
+    </div>
+
+    <!-- Story body (expanded) -->
+    <div class="sf-story-body" *ngIf="expandedStory === si">
+
+      <!-- User Story -->
+      <div class="sf-section">
+        <label class="sf-section-label">User Story</label>
+        <textarea class="sf-textarea" rows="3"
+                  [(ngModel)]="story.user_story"
+                  placeholder="As a user, I want…"></textarea>
+      </div>
+
+      <!-- Acceptance Criteria -->
+      <div class="sf-section">
+        <div class="sf-section-hd">
+          <label class="sf-section-label">Acceptance Criteria</label>
+          <button class="sf-add-btn" (click)="addCriterion(story.acceptance_criteria)">+ Add</button>
+        </div>
+        <div class="sf-list-row" *ngFor="let _ of story.acceptance_criteria; let ci = index">
+          <input class="sf-input" [(ngModel)]="story.acceptance_criteria[ci]" placeholder="Criterion…" />
+          <button class="sf-icon-btn" (click)="removeCriterion(story.acceptance_criteria, ci)">&#215;</button>
+        </div>
+        <p class="sf-empty" *ngIf="!story.acceptance_criteria.length">No criteria — click + Add.</p>
+      </div>
+
+      <!-- Dev Tasks -->
+      <div class="sf-section">
+        <div class="sf-section-hd">
+          <label class="sf-section-label">Dev Tasks ({{ story.dev_tasks.length }})</label>
+          <button class="sf-add-btn" (click)="addDevTask(story)">+ Add Task</button>
+        </div>
+
+        <div class="sf-task-card" *ngFor="let task of story.dev_tasks; let ti = index">
+          <!-- Task header -->
+          <div class="sf-task-hd" (click)="toggleDevTask(si, ti)">
+            <div class="sf-task-hd-left" (click)="$event.stopPropagation()">
+              <input class="sf-input sf-task-title-input"
+                     [(ngModel)]="task.title"
+                     placeholder="Task title" />
+            </div>
+            <div class="sf-task-hd-right">
+              <button class="sf-icon-btn sf-delete-btn"
+                      title="Remove task"
+                      (click)="removeDevTask(story, ti); $event.stopPropagation()">&#x1F5D1;</button>
+              <span class="sf-chevron-sm">{{ isDevTaskExpanded(si, ti) ? '&#9660;' : '&#9658;' }}</span>
+            </div>
+          </div>
+
+          <!-- Task body (expanded) -->
+          <div class="sf-task-body" *ngIf="isDevTaskExpanded(si, ti)">
+            <div class="sf-field">
+              <label>User Story</label>
+              <textarea class="sf-textarea" rows="2"
+                        [(ngModel)]="task.user_story"
+                        placeholder="As a developer…"></textarea>
+            </div>
+
+            <div class="sf-field">
+              <div class="sf-field-hd">
+                <label>Acceptance Criteria</label>
+                <button class="sf-add-btn-sm" (click)="addCriterion(task.acceptance_criteria)">+ Add</button>
+              </div>
+              <div class="sf-list-row" *ngFor="let _ of task.acceptance_criteria; let ai = index">
+                <input class="sf-input" [(ngModel)]="task.acceptance_criteria[ai]" />
+                <button class="sf-icon-btn" (click)="removeCriterion(task.acceptance_criteria, ai)">&#215;</button>
+              </div>
+            </div>
+
+            <div class="sf-field">
+              <div class="sf-field-hd">
+                <label>Technical Approach</label>
+                <button class="sf-add-btn-sm" (click)="addItem(task.technical_approach)">+ Add</button>
+              </div>
+              <div class="sf-list-row" *ngFor="let _ of task.technical_approach; let ii = index">
+                <input class="sf-input" [(ngModel)]="task.technical_approach[ii]" />
+                <button class="sf-icon-btn" (click)="removeItem(task.technical_approach, ii)">&#215;</button>
+              </div>
+            </div>
+
+            <div class="sf-field">
+              <div class="sf-field-hd">
+                <label>Business Rules</label>
+                <button class="sf-add-btn-sm" (click)="addItem(task.business_rules)">+ Add</button>
+              </div>
+              <div class="sf-list-row" *ngFor="let _ of task.business_rules; let bi = index">
+                <input class="sf-input" [(ngModel)]="task.business_rules[bi]" />
+                <button class="sf-icon-btn" (click)="removeItem(task.business_rules, bi)">&#215;</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <p class="sf-empty" *ngIf="!story.dev_tasks.length">No dev tasks — click + Add Task.</p>
+      </div>
+
+      <!-- Unit Test Tasks -->
+      <div class="sf-section">
+        <div class="sf-section-hd">
+          <label class="sf-section-label">Unit Test Tasks ({{ story.unit_test_tasks.length }})</label>
+          <button class="sf-add-btn" (click)="addUnitTest(story)">+ Add Test</button>
+        </div>
+
+        <div class="sf-task-card" *ngFor="let test of story.unit_test_tasks; let ti = index">
+          <div class="sf-task-hd">
+            <div class="sf-task-hd-left">
+              <input class="sf-input sf-task-title-input"
+                     [(ngModel)]="test.title"
+                     placeholder="Test title" />
+            </div>
+            <button class="sf-icon-btn sf-delete-btn"
+                    title="Remove test"
+                    (click)="removeUnitTest(story, ti)">&#x1F5D1;</button>
+          </div>
+          <div class="sf-test-obj">
+            <label>Test Objective</label>
+            <textarea class="sf-textarea" rows="2"
+                      [(ngModel)]="test.test_objective"
+                      placeholder="Verify that…"></textarea>
+          </div>
+        </div>
+
+        <p class="sf-empty" *ngIf="!story.unit_test_tasks.length">No test tasks — click + Add Test.</p>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Footer approve -->
+  <div class="sf-review-footer" *ngIf="!loading && stories.length">
+    <p *ngIf="submitError" class="sf-error-text">{{ submitError }}</p>
+    <button class="sf-btn sf-btn-approve" [disabled]="submitting" (click)="approve()">
+      {{ submitting ? 'Submitting…' : 'Approve & Submit (' + stories.length + ' epic' + (stories.length !== 1 ? 's' : '') + ')' }}
+    </button>
+  </div>
+</div>

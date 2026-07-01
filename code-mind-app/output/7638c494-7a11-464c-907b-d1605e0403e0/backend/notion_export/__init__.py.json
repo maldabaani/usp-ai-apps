@@ -1,0 +1,11 @@
+{
+  "relativePath" : "backend/notion_export/__init__.py",
+  "agentName" : "ollama-logic-extractor",
+  "success" : true,
+  "skipped" : false,
+  "content" : "{\"file\": \"backend/notion_export/__init__.py\", \"summary\": \"The file backend/notion_export/__init__.py is empty and does not contain any business logic, rules, or dependencies.\", \"rules\": [], \"dependencies\": []}",
+  "errorMessage" : null,
+  "durationMillis" : 164623,
+  "promptTokens" : 152,
+  "completionTokens" : 52
+}

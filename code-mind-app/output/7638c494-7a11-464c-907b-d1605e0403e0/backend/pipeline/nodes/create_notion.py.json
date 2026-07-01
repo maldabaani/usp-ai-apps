@@ -1,0 +1,11 @@
+{
+  "relativePath" : "backend/pipeline/nodes/create_notion.py",
+  "agentName" : "ollama-logic-extractor",
+  "success" : true,
+  "skipped" : false,
+  "content" : "{\"file\": \"backend/pipeline/nodes/create_notion.py\", \"summary\": \"This file contains logic to create Notion pages for each task (dev tasks and unit test tasks) in a sprint board database. It handles error logging and ensures that the creation of one failing page does not abort the rest.\", \"rules\": [{\"name\": \"Create Notion Pages\", \"description\": \"For each approved story, generate context blocks and specific task blocks based on the type of task (dev or unit test). Use these to create a new Notion page with specified properties and blocks.\", \"conditions\": [\"approved_stories in state\", \"ppm_number in state\", \"ppm_name in state\", \"system_name in state\"], \"actions\": [\"create context blocks for each story\", \"generate task-specific blocks based on task type\", \"create Notion pages using the generated blocks and properties\"]}], \"dependencies\": [\"config.settings\", \"pipeline.state.StoryForgeState\", \"notion_export.client.get_notion_export_client\"]}",
+  "errorMessage" : null,
+  "durationMillis" : 196054,
+  "promptTokens" : 1902,
+  "completionTokens" : 209
+}

@@ -1,0 +1,11 @@
+{
+  "relativePath" : "backend/api/routers/assess.py",
+  "agentName" : "ollama-logic-extractor",
+  "success" : true,
+  "skipped" : false,
+  "content" : "{\"file\": \"backend/api/routers/assess.py\", \"summary\": \"This file contains API endpoints for submitting an SDD document for assessment, listing all jobs, and getting the status of a specific job. It handles file uploads, background task execution for assessments, and state management.\", \"rules\": [{\"name\": \"submit_assessment\", \"description\": \"Handles submission of an SDD document for analysis.\", \"conditions\": [\"UploadFile is provided with ppm_number, ppm_name, system_name, and optional review_mode\"], \"actions\": [\"Generates a unique job ID, saves the uploaded file to disk, creates an initial state object, registers the job in the registry, and schedules background task execution\"]}, {\"name\": \"list_jobs\", \"description\": \"Lists all assessment jobs with their current status.\", \"conditions\": [], \"actions\": [\"Fetches summaries of all registered jobs including their status and story count from the state manager\"]}, {\"name\": \"get_assessment_status\", \"description\": \"Retrieves the status of a specific job.\", \"conditions\": [\"Job ID is provided\"], \"actions\": [\"Returns the current state of the specified job or raises an HTTP 404 error if not found\"]}], \"dependencies\": [\"api.job_registry\", \"config.settings\", \"pipeline.runner\", \"pipeline.state\"]}",
+  "errorMessage" : null,
+  "durationMillis" : 162486,
+  "promptTokens" : 740,
+  "completionTokens" : 271
+}

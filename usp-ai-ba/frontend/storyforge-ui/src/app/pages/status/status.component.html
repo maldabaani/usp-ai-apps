@@ -1,0 +1,159 @@
+<div class="sf-page">
+  <div class="sf-status-header">
+    <div>
+      <h1 class="sf-status-title">Assessment Progress</h1>
+      <p class="sf-status-meta" *ngIf="state">
+        {{ state.ppm_name }} &mdash; {{ state.system_name }}
+        <span class="sf-status-id">Job #{{ jobId }}</span>
+      </p>
+    </div>
+    <span *ngIf="state" class="sf-badge sf-badge-{{ state.status }}">{{ state.status }}</span>
+  </div>
+
+  <p *ngIf="loadError" class="sf-error-text">{{ loadError }}</p>
+
+  <!-- Vertical stepper -->
+  <div class="sf-card sf-stepper-card" *ngIf="state">
+    <div class="sf-vstepper">
+      <div class="sf-vstep" *ngFor="let step of stepDefs; let i = index; let last = last">
+        <div class="sf-vstep-track">
+          <div class="sf-vstep-circle" [ngClass]="'sf-vstep-' + stepState(step.key)">
+            <!-- Done: checkmark -->
+            <svg *ngIf="stepState(step.key) === 'done'"
+                 class="sf-vstep-icon" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="3"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+            <!-- Error: X -->
+            <svg *ngIf="stepState(step.key) === 'error'"
+                 class="sf-vstep-icon" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2.5"
+                 stroke-linecap="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+            <!-- Active: spinner -->
+            <span *ngIf="stepState(step.key) === 'active'" class="sf-vstep-spin"></span>
+            <!-- Pending: number -->
+            <span *ngIf="stepState(step.key) === 'pending'" class="sf-vstep-num">{{ i + 1 }}</span>
+          </div>
+          <div class="sf-vstep-line" *ngIf="!last" [class.sf-vstep-line-done]="lineComplete(step.key)"></div>
+        </div>
+
+        <div class="sf-vstep-content" [class.sf-vstep-last]="last">
+          <div class="sf-vstep-label" [ngClass]="'sf-vstep-label-' + stepState(step.key)">
+            {{ step.label }}
+          </div>
+          <div class="sf-vstep-desc" *ngIf="stepState(step.key) === 'active' && step.activeDesc">
+            {{ step.activeDesc }}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Error messages -->
+    <div class="sf-error-box" *ngIf="state.status === 'error'">
+      <p class="sf-error-title">An error occurred while processing this assessment.</p>
+      <ul class="sf-error-list" *ngIf="state.errors.length">
+        <li *ngFor="let error of state.errors">{{ error }}</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- RAG context panel -->
+  <div class="sf-card sf-rag-card" *ngIf="totalChunks > 0">
+    <div class="sf-rag-toggle" (click)="toggleRagContext()">
+      <div class="sf-rag-toggle-left">
+        <span class="sf-rag-label">Context Retrieved</span>
+        <span class="sf-rag-count-badge">{{ totalChunks }} chunks</span>
+        <span class="sf-rag-hint">from manuals, codebase &amp; entities</span>
+      </div>
+      <span class="sf-chevron">{{ showRagContext ? '&#9660;' : '&#9658;' }}</span>
+    </div>
+
+    <div class="sf-rag-body" *ngIf="showRagContext">
+      <div class="sf-rag-section" *ngFor="let section of ragSections">
+        <div class="sf-rag-section-hd">
+          <span class="sf-rag-section-label">{{ section.label }}</span>
+          <span class="sf-rag-section-count">{{ getChunks(section.key).length }} chunks</span>
+        </div>
+
+        <div class="sf-rag-chunk"
+             *ngFor="let chunk of getChunks(section.key); let ci = index"
+             (click)="toggleChunk(section.key + '_' + ci)">
+          <div class="sf-rag-chunk-meta">
+            <span class="sf-rag-source">{{ shortSource(chunk.metadata?.source) }}</span>
+            <span class="sf-rag-tag" *ngIf="chunk.metadata?.type">{{ chunk.metadata.type }}</span>
+            <span class="sf-rag-tag sf-rag-tag-alt" *ngIf="chunk.metadata?.layer">{{ chunk.metadata.layer }}</span>
+            <span class="sf-rag-tag sf-rag-tag-alt" *ngIf="chunk.metadata?.module">{{ chunk.metadata.module }}</span>
+          </div>
+          <p class="sf-rag-content">
+            {{ expandedChunks[section.key + '_' + ci] ? chunk.content : previewContent(chunk.content) }}
+          </p>
+          <span class="sf-rag-more" *ngIf="(chunk.content?.length ?? 0) > 300">
+            {{ expandedChunks[section.key + '_' + ci] ? 'Show less ▲' : 'Show more ▼' }}
+          </span>
+        </div>
+
+        <p class="sf-rag-empty" *ngIf="!getChunks(section.key).length">
+          No {{ section.label.toLowerCase() }} chunks retrieved.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Notion results -->
+  <div class="sf-card" *ngIf="state?.status === 'done' && state?.notion_results?.length">
+    <h2>Notion Tasks Created</h2>
+    <table class="sf-table">
+      <thead>
+        <tr>
+          <th>Task</th>
+          <th>Link</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let result of state?.notion_results">
+          <td>{{ result.task_title }}</td>
+          <td><a [href]="result.page_url" target="_blank">Open in Notion ↗</a></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ADO results -->
+  <div class="sf-card" *ngIf="state?.status === 'done' && state?.ado_results?.length">
+    <h2>Azure DevOps Work Items</h2>
+    <table class="sf-table">
+      <thead>
+        <tr>
+          <th>Epic</th>
+          <th>User Story</th>
+          <th>Tasks</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let result of state?.ado_results">
+          <td><a [href]="result.epic_url" target="_blank">Epic #{{ result.epic_id }}</a></td>
+          <td><a [href]="result.story_url" target="_blank">Story #{{ result.story_id }}</a></td>
+          <td>
+            <div *ngFor="let task of result.tasks">
+              <a [href]="task.url" target="_blank">{{ task.type }} #{{ task.id }}</a>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Generated stories -->
+  <div class="sf-card" *ngIf="state?.status === 'done'">
+    <h2>Generated User Stories &amp; Tasks</h2>
+    <textarea class="sf-textarea sf-stories-output" readonly [value]="storiesText"></textarea>
+    <div class="sf-stories-actions">
+      <button class="sf-btn sf-copy-btn" (click)="copyToClipboard()">{{ copyButtonLabel }}</button>
+      <a class="sf-btn sf-btn-secondary" [href]="documentDownloadUrl" target="_blank">Download Document</a>
+    </div>
+  </div>
+</div>

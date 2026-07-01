@@ -1,0 +1,28 @@
+<div class="sf-page">
+  <h1>Clarification Needed</h1>
+
+  <div class="sf-card">
+    <p *ngIf="loading">Loading questions...</p>
+    <p *ngIf="loadError" class="sf-error-text">{{ loadError }}</p>
+
+    <div *ngIf="!loading && questions.length">
+      <div class="sf-field" *ngFor="let question of questions">
+        <label>{{ question }}</label>
+        <textarea
+          class="sf-textarea"
+          rows="3"
+          [(ngModel)]="answers[question]"
+          placeholder="Your answer"
+        ></textarea>
+      </div>
+
+      <p *ngIf="submitError" class="sf-error-text">{{ submitError }}</p>
+
+      <button class="sf-btn" [disabled]="!canSubmit" (click)="submitAnswers()">
+        {{ submitting ? 'Submitting...' : 'Submit Answers' }}
+      </button>
+    </div>
+
+    <p *ngIf="!loading && !questions.length">No outstanding clarification questions for this job.</p>
+  </div>
+</div>

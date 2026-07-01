@@ -1,0 +1,11 @@
+{
+  "relativePath" : "backend/api/main.py",
+  "agentName" : "ollama-logic-extractor",
+  "success" : true,
+  "skipped" : false,
+  "content" : "{\"file\": \"backend/api/main.py\", \"summary\": \"This file serves as the entrypoint for a FastAPI application, initializing the app with CORS middleware and lifespan events. It registers various routers for different API functionalities and includes an endpoint to check the health of the service.\", \"rules\": [{\"name\": \"Create App Instance\", \"description\": \"Initialize FastAPI instance with title and version, configure CORS middleware, and register lifespan events.\", \"conditions\": [\"FastAPI instantiation\", \"CORS middleware configuration\"], \"actions\": [\"Add lifespan context manager for startup/shutdown logging\"]}, {\"name\": \"Register Routers\", \"description\": \"Include routers for different API functionalities such as ingestion, assessment, clarification, review, ado operations, and export.\", \"conditions\": [\"Routers defined in separate modules\"], \"actions\": [\"Call app.include_router() method with each router\"]}, {\"name\": \"Health Endpoint\", \"description\": \"Define a health endpoint to return the status of various configurations and service readiness.\", \"conditions\": [\"GET request to /health path\"], \"actions\": [\"Return dictionary containing status, output mode, and configuration statuses for Notion, ADO, and Anthropic APIs\"]}], \"dependencies\": [\"fastapi\", \"contextlib\", \"logging\", \"config.settings\"]}",
+  "errorMessage" : null,
+  "durationMillis" : 111762,
+  "promptTokens" : 494,
+  "completionTokens" : 262
+}

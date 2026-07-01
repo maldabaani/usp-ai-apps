@@ -1,0 +1,11 @@
+{
+  "relativePath" : "frontend/storyforge-ui/src/app/pages/assess/assess.component.ts",
+  "agentName" : "ollama-logic-extractor",
+  "success" : true,
+  "skipped" : false,
+  "content" : "{\"file\": \"frontend/storyforge-ui/src/app/pages/assess/assess.component.ts\", \"summary\": \"This component handles the assessment submission process for a story forge application. It manages file uploads, form validation, and API calls to submit an assessment.\", \"rules\": [{\"name\": \"File Upload Validation\", \"description\": \"Ensures that only PDF files are accepted for upload.\", \"conditions\": [\"selectedFile is not null\", \"file.type === 'application/pdf'\"], \"actions\": [\"set selectedFile to the uploaded file\"]}, {\"name\": \"Form Submission Validation\", \"description\": \"Validates form fields and file selection before allowing submission.\", \"conditions\": [\"ppmNumber, ppmName, systemName are non-empty strings\", \"selectedFile is not null\", \"submitting is false\"], \"actions\": [\"set canSubmit to true\"]}, {\"name\": \"Assessment Submission\", \"description\": \"Submits the assessment data to the server and navigates to a status page upon success.\", \"conditions\": [\"canSubmit is true\"], \"actions\": [\"call submitAssessment with form values\", \"navigate to /status/job_id on successful submission\", \"set submitting to false and show error message on failure\"]}], \"dependencies\": [\"StoryForgeService\", \"Router\"]}",
+  "errorMessage" : null,
+  "durationMillis" : 190641,
+  "promptTokens" : 715,
+  "completionTokens" : 263
+}

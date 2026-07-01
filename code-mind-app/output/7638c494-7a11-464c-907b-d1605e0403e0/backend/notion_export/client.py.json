@@ -1,0 +1,11 @@
+{
+  "relativePath" : "backend/notion_export/client.py",
+  "agentName" : "ollama-logic-extractor",
+  "success" : true,
+  "skipped" : false,
+  "content" : "{\"file\": \"backend/notion_export/client.py\", \"summary\": \"This file contains a thin wrapper around the official notion-client SDK for interacting with Notion API to create and manage pages in a specified database. It includes logic for chunking large lists of blocks into smaller batches that fit within Notion's API constraints, creating new pages with properties and initial block content, and appending additional block content in subsequent requests.\", \"rules\": [{\"name\": \"NotionExportClient Initialization\", \"description\": \"Ensures the NOTION_API_KEY and NOTION_DATABASE_ID are configured before initializing a client instance.\", \"conditions\": [\"settings.NOTION_API_KEY is not None\", \"settings.NOTION_DATABASE_ID is not None\"], \"actions\": [\"Raise RuntimeError if either setting is missing\"]}, {\"name\": \"Chunk Blocks for Notion API Requests\", \"description\": \"Splits large lists of blocks into smaller chunks to comply with Notion's API limitations.\", \"conditions\": [\"blocks list provided\"], \"actions\": [\"Split the list into sublists, each containing up to MAX_CHILDREN_PER_REQUEST items\"]}, {\"name\": \"Create Epic Page in Notion Database\", \"description\": \"Creates a new page in the specified Notion database and appends block content in batches.\", \"conditions\": [\"properties dict provided\", \"blocks list provided\"], \"actions\": [\"Call notion_client.pages.create with properties and first batch of blocks\", \"For each remaining batch, call notion_client.blocks.children.append\"]}], \"dependencies\": [\"notion-client\", \"config.settings\"]}",
+  "errorMessage" : null,
+  "durationMillis" : 203680,
+  "promptTokens" : 697,
+  "completionTokens" : 313
+}

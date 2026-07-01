@@ -1,0 +1,11 @@
+{
+  "relativePath" : "frontend/storyforge-ui/.angular/cache/17.3.17/vite/deps/@angular_router.js",
+  "agentName" : "ollama-logic-extractor",
+  "success" : true,
+  "skipped" : false,
+  "content" : "{\"file\":\"@angular/router/fesm2022/router.mjs\",\"summary\":\"This file contains the core Angular router module, providing classes and functions for routing and navigation within an application. It includes components like ActivatedRoute, RouterOutlet, and directives such as RouterLink and RouterLinkActive. The module also offers services like Router and LocationStrategy to manage routes and navigate between them.\",\"rules\":[{\"name\":\"RouterModule.forRoot\",\"description\":\"Provides the root configuration for Angular's router with specified routes and options.\",\"conditions\":[\"routes array provided\"],\"actions\":[\"Creates a new NgModule with necessary providers\"]},{\"name\":\"RouterModule.forChild\",\"description\":\"Configures routes for submodules or lazy-loaded modules without creating a new Router service.\",\"conditions\":[\"routes array provided\"],\"actions\":[\"Returns a new NgModule with route registration provider\"]}],\"dependencies\":[\"@angular/core\",\"rxjs\",\"tslib\",\"./router_directives\",\"./router_state\",\"./navigation\",\"./url_tree\",\"./config\",\"./events\",\"./guards\",\"./lifecycle_hooks\",\"./route\",\"./shared\",\"./router_outlet\",\"./router_link\",\"./router_link_active\",\"./router_state\",\"./router_config_loader\",\"./location\",\"./ɵempty_outlet_component\",\"@angular/common\"]}\"",
+  "errorMessage" : null,
+  "durationMillis" : 1249512,
+  "promptTokens" : 8191,
+  "completionTokens" : 246
+}

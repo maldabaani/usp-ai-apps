@@ -1,0 +1,11 @@
+{
+  "relativePath" : "backend/config.py",
+  "agentName" : "ollama-logic-extractor",
+  "success" : true,
+  "skipped" : false,
+  "content" : "{\"file\": \"backend/config.py\", \"summary\": \"This file contains the central configuration for StoryForge AI, loading environment variables and default values. It includes settings related to API keys, model configurations, database paths, integration tokens, directory paths, and output modes.\", \"rules\": [{\"name\": \"_split_origins\", \"description\": \"Splits a comma-separated string of origins into a list after stripping whitespace from each origin.\", \"conditions\": [\"raw: str\"], \"actions\": [\"return [origin.strip() for origin in raw.split(',') if origin.strip()]\"]}, {\"name\": \"Settings class\", \"description\": \"Holds configuration settings as class attributes with default values and environment variable fallbacks. Includes properties like API keys, model names, database IDs, directory paths, and output modes.\", \"conditions\": [], \"actions\": [\"defines various configuration parameters using os.getenv() to load from environment variables or use defaults\"]}, {\"name\": \"get_settings\", \"description\": \"Returns an instance of the Settings class with caching enabled via lru_cache decorator.\", \"conditions\": [], \"actions\": [\"return Settings()\", \"@lru_cache\"]}], \"dependencies\": [\"os\", \"dotenv\", \"functools\"]}",
+  "errorMessage" : null,
+  "durationMillis" : 173587,
+  "promptTokens" : 1157,
+  "completionTokens" : 247
+}

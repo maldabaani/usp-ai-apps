@@ -1,0 +1,11 @@
+{
+  "relativePath" : "backend/prompts/__init__.py",
+  "agentName" : "ollama-logic-extractor",
+  "success" : true,
+  "skipped" : false,
+  "content" : "{\"file\": \"backend/prompts/__init__.py\", \"summary\": \"The file backend/prompts/__init__.py is empty and does not contain any business logic, rules, or dependencies.\", \"rules\": [], \"dependencies\": []}",
+  "errorMessage" : null,
+  "durationMillis" : 166186,
+  "promptTokens" : 151,
+  "completionTokens" : 50
+}

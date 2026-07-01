@@ -1,0 +1,11 @@
+{
+  "relativePath" : "frontend/storyforge-ui/.angular/cache/17.3.17/vite/deps/@angular_platform-browser.js",
+  "agentName" : "ollama-logic-extractor",
+  "success" : true,
+  "skipped" : false,
+  "content" : "{\"file\": \"frontend/storyforge-ui/.angular/cache/17.3.17/vite/deps/@angular_platform-browser.js\", \"summary\": \"This file exports various Angular platform browser related modules, services and functions for use in web applications including BrowserModule, EventManager, HammerGestureConfig, bootstrapApplication, createApplication, etc.\", \"rules\": [{\"name\": \"Exporting Modules\", \"description\": \"Exports specific Angular platform browser modules and services to be used in other parts of the application.\", \"conditions\": [\"Modules are imported from internal chunks\"], \"actions\": [\"Exported for use in web applications\"]}], \"dependencies\": [\"./chunk-YSPTTWBN.js\", \"./chunk-H4XFGP3N.js\", \"./chunk-ZQGI3ZYG.js\", \"./chunk-6DT2DWOU.js\"]}",
+  "errorMessage" : null,
+  "durationMillis" : 636416,
+  "promptTokens" : 687,
+  "completionTokens" : 171
+}

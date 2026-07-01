@@ -1,0 +1,86 @@
+spring:
+  application:
+    name: codemind
+  ai:
+    # Both the Anthropic and Ollama starters auto-activate their ChatModel by default; pin to
+    # anthropic so adding the optional Ollama starter never creates a duplicate-bean ambiguity.
+    model:
+      chat: anthropic
+    anthropic:
+      api-key: ${ANTHROPIC_API_KEY:}
+      chat:
+        options:
+          model: ${ANTHROPIC_MODEL:claude-sonnet-4-5-20250929}
+          max-tokens: ${ANTHROPIC_MAX_TOKENS:4096}
+          temperature: ${ANTHROPIC_TEMPERATURE:0.0}
+    retry:
+      max-attempts: 5
+      backoff:
+        initial-interval: 2s
+        multiplier: 2.0
+        max-interval: 30s
+      on-http-codes: 429,500,502,503,504
+
+server:
+  port: ${SERVER_PORT:8085}
+
+jsprocessor:
+  default-output-directory: ./output
+  included-extensions: .js,.jsx,.mjs,.cjs,.ts,.tsx,.py,.pyw,.java,.kt,.kts,.go,.cs,.rb,.rs,.php
+  excluded-directory-names: node_modules,.git,dist,build,coverage,out,.next,.turbo,vendor,__pycache__,target,.venv,venv,bin,obj,.gradle,.mypy_cache,.pytest_cache
+  max-file-size-bytes: 300000
+  max-concurrent-requests: 8
+  skip-existing-results: true
+  # Files larger than max-file-size-bytes are split into part-NNNN chunks at safe line boundaries
+  # (instead of being skipped) so single oversized files - e.g. a 190K-line/8.5MB bundle - can still
+  # flow through the normal per-file extraction pipeline. Disable to restore the old skip behavior.
+  chunking:
+    enabled: ${JSPROCESSOR_CHUNKING_ENABLED:true}
+    max-lines-per-chunk: ${JSPROCESSOR_CHUNKING_MAX_LINES:1800}
+  # SYNC: per-file Spring AI calls via the bounded thread pool above. BATCH: Anthropic Message
+  # Batches API with prompt caching — flat 50% token discount, built for large (1k-100k file) runs.
+  execution-mode: ${JSPROCESSOR_EXECUTION_MODE:SYNC}
+  batch:
+    model: ${ANTHROPIC_MODEL:claude-sonnet-4-5-20250929}
+    max-tokens: ${ANTHROPIC_MAX_TOKENS:4096}
+    temperature: ${ANTHROPIC_TEMPERATURE:0.0}
+    poll-interval: 30s
+    poll-timeout: 26h
+    max-requests-per-batch: 10000
+    max-batch-bytes: 200000000
+  # Optional second agent for SYNC mode, backed by a local Ollama model instead of Anthropic.
+  # Disabled by default; when enabled it registers alongside the Claude agent and AgentSelector
+  # round-robins file extraction across both.
+  ollama:
+    enabled: ${JSPROCESSOR_OLLAMA_ENABLED:false}
+    base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+    model: ${OLLAMA_MODEL:qwen2.5:14b}
+    max-tokens: ${OLLAMA_MAX_TOKENS:1500}
+    temperature: ${OLLAMA_TEMPERATURE:0.0}
+    # Context window size — lower = faster prefill; raise if you have very large files
+    num-ctx: ${OLLAMA_NUM_CTX:8192}
+  # Ask Agent answer generation. 'claude' (default) calls the Anthropic API; 'ollama' uses a local
+  # Ollama model — combine with embedding.enabled=true for a fully local, zero-cost RAG pipeline.
+  qa:
+    model: ${JSPROCESSOR_QA_MODEL:claude}
+    ollama-base-url: ${JSPROCESSOR_QA_OLLAMA_BASE_URL:http://localhost:11434}
+    ollama-model: ${JSPROCESSOR_QA_OLLAMA_MODEL:qwen2.5:14b}
+    ollama-max-tokens: ${JSPROCESSOR_QA_OLLAMA_MAX_TOKENS:4096}
+  # Real vector search for the QA ("Ask") endpoint, backed by a local Ollama embedding model.
+  # Disabled by default: ExtractionQaService falls back to keyword-overlap retrieval whenever no
+  # EmbeddingModel bean exists (this flag off) or an embedding call fails (e.g. Ollama unreachable).
+  embedding:
+    enabled: ${JSPROCESSOR_EMBEDDING_ENABLED:false}
+    base-url: ${OLLAMA_EMBEDDING_BASE_URL:http://localhost:11434}
+    model: ${OLLAMA_EMBEDDING_MODEL:nomic-embed-text}
+  # Watches a directory (non-recursively) and auto-starts one extraction job per file that's
+  # dropped into it - a dropped subfolder is ignored, since the watch unit is an individual file.
+  # Off by default; enabling it activates no other behavior.
+  watch:
+    enabled: ${JSPROCESSOR_WATCH_ENABLED:false}
+    directory: ${JSPROCESSOR_WATCH_DIRECTORY:./watch-input}
+    quiet-period-millis: ${JSPROCESSOR_WATCH_QUIET_PERIOD_MILLIS:500}
+
+logging:
+  level:
+    com.jslogicextractor: INFO

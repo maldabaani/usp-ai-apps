@@ -1,0 +1,95 @@
+<div class="sf-page">
+
+  <!-- Header -->
+  <div class="sf-dash-header">
+    <div>
+      <h1 class="sf-dash-title">Assessments</h1>
+      <p class="sf-dash-sub" *ngIf="!loading">
+        {{ jobs.length }} total<ng-container *ngIf="inProgressCount">, {{ inProgressCount }} in progress</ng-container>
+      </p>
+    </div>
+    <a routerLink="/assess" class="sf-btn sf-btn-new">+ New assessment</a>
+  </div>
+
+  <p *ngIf="loadError" class="sf-error-text">{{ loadError }}</p>
+
+  <!-- Filters -->
+  <div class="sf-filters" *ngIf="!loading && jobs.length">
+    <div class="sf-search-wrap">
+      <svg class="sf-search-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8">
+        <circle cx="8.5" cy="8.5" r="5.5"></circle>
+        <line x1="13" y1="13" x2="18" y2="18"></line>
+      </svg>
+      <input class="sf-search-input" type="text" placeholder="Search by project or ID"
+             [(ngModel)]="searchQuery" />
+    </div>
+    <select class="sf-select" [(ngModel)]="systemFilter">
+      <option value="">All systems</option>
+      <option *ngFor="let sys of uniqueSystems" [value]="sys">{{ sys }}</option>
+    </select>
+    <select class="sf-select" [(ngModel)]="statusFilter">
+      <option value="">All statuses</option>
+      <option value="done">Done</option>
+      <option value="running">Running</option>
+      <option value="failed">Failed</option>
+    </select>
+  </div>
+
+  <!-- Table card -->
+  <div class="sf-card sf-dash-card" *ngIf="!loading">
+
+    <table class="sf-table" *ngIf="jobs.length && filteredJobs.length">
+      <thead>
+        <tr>
+          <th>Project</th>
+          <th>System</th>
+          <th>Status</th>
+          <th class="sf-col-num">Stories</th>
+          <th class="sf-col-num">Tasks</th>
+          <th>Created</th>
+          <th></th>
+          <th class="sf-col-check-hd"></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let job of filteredJobs" [class.sf-row-selected]="selectedIds.has(job.job_id)">
+          <td>
+            <div class="sf-job-name">{{ job.ppm_name }}</div>
+            <div class="sf-job-ppm">{{ job.ppm_number }}</div>
+          </td>
+          <td class="sf-col-muted">{{ job.system_name }}</td>
+          <td><span [class]="badgeClass(job.status)">{{ displayStatus(job.status) }}</span></td>
+          <td class="sf-col-num">{{ job.story_count || 0 }}</td>
+          <td class="sf-col-num">{{ job.task_count || 0 }}</td>
+          <td>
+            <span class="sf-rel-time" [title]="fullDate(job.created_at)">{{ relativeTime(job.created_at) }}</span>
+          </td>
+          <td class="sf-col-actions">
+            <a class="sf-action-btn" [routerLink]="['/status', job.job_id]">View</a>
+          </td>
+          <td class="sf-col-check">
+            <input type="checkbox" class="sf-row-check"
+                   [checked]="selectedIds.has(job.job_id)"
+                   (change)="toggleSelect(job.job_id)" />
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="sf-empty-state" *ngIf="!jobs.length">
+      <p>No assessments yet.</p>
+      <a routerLink="/assess" class="sf-btn">Run your first assessment</a>
+    </div>
+    <div class="sf-empty-state" *ngIf="jobs.length && !filteredJobs.length">
+      <p>No assessments match your filters.</p>
+      <button class="sf-btn sf-btn-secondary"
+              (click)="searchQuery=''; systemFilter=''; statusFilter=''">Clear filters</button>
+    </div>
+  </div>
+
+  <!-- Footer count -->
+  <div class="sf-dash-footer" *ngIf="!loading && jobs.length">
+    <span class="sf-showing">Showing {{ filteredJobs.length }} of {{ jobs.length }}</span>
+  </div>
+
+</div>

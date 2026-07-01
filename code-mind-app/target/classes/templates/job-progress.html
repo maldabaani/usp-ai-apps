@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Job Progress &middot; CodeMind</title>
+    <link rel="stylesheet" th:href="@{/css/app.css}"/>
+</head>
+<body th:attr="data-job-id=${job.jobId}">
+<div th:replace="~{fragments :: topnav('execution', ${job.jobId})}"></div>
+
+<div class="container">
+    <div class="tabs">
+        <a class="active" th:href="@{/ui/jobs/{id}(id=${job.jobId})}">Progress</a>
+        <a th:href="@{/ui/jobs/{id}/ask(id=${job.jobId})}">Ask</a>
+    </div>
+
+    <div id="failure-banner" class="failure-banner" style="display:none"></div>
+
+    <div class="stepper" id="stepper">
+        <div class="step" data-phase="PENDING"><div class="dot">1</div><div class="label">Pending</div></div>
+        <div class="step" data-phase="SCANNING"><div class="dot">2</div><div class="label">Scanning</div></div>
+        <div class="step" data-phase="FILTERING"><div class="dot">3</div><div class="label">Filtering</div></div>
+        <div class="step" data-phase="PROCESSING"><div class="dot">4</div><div class="label">Processing</div></div>
+        <div class="step" data-phase="COMPLETED"><div class="dot">5</div><div class="label">Completed</div></div>
+    </div>
+
+    <div class="stats">
+        <div class="stat-card"><div class="value" id="stat-total" th:text="${job.totalFiles}">-</div><div class="label">Total</div></div>
+        <div class="stat-card"><div class="value" id="stat-processed" th:text="${job.processedFiles}">-</div><div class="label">Processed</div></div>
+        <div class="stat-card"><div class="value" id="stat-succeeded" th:text="${job.succeededFiles}">-</div><div class="label">Succeeded</div></div>
+        <div class="stat-card"><div class="value" id="stat-failed" th:text="${job.failedFiles}">-</div><div class="label">Failed</div></div>
+        <div class="stat-card"><div class="value" id="stat-skipped" th:text="${job.skippedFiles}">-</div><div class="label">Skipped</div></div>
+    </div>
+
+    <div class="job-actions" id="job-actions">
+        <button id="btn-cancel" class="btn-cancel-job" style="display:none">Stop Job</button>
+        <a id="btn-export" class="btn-export-job" style="display:none">&#8595; Export JSON</a>
+    </div>
+
+    <div class="panel">
+        <h2>Repository</h2>
+        <p class="mono" th:text="${job.repositoryRoot}"></p>
+        <p class="muted">Output: <span class="mono" th:text="${job.outputDirectory}"></span> &middot; Mode: <span th:text="${job.executionMode}"></span> <span th:if="${job.incremental}" class="badge badge-INCREMENTAL">Incremental</span></p>
+    </div>
+
+    <div class="panel" style="margin-top:20px">
+        <h2>Recently Extracted Files</h2>
+        <div class="files-feed" id="files-feed">
+            <p class="empty-state">Waiting for output files&hellip;</p>
+        </div>
+    </div>
+
+    <div id="failed-panel" class="panel" style="display:none;margin-top:20px">
+        <h2 style="color:var(--red)">Failed Files</h2>
+        <div id="failed-feed"></div>
+    </div>
+</div>
+
+<!-- File content viewer modal -->
+<div id="viewer-overlay" class="viewer-overlay" style="display:none" role="dialog" aria-modal="true">
+    <div class="viewer">
+        <div class="viewer-header">
+            <span id="viewer-path" class="mono viewer-path-label"></span>
+            <button class="viewer-close" id="viewer-close" aria-label="Close">&#x2715;</button>
+        </div>
+        <div class="viewer-body" id="viewer-body"></div>
+    </div>
+</div>
+
+<footer class="app-footer">
+    <span>CodeMind</span><span class="dot-sep">&middot;</span><span>Spring AI + Claude</span>
+</footer>
+
+<script th:src="@{/js/job-progress.js}"></script>
+</body>
+</html>

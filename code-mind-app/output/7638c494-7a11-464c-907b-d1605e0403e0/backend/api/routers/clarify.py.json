@@ -1,0 +1,11 @@
+{
+  "relativePath" : "backend/api/routers/clarify.py",
+  "agentName" : "ollama-logic-extractor",
+  "success" : true,
+  "skipped" : false,
+  "content" : "{\"file\": \"backend/api/routers/clarify.py\", \"summary\": \"This file contains an API endpoint for submitting clarification answers to a job in the pipeline. It checks if the job exists and requires clarification, then schedules the resume_after_clarification task in the background.\", \"rules\": [{\"name\": \"submit_clarification_answers\", \"description\": \"Handles POST requests to submit clarification answers for a specific job ID.\", \"conditions\": [\"Job state must exist and require clarification\"], \"actions\": [\"Raise HTTP 404 if job not found; raise HTTP 409 if no clarification needed; schedule resume_after_clarification task in background\"]}], \"dependencies\": [\"fastapi\", \"pydantic\", \"pipeline.runner\"]}",
+  "errorMessage" : null,
+  "durationMillis" : 175546,
+  "promptTokens" : 362,
+  "completionTokens" : 153
+}

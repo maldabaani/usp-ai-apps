@@ -1,0 +1,302 @@
+/* ── Page header ─────────────────────────────────────────────────────────── */
+.sf-review-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  gap: 16px;
+}
+
+.sf-review-sub {
+  margin: 4px 0 0;
+  font-size: 14px;
+  color: var(--sf-muted);
+}
+
+.sf-muted-text {
+  color: var(--sf-muted);
+}
+
+.sf-error-text {
+  color: var(--sf-error);
+}
+
+/* ── Story card ──────────────────────────────────────────────────────────── */
+.sf-story-card {
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border);
+  border-radius: 8px;
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+
+.sf-story-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  cursor: pointer;
+  user-select: none;
+  gap: 12px;
+}
+
+.sf-story-header:hover {
+  background: var(--sf-bg);
+}
+
+.sf-story-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.sf-story-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.sf-epic-num {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--sf-primary);
+  background: #dcfce7;
+  padding: 3px 8px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
+.sf-epic-title-input {
+  font-weight: 600;
+  font-size: 15px;
+  flex: 1;
+  min-width: 0;
+}
+
+.sf-chevron {
+  color: var(--sf-muted);
+  font-size: 12px;
+}
+
+.sf-chevron-sm {
+  color: var(--sf-muted);
+  font-size: 11px;
+}
+
+/* ── Story body ──────────────────────────────────────────────────────────── */
+.sf-story-body {
+  padding: 0 16px 20px;
+  border-top: 1px solid var(--sf-border);
+}
+
+.sf-section {
+  margin-top: 18px;
+}
+
+.sf-section-hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.sf-section-label {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--sf-muted);
+}
+
+/* ── List rows ───────────────────────────────────────────────────────────── */
+.sf-list-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.sf-list-row .sf-input {
+  flex: 1;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+.sf-add-btn {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--sf-primary);
+  background: none;
+  border: 1px solid var(--sf-primary);
+  border-radius: 4px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.sf-add-btn:hover {
+  background: #dcfce7;
+}
+
+.sf-add-btn-sm {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--sf-primary);
+  background: none;
+  border: 1px solid var(--sf-primary);
+  border-radius: 4px;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+
+.sf-add-btn-sm:hover {
+  background: #dcfce7;
+}
+
+.sf-icon-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  line-height: 1;
+  color: var(--sf-muted);
+  flex-shrink: 0;
+}
+
+.sf-icon-btn:hover {
+  background: var(--sf-bg);
+  color: var(--sf-error);
+}
+
+.sf-delete-btn {
+  opacity: 0.5;
+}
+
+.sf-delete-btn:hover {
+  opacity: 1;
+}
+
+.sf-empty {
+  font-size: 13px;
+  color: var(--sf-muted);
+  font-style: italic;
+  margin: 6px 0 0;
+}
+
+/* ── Task card ───────────────────────────────────────────────────────────── */
+.sf-task-card {
+  border: 1px solid var(--sf-border);
+  border-radius: 6px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+
+.sf-task-hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  cursor: pointer;
+  gap: 8px;
+  background: var(--sf-bg);
+}
+
+.sf-task-hd:hover {
+  background: #e8f5ee;
+}
+
+.sf-task-hd-left {
+  flex: 1;
+  min-width: 0;
+}
+
+.sf-task-hd-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.sf-task-title-input {
+  font-weight: 600;
+  font-size: 14px;
+  width: 100%;
+  background: transparent;
+  border-color: transparent;
+}
+
+.sf-task-title-input:focus {
+  background: var(--sf-surface);
+  border-color: var(--sf-primary);
+}
+
+.sf-task-body {
+  padding: 12px 14px 14px;
+  border-top: 1px solid var(--sf-border);
+  background: var(--sf-surface);
+}
+
+.sf-field {
+  margin-bottom: 12px;
+}
+
+.sf-field label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--sf-muted);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.sf-field-hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.sf-field-hd label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--sf-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.sf-test-obj {
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--sf-border);
+}
+
+.sf-test-obj label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--sf-muted);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* ── Approve footer ──────────────────────────────────────────────────────── */
+.sf-review-footer {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--sf-border);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.sf-btn-approve {
+  padding: 10px 28px;
+  font-size: 15px;
+}

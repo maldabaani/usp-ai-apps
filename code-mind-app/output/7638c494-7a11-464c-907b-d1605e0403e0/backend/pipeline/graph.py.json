@@ -1,0 +1,11 @@
+{
+  "relativePath" : "backend/pipeline/graph.py",
+  "agentName" : "ollama-logic-extractor",
+  "success" : true,
+  "skipped" : false,
+  "content" : "{\"file\": \"backend/pipeline/graph.py\", \"summary\": \"This file defines the workflow for a language processing pipeline called StoryForge, which includes nodes for analyzing, clarifying, generating, reviewing, and exporting or creating outputs in different formats. The graph is built with conditional routing based on status and settings to ensure that if any node fails (sets status to 'error'), subsequent nodes are skipped. After the review step, the output mode determines the next action.\", \"rules\": [{\"name\": \"_route_unless_error\", \"description\": \"Conditional edge function that routes to END if state status is error, otherwise proceeds to specified node.\", \"conditions\": [\"state.get('status') == 'error'\"], \"actions\": [\"return END\"]}, {\"name\": \"_route_after_review\", \"description\": \"Determines the next step after review based on settings.OUTPUT_MODE and state.status.\", \"conditions\": [\"settings.OUTPUT_MODE == 'ado'\", \"settings.OUTPUT_MODE == 'notion'\", \"state.get('status') == 'error'\"], \"actions\": [\"return NODE_CREATE_ADO\", \"return NODE_CREATE_NOTION\", \"return NODE_EXPORT_DOCUMENT\"]}], \"dependencies\": [\"config.settings\", \"pipeline.nodes.analyze.analyze_node\", \"pipeline.nodes.clarify.clarify_node\", \"pipeline.nodes.create_ado.create_ado_node\", \"pipeline.nodes.create_notion.create_notion_node\", \"pipeline.nodes.export_document.export_document_node\", \"pipeline.nodes.generate.generate_node\", \"pipeline.nodes.review.review_node\", \"pipeline.state.StoryForgeState\", \"langgraph.graph.StateGraph\", \"langgraph.checkpoint.memory.MemorySaver\"]}",
+  "errorMessage" : null,
+  "durationMillis" : 239506,
+  "promptTokens" : 1226,
+  "completionTokens" : 335
+}

@@ -1,0 +1,82 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "primaryColor": "#6366f1",
+    "primaryTextColor": "#1e1b4b",
+    "primaryBorderColor": "#4f46e5",
+    "lineColor": "#94a3b8",
+    "secondaryColor": "#e0e7ff",
+    "tertiaryColor": "#f8fafc",
+    "background": "#ffffff",
+    "mainBkg": "#eef2ff",
+    "fontFamily": "Segoe UI, Helvetica, Arial, sans-serif",
+    "fontSize": "16px",
+    "actorBkg": "#6366f1",
+    "actorTextColor": "#ffffff",
+    "actorBorder": "#4338ca",
+    "actorLineColor": "#c7d2fe",
+    "signalColor": "#334155",
+    "signalTextColor": "#1e293b",
+    "labelBoxBkgColor": "#8b5cf6",
+    "labelBoxBorderColor": "#7c3aed",
+    "labelTextColor": "#ffffff",
+    "loopTextColor": "#1e293b",
+    "noteBkgColor": "#fef3c7",
+    "noteTextColor": "#78350f",
+    "noteBorderColor": "#fbbf24",
+    "activationBorderColor": "#4f46e5",
+    "activationBkgColor": "#c7d2fe",
+    "sequenceNumberColor": "#ffffff"
+  }
+}}%%
+sequenceDiagram
+    autonumber
+    participant BA as Business Analyst
+    participant UI as Angular UI
+    participant API as FastAPI Backend
+    participant Graph as LangGraph Pipeline
+    participant RAG as ChromaDB + Ollama
+    participant Claude as Claude (Anthropic)
+    participant Out as ADO / Notion / Docx
+
+    BA->>UI: Upload SDD (PDF) + PPM metadata
+    UI->>API: POST /assess (multipart)
+    API->>Graph: start_job(state)
+    activate Graph
+
+    Graph->>RAG: similarity_search(manuals, codebase, entities)
+    RAG-->>Graph: top-k retrieved chunks
+
+    Graph->>Claude: clarify_node(SDD + RAG context)
+    Claude-->>Graph: ambiguities[]
+
+    alt Ambiguities found
+        Graph-->>API: status = clarifying
+        API-->>UI: clarification_questions
+        UI->>BA: Show open questions
+        BA->>UI: Submit answers
+        UI->>API: POST /clarify/answer/{job_id}
+        API->>Graph: resume_after_clarification(answers)
+    end
+
+    Graph->>Claude: generate_node(SDD + RAG + answers)
+    Claude-->>Graph: Epics, Dev Tasks, Unit Test Tasks (JSON)
+
+    alt Review mode enabled
+        Graph-->>API: status = reviewing
+        API-->>UI: generated_stories
+        UI->>BA: Review / edit stories
+        BA->>UI: Approve stories
+        UI->>API: POST /review/approve/{job_id}
+        API->>Graph: resume_after_review(approved_stories)
+    end
+
+    Graph->>Out: create_ado_node / export_document_node / create_notion_node
+    Out-->>Graph: work item URLs / page URLs / document path
+    deactivate Graph
+
+    Graph-->>API: status = done
+    BA->>UI: Open status page
+    UI->>API: GET /assess/status/{job_id}
+    API-->>UI: final results
+    UI-->>BA: Show Epics + links to delivered output

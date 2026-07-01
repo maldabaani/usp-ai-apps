@@ -1,0 +1,40 @@
+.sf-dropzone {
+  border: 2px dashed var(--sf-border);
+  border-radius: 8px;
+  padding: 28px;
+  text-align: center;
+  background: #f9fafb;
+}
+
+.sf-dropzone-active {
+  border-color: var(--sf-primary);
+  background: #f0fdf4;
+}
+
+.sf-file-label {
+  margin-top: 8px;
+}
+
+.sf-file-name {
+  font-weight: 600;
+  margin: 0;
+}
+
+.sf-toggle-field {
+  display: flex;
+  align-items: center;
+}
+
+.sf-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--sf-text);
+  cursor: pointer;
+}
+
+.sf-error-text {
+  color: var(--sf-error);
+}

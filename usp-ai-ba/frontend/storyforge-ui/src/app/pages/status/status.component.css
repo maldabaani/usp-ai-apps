@@ -1,0 +1,346 @@
+/* ── Page header ─────────────────────────────────────────────────────────── */
+.sf-status-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.sf-status-title {
+  margin: 0 0 4px 0;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.sf-status-meta {
+  margin: 0;
+  font-size: 14px;
+  color: var(--sf-muted);
+}
+
+.sf-status-id {
+  margin-left: 8px;
+  font-size: 12px;
+  background: var(--sf-bg);
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--sf-border);
+  color: var(--sf-muted);
+}
+
+/* ── Stepper card ────────────────────────────────────────────────────────── */
+.sf-stepper-card {
+  padding: 28px 24px;
+}
+
+/* ── Vertical stepper ────────────────────────────────────────────────────── */
+.sf-vstepper {
+  display: flex;
+  flex-direction: column;
+}
+
+.sf-vstep {
+  display: flex;
+  gap: 16px;
+}
+
+.sf-vstep-track {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  width: 40px;
+}
+
+.sf-vstep-circle {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.25s, border-color 0.25s, box-shadow 0.25s;
+}
+
+.sf-vstep-pending {
+  background: var(--sf-bg);
+  border: 2px solid var(--sf-border);
+}
+
+.sf-vstep-active {
+  background: var(--sf-primary);
+  border: 2px solid var(--sf-primary);
+  box-shadow: 0 0 0 5px rgba(22, 163, 74, 0.16);
+}
+
+.sf-vstep-done {
+  background: #dcfce7;
+  border: 2px solid var(--sf-success);
+}
+
+.sf-vstep-error {
+  background: #fee2e2;
+  border: 2px solid var(--sf-error);
+}
+
+.sf-vstep-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.sf-vstep-num {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--sf-muted);
+}
+
+.sf-vstep-spin {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border: 2.5px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: sf-spin 0.75s linear infinite;
+}
+
+@keyframes sf-spin {
+  to { transform: rotate(360deg); }
+}
+
+.sf-vstep-line {
+  width: 2px;
+  flex: 1;
+  min-height: 20px;
+  background: var(--sf-border);
+  margin: 4px 0;
+  border-radius: 1px;
+  transition: background 0.3s;
+}
+
+.sf-vstep-line-done {
+  background: var(--sf-success);
+}
+
+.sf-vstep-content {
+  padding: 8px 0 24px 0;
+  flex: 1;
+}
+
+.sf-vstep-last {
+  padding-bottom: 4px;
+}
+
+.sf-vstep-label {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 40px;
+  color: var(--sf-muted);
+  transition: color 0.25s;
+}
+
+.sf-vstep-label-active {
+  color: var(--sf-text);
+}
+
+.sf-vstep-label-done {
+  color: var(--sf-success);
+}
+
+.sf-vstep-label-error {
+  color: var(--sf-error);
+}
+
+.sf-vstep-desc {
+  font-size: 13px;
+  color: var(--sf-muted);
+  margin-top: -12px;
+  padding-bottom: 4px;
+  animation: sf-fadein 0.3s ease;
+}
+
+@keyframes sf-fadein {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Error box ───────────────────────────────────────────────────────────── */
+.sf-error-box {
+  margin-top: 20px;
+  padding: 14px 16px;
+  background: #fee2e2;
+  border: 1px solid #fca5a5;
+  border-radius: 6px;
+}
+
+.sf-error-title {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--sf-error);
+}
+
+.sf-error-list {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--sf-error);
+  font-size: 13px;
+}
+
+/* ── RAG context panel ───────────────────────────────────────────────────── */
+.sf-rag-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.sf-rag-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.sf-rag-toggle:hover {
+  background: var(--sf-bg);
+}
+
+.sf-rag-toggle-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.sf-rag-label {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.sf-rag-count-badge {
+  background: #dcfce7;
+  color: var(--sf-primary);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.sf-rag-hint {
+  font-size: 13px;
+  color: var(--sf-muted);
+}
+
+.sf-rag-body {
+  border-top: 1px solid var(--sf-border);
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.sf-rag-section-hd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.sf-rag-section-label {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--sf-muted);
+}
+
+.sf-rag-section-count {
+  font-size: 12px;
+  color: var(--sf-muted);
+  background: var(--sf-bg);
+  padding: 1px 7px;
+  border-radius: 8px;
+  border: 1px solid var(--sf-border);
+}
+
+.sf-rag-chunk {
+  border: 1px solid var(--sf-border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.sf-rag-chunk:hover {
+  border-color: var(--sf-primary);
+}
+
+.sf-rag-chunk-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.sf-rag-source {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sf-text);
+}
+
+.sf-rag-tag {
+  font-size: 11px;
+  background: #dcfce7;
+  color: var(--sf-primary);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.sf-rag-tag-alt {
+  background: var(--sf-bg);
+  color: var(--sf-muted);
+}
+
+.sf-rag-content {
+  font-size: 12px;
+  color: var(--sf-muted);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  margin: 0;
+}
+
+.sf-rag-more {
+  display: block;
+  font-size: 11px;
+  color: var(--sf-primary);
+  margin-top: 6px;
+  font-weight: 600;
+}
+
+.sf-rag-empty {
+  font-size: 13px;
+  color: var(--sf-muted);
+  font-style: italic;
+}
+
+/* ── Stories output ──────────────────────────────────────────────────────── */
+.sf-stories-output {
+  min-height: 280px;
+  max-height: 480px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 13px;
+  resize: vertical;
+}
+
+.sf-stories-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}

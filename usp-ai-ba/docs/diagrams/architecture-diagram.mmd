@@ -1,0 +1,96 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "primaryColor": "#6366f1",
+    "primaryTextColor": "#1e1b4b",
+    "primaryBorderColor": "#4f46e5",
+    "lineColor": "#94a3b8",
+    "fontFamily": "Segoe UI, Helvetica, Arial, sans-serif",
+    "fontSize": "16px",
+    "background": "#ffffff",
+    "clusterBkg": "#f8fafc",
+    "clusterBorder": "#cbd5e1",
+    "edgeLabelBackground": "#ffffff"
+  },
+  "flowchart": { "curve": "basis", "htmlLabels": true, "nodeSpacing": 35, "rankSpacing": 55 }
+}}%%
+flowchart TB
+    BA(["Business Analyst"])
+
+    subgraph FE["Frontend — Angular"]
+        direction LR
+        F1["Assess Form"]
+        F2["Clarify Page"]
+        F3["Review Page"]
+        F4["Status Page"]
+    end
+
+    subgraph BE["Backend — FastAPI"]
+        direction LR
+        R1["/assess"]
+        R2["/clarify"]
+        R3["/review"]
+        R4["/ado · /export"]
+        R5["/ingest"]
+    end
+
+    subgraph PIPE["LangGraph Pipeline"]
+        direction LR
+        N1["analyze_node"] --> N2["clarify_node\n⏸ pauses for BA\nif ambiguities found"] --> N3["generate_node"] --> N4["review_node\n⏸ pauses for BA\nif review_mode on"] --> N5["create_ado_node /\nexport_document_node /\ncreate_notion_node"]
+    end
+
+    AI{{"Claude Sonnet\n(Anthropic API)"}}
+
+    subgraph KB["Knowledge Layer"]
+        direction LR
+        EMB["Ollama\nnomic-embed-text"] --> C1[["sf_user_manuals"]]
+        EMB --> C2[["sf_codebase"]]
+        EMB --> C3[["sf_jpa_entities"]]
+    end
+
+    subgraph ING["One-time Ingestion"]
+        direction LR
+        I1["ingest_pdfs.py"]
+        I2["ingest_code.py"]
+    end
+
+    subgraph OUT["Output Integrations"]
+        direction LR
+        O1["Azure DevOps\n(MCP client)"]
+        O2["Notion API"]
+        O3["Local .docx Export"]
+    end
+
+    BA == "upload SDD + PPM info\nor submit answers / approvals" ==> FE
+    FE == "POST /assess, /clarify/answer,\n/review/approve" ==> BE
+    BE == "start_job /\nresume_after_clarification /\nresume_after_review" ==> PIPE
+
+    N1 -- "similarity_search" --> KB
+    N2 -- "ambiguity check" --> AI
+    N3 -- "story generation" --> AI
+    N5 -- "deliver" --> OUT
+
+    I1 --> KB
+    I2 --> KB
+
+    PIPE -. "status: clarifying / reviewing / done\n+ questions, stories or final results" .-> BE
+    BE -. "JSON responses" .-> FE
+    FE -. "open questions, stories to review,\nor epics + delivery links" .-> BA
+
+    classDef person fill:#fde68a,stroke:#d97706,stroke-width:2px,color:#78350f;
+    classDef frontend fill:#e0e7ff,stroke:#6366f1,stroke-width:2px,color:#1e1b4b;
+    classDef backend fill:#dbeafe,stroke:#3b82f6,stroke-width:2px,color:#1e3a8a;
+    classDef pipeline fill:#fce7f3,stroke:#ec4899,stroke-width:2px,color:#831843;
+    classDef knowledge fill:#dcfce7,stroke:#22c55e,stroke-width:2px,color:#14532d;
+    classDef ingestion fill:#e2e8f0,stroke:#64748b,stroke-width:2px,color:#1e293b;
+    classDef ai fill:#fef3c7,stroke:#f59e0b,stroke-width:2px,color:#78350f;
+    classDef output fill:#ede9fe,stroke:#8b5cf6,stroke-width:2px,color:#4c1d95;
+
+    class BA person;
+    class F1,F2,F3,F4 frontend;
+    class R1,R2,R3,R4,R5 backend;
+    class N1,N2,N3,N4,N5 pipeline;
+    class C1,C2,C3,EMB knowledge;
+    class I1,I2 ingestion;
+    class AI ai;
+    class O1,O2,O3 output;

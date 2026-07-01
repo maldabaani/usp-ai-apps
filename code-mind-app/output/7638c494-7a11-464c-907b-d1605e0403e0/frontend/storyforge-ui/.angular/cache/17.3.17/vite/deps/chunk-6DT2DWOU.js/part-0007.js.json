@@ -1,0 +1,11 @@
+{
+  "relativePath" : "frontend/storyforge-ui/.angular/cache/17.3.17/vite/deps/chunk-6DT2DWOU.js/part-0007.js",
+  "agentName" : "ollama-logic-extractor",
+  "success" : true,
+  "skipped" : false,
+  "content" : "{\"file\": \"src/core/linker/view_compiler.ts\", \"summary\": \"This file contains Angular's view compiler logic, including functions for template creation and manipulation. It handles operations such as creating templates, updating bindings, managing deferred blocks, and more.\", \"rules\": [{\"name\": \"Ensure DeferBlockDetails are properly initialized\", \"description\": \"Defer block details must be correctly set up with initial states to ensure proper behavior during view compilation.\", \"conditions\": [\"isTDeferBlockDetails(value)\"], \"actions\": [\"setTDeferBlockDetails(tView, deferBlockIndex, deferBlockConfig)\", \"assertDeferredDependenciesLoaded(tDetails)\"]}], \"dependencies\": [\"ɵɵtemplate\", \"_locateOrCreateContainerAnchor\"]}",
+  "errorMessage" : null,
+  "durationMillis" : 479065,
+  "promptTokens" : 8191,
+  "completionTokens" : 150
+}

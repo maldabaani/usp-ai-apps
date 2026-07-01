@@ -1,0 +1,11 @@
+{
+  "relativePath" : "backend/ingestion/chroma_client.py",
+  "agentName" : "ollama-logic-extractor",
+  "success" : true,
+  "skipped" : false,
+  "content" : "{\"file\": \"backend/ingestion/chroma_client.py\", \"summary\": \"This file provides a singleton ChromaDB client and vector store management for three collections: sf_user_manuals, sf_codebase, and sf_jpa_entities. It includes methods to initialize the ChromaDB client, retrieve embeddings using Ollama, get specific or all vector stores, and reset individual collections.\", \"rules\": [{\"name\": \"Singleton Pattern\", \"description\": \"Ensure that only one instance of ChromaDB client and embeddings exists throughout the application lifecycle.\", \"conditions\": [\"ChromaDB client initialization\", \"Ollama embeddings initialization\"], \"actions\": [\"Return existing instance if already initialized\"]}, {\"name\": \"Collection Management\", \"description\": \"Manage vector stores for specific collections based on provided keys.\", \"conditions\": [\"Valid collection key provided\", \"Vector store not already cached\"], \"actions\": [\"Create and cache new Chroma vector store\"]}], \"dependencies\": [\"chromadb\", \"langchain_chroma\", \"langchain_ollama\", \"config\"]}",
+  "errorMessage" : null,
+  "durationMillis" : 198014,
+  "promptTokens" : 823,
+  "completionTokens" : 216
+}

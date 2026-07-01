@@ -1,0 +1,190 @@
+/* ── Header ── */
+.sf-dash-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.sf-dash-title {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--sf-text);
+}
+
+.sf-dash-sub {
+  margin: 4px 0 0;
+  font-size: 14px;
+  color: var(--sf-muted);
+}
+
+.sf-btn-new {
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+/* ── Filters ── */
+.sf-filters {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.sf-search-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 180px;
+}
+
+.sf-search-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  color: var(--sf-muted);
+  pointer-events: none;
+}
+
+.sf-search-input {
+  width: 100%;
+  padding: 7px 10px 7px 34px;
+  border: 1px solid var(--sf-border);
+  border-radius: 6px;
+  font-size: 14px;
+  background: var(--sf-surface);
+  color: var(--sf-text);
+  outline: none;
+}
+
+.sf-search-input:focus {
+  border-color: var(--sf-primary);
+  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.15);
+}
+
+.sf-select {
+  padding: 7px 10px;
+  border: 1px solid var(--sf-border);
+  border-radius: 6px;
+  font-size: 14px;
+  background: var(--sf-surface);
+  color: var(--sf-text);
+  cursor: pointer;
+  outline: none;
+}
+
+.sf-select:focus {
+  border-color: var(--sf-primary);
+}
+
+/* ── Table overrides for dashboard ── */
+.sf-dash-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.sf-job-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.sf-job-ppm {
+  font-size: 12px;
+  color: var(--sf-muted);
+  margin-top: 2px;
+}
+
+.sf-col-muted {
+  color: var(--sf-muted);
+  font-size: 14px;
+}
+
+.sf-col-num {
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+  text-align: center;
+}
+
+.sf-rel-time {
+  font-size: 13px;
+  color: var(--sf-muted);
+  cursor: default;
+  white-space: nowrap;
+}
+
+.sf-col-actions {
+  white-space: nowrap;
+}
+
+.sf-col-check-hd {
+  width: 40px;
+  text-align: center;
+}
+
+.sf-col-check {
+  width: 40px;
+  text-align: center;
+}
+
+.sf-row-check {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--sf-primary);
+}
+
+.sf-row-selected td {
+  background: #f0fdf4;
+}
+
+.sf-action-btn {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 5px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid var(--sf-border);
+  background: var(--sf-surface);
+  color: var(--sf-text);
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.sf-action-btn:hover {
+  background: var(--sf-bg);
+}
+
+/* ── Empty states ── */
+.sf-empty-state {
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--sf-muted);
+}
+
+.sf-empty-state p {
+  margin: 0 0 16px;
+  font-size: 15px;
+}
+
+/* ── Error ── */
+.sf-error-text {
+  color: var(--sf-error);
+  margin-bottom: 12px;
+}
+
+/* ── Footer ── */
+.sf-dash-footer {
+  margin-top: 10px;
+  padding: 0 4px;
+}
+
+.sf-showing {
+  font-size: 13px;
+  color: var(--sf-muted);
+}

@@ -1,0 +1,11 @@
+{
+  "relativePath" : "backend/pipeline/nodes/review.py",
+  "agentName" : "ollama-logic-extractor",
+  "success" : true,
+  "skipped" : false,
+  "content" : "{\"file\": \"backend/pipeline/nodes/review.py\", \"summary\": \"This file contains an asynchronous function that acts as a review gate in the story generation pipeline. It checks if the review mode is enabled and either passes the generated stories directly to approved_stories or sets the status to 'reviewing' for human intervention.\", \"rules\": [{\"name\": \"Review Node Processing\", \"description\": \"Determines whether generated stories should be reviewed by a human before being approved.\", \"conditions\": [\"state['review_mode'] is False\"], \"actions\": [\"Return state with 'approved_stories' set to 'generated_stories', 'human_approved' set to True, and status set to 'creating'\"]}, {\"name\": \"Review Mode Active\", \"description\": \"When review mode is enabled, the function sets the status of the story generation process to 'reviewing'.\", \"conditions\": [\"state['review_mode'] is True\"], \"actions\": [\"Return state with status set to 'reviewing'\"]}], \"dependencies\": [\"pipeline.state.StoryForgeState\"]}",
+  "errorMessage" : null,
+  "durationMillis" : 171648,
+  "promptTokens" : 342,
+  "completionTokens" : 219
+}

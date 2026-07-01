@@ -1,0 +1,11 @@
+{
+  "relativePath" : "frontend/storyforge-ui/.angular/cache/17.3.17/vite/deps/chunk-6DT2DWOU.js/part-0004.js",
+  "agentName" : "ollama-logic-extractor",
+  "success" : true,
+  "skipped" : false,
+  "content" : "{\"file\": \"src/core/linker/view.js\", \"summary\": \"This file contains logic for managing Angular views, including creating, updating, and destroying view components. It handles operations such as inserting views into the DOM, detaching them from the DOM, and cleaning up entire view trees.\", \"rules\": [{\"name\": \"Manage View Lifecycle\", \"description\": \"Handles creation, insertion, detachment, and destruction of Angular views.\", \"conditions\": [\"isLView(lView)\", \"isLContainer(lContainer)\"], \"actions\": [\"applyView(tView, lView, renderer, action, parentNativeNode, beforeNode)\", \"insertView(tView, lView, lContainer, index)\", \"detachMovedView(declarationContainer, lView)\"]}], \"dependencies\": [\"src/core/linker/view.js\", \"src/core/render/api.js\", \"src/facade/lang.js\"]}",
+  "errorMessage" : null,
+  "durationMillis" : 453893,
+  "promptTokens" : 8191,
+  "completionTokens" : 182
+}

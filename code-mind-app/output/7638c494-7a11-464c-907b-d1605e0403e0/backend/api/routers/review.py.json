@@ -1,0 +1,11 @@
+{
+  "relativePath" : "backend/api/routers/review.py",
+  "agentName" : "ollama-logic-extractor",
+  "success" : true,
+  "skipped" : false,
+  "content" : "{\"file\": \"backend/api/routers/review.py\", \"summary\": \"This file contains an API endpoint for approving reviews in a job management system. It checks if the specified job exists and was run in review mode, then schedules background tasks to resume the job's progress towards ADO creation.\", \"rules\": [{\"name\": \"Review Approval Endpoint\", \"description\": \"Handles POST requests to approve a review for a specific job ID.\", \"conditions\": [\"Job must exist\", \"Job must be in review mode\"], \"actions\": [\"Raise HTTP 404 if job not found\", \"Raise HTTP 409 if job was not run in review mode\", \"Add background task to resume job after approval\"]}], \"dependencies\": [\"fastapi\", \"pydantic\", \"pipeline.runner\"]}",
+  "errorMessage" : null,
+  "durationMillis" : 141868,
+  "promptTokens" : 360,
+  "completionTokens" : 163
+}

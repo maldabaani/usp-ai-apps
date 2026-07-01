@@ -1,0 +1,11 @@
+{
+  "relativePath" : "frontend/storyforge-ui/.angular/cache/17.3.17/vite/deps/chunk-6DT2DWOU.js/part-0008.js",
+  "agentName" : "ollama-logic-extractor",
+  "success" : true,
+  "skipped" : false,
+  "content" : "{\"file\": \"src/core/render3/styling/style_stamping.ts\", \"summary\": \"This file contains logic for managing and applying styles to components in Angular. It includes functions for updating, interpolating, and reconciling styling values with live collections of elements.\", \"rules\": [{\"name\": \"Update Styling Values\", \"description\": \"Updates the styling value of a component based on new input values or interpolated strings.\", \"conditions\": [\"Interpolation function called\"], \"actions\": [\"Check if new value is different from old, update if necessary\"]}, {\"name\": \"Reconcile Live Collections\", \"description\": \"Compares live collection items with new data and updates, moves, or destroys elements as needed to reflect the current state.\", \"conditions\": [\"Live collection length differs from new collection\"], \"actions\": [\"Iterate through collections, compare values using trackBy function, update or move elements\"]}], \"dependencies\": [\"ɵɵclassMapInterpolate1\", \"ɵɵcomponentInstance\", \"ɵɵclassMapInterpolateV\", \"reconcile\"]}",
+  "errorMessage" : null,
+  "durationMillis" : 494646,
+  "promptTokens" : 8191,
+  "completionTokens" : 217
+}

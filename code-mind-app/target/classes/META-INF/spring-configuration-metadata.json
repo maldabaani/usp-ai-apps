@@ -1,0 +1,222 @@
+{
+  "groups": [
+    {
+      "name": "jsprocessor",
+      "type": "com.jslogicextractor.config.ExtractionProperties",
+      "sourceType": "com.jslogicextractor.config.ExtractionProperties"
+    },
+    {
+      "name": "jsprocessor.batch",
+      "type": "com.jslogicextractor.config.BatchExtractionProperties",
+      "sourceType": "com.jslogicextractor.config.BatchExtractionProperties"
+    },
+    {
+      "name": "jsprocessor.chunking",
+      "type": "com.jslogicextractor.config.ChunkingProperties",
+      "sourceType": "com.jslogicextractor.config.ChunkingProperties"
+    },
+    {
+      "name": "jsprocessor.embedding",
+      "type": "com.jslogicextractor.config.EmbeddingProperties",
+      "sourceType": "com.jslogicextractor.config.EmbeddingProperties"
+    },
+    {
+      "name": "jsprocessor.ollama",
+      "type": "com.jslogicextractor.config.OllamaProperties",
+      "sourceType": "com.jslogicextractor.config.OllamaProperties"
+    },
+    {
+      "name": "jsprocessor.qa",
+      "type": "com.jslogicextractor.config.QaProperties",
+      "sourceType": "com.jslogicextractor.config.QaProperties"
+    },
+    {
+      "name": "jsprocessor.watch",
+      "type": "com.jslogicextractor.config.WatchProperties",
+      "sourceType": "com.jslogicextractor.config.WatchProperties"
+    }
+  ],
+  "properties": [
+    {
+      "name": "jsprocessor.batch.max-batch-bytes",
+      "type": "java.lang.Long",
+      "sourceType": "com.jslogicextractor.config.BatchExtractionProperties",
+      "defaultValue": 0
+    },
+    {
+      "name": "jsprocessor.batch.max-requests-per-batch",
+      "type": "java.lang.Integer",
+      "sourceType": "com.jslogicextractor.config.BatchExtractionProperties",
+      "defaultValue": 0
+    },
+    {
+      "name": "jsprocessor.batch.max-tokens",
+      "type": "java.lang.Integer",
+      "sourceType": "com.jslogicextractor.config.BatchExtractionProperties",
+      "defaultValue": 0
+    },
+    {
+      "name": "jsprocessor.batch.model",
+      "type": "java.lang.String",
+      "sourceType": "com.jslogicextractor.config.BatchExtractionProperties"
+    },
+    {
+      "name": "jsprocessor.batch.poll-interval",
+      "type": "java.time.Duration",
+      "sourceType": "com.jslogicextractor.config.BatchExtractionProperties"
+    },
+    {
+      "name": "jsprocessor.batch.poll-timeout",
+      "type": "java.time.Duration",
+      "sourceType": "com.jslogicextractor.config.BatchExtractionProperties"
+    },
+    {
+      "name": "jsprocessor.batch.temperature",
+      "type": "java.lang.Double",
+      "sourceType": "com.jslogicextractor.config.BatchExtractionProperties",
+      "defaultValue": 0
+    },
+    {
+      "name": "jsprocessor.chunking.enabled",
+      "type": "java.lang.Boolean",
+      "sourceType": "com.jslogicextractor.config.ChunkingProperties",
+      "defaultValue": false
+    },
+    {
+      "name": "jsprocessor.chunking.max-lines-per-chunk",
+      "type": "java.lang.Integer",
+      "sourceType": "com.jslogicextractor.config.ChunkingProperties",
+      "defaultValue": 0
+    },
+    {
+      "name": "jsprocessor.default-output-directory",
+      "type": "java.nio.file.Path",
+      "sourceType": "com.jslogicextractor.config.ExtractionProperties"
+    },
+    {
+      "name": "jsprocessor.embedding.base-url",
+      "type": "java.lang.String",
+      "sourceType": "com.jslogicextractor.config.EmbeddingProperties"
+    },
+    {
+      "name": "jsprocessor.embedding.enabled",
+      "type": "java.lang.Boolean",
+      "sourceType": "com.jslogicextractor.config.EmbeddingProperties",
+      "defaultValue": false
+    },
+    {
+      "name": "jsprocessor.embedding.model",
+      "type": "java.lang.String",
+      "sourceType": "com.jslogicextractor.config.EmbeddingProperties"
+    },
+    {
+      "name": "jsprocessor.excluded-directory-names",
+      "type": "java.util.Set<java.lang.String>",
+      "sourceType": "com.jslogicextractor.config.ExtractionProperties"
+    },
+    {
+      "name": "jsprocessor.execution-mode",
+      "type": "com.jslogicextractor.orchestration.ExecutionMode",
+      "sourceType": "com.jslogicextractor.config.ExtractionProperties"
+    },
+    {
+      "name": "jsprocessor.included-extensions",
+      "type": "java.util.Set<java.lang.String>",
+      "sourceType": "com.jslogicextractor.config.ExtractionProperties"
+    },
+    {
+      "name": "jsprocessor.max-concurrent-requests",
+      "type": "java.lang.Integer",
+      "sourceType": "com.jslogicextractor.config.ExtractionProperties",
+      "defaultValue": 0
+    },
+    {
+      "name": "jsprocessor.max-file-size-bytes",
+      "type": "java.lang.Long",
+      "sourceType": "com.jslogicextractor.config.ExtractionProperties",
+      "defaultValue": 0
+    },
+    {
+      "name": "jsprocessor.ollama.base-url",
+      "type": "java.lang.String",
+      "sourceType": "com.jslogicextractor.config.OllamaProperties"
+    },
+    {
+      "name": "jsprocessor.ollama.enabled",
+      "type": "java.lang.Boolean",
+      "sourceType": "com.jslogicextractor.config.OllamaProperties",
+      "defaultValue": false
+    },
+    {
+      "name": "jsprocessor.ollama.max-tokens",
+      "type": "java.lang.Integer",
+      "sourceType": "com.jslogicextractor.config.OllamaProperties",
+      "defaultValue": 0
+    },
+    {
+      "name": "jsprocessor.ollama.model",
+      "type": "java.lang.String",
+      "sourceType": "com.jslogicextractor.config.OllamaProperties"
+    },
+    {
+      "name": "jsprocessor.ollama.num-ctx",
+      "type": "java.lang.Integer",
+      "sourceType": "com.jslogicextractor.config.OllamaProperties",
+      "defaultValue": 0
+    },
+    {
+      "name": "jsprocessor.ollama.temperature",
+      "type": "java.lang.Double",
+      "sourceType": "com.jslogicextractor.config.OllamaProperties",
+      "defaultValue": 0
+    },
+    {
+      "name": "jsprocessor.qa.model",
+      "type": "java.lang.String",
+      "sourceType": "com.jslogicextractor.config.QaProperties"
+    },
+    {
+      "name": "jsprocessor.qa.ollama-base-url",
+      "type": "java.lang.String",
+      "sourceType": "com.jslogicextractor.config.QaProperties"
+    },
+    {
+      "name": "jsprocessor.qa.ollama-max-tokens",
+      "type": "java.lang.Integer",
+      "sourceType": "com.jslogicextractor.config.QaProperties",
+      "defaultValue": 0
+    },
+    {
+      "name": "jsprocessor.qa.ollama-model",
+      "type": "java.lang.String",
+      "sourceType": "com.jslogicextractor.config.QaProperties"
+    },
+    {
+      "name": "jsprocessor.skip-existing-results",
+      "type": "java.lang.Boolean",
+      "sourceType": "com.jslogicextractor.config.ExtractionProperties",
+      "defaultValue": false
+    },
+    {
+      "name": "jsprocessor.watch.directory",
+      "type": "java.lang.String",
+      "sourceType": "com.jslogicextractor.config.WatchProperties"
+    },
+    {
+      "name": "jsprocessor.watch.enabled",
+      "type": "java.lang.Boolean",
+      "sourceType": "com.jslogicextractor.config.WatchProperties",
+      "defaultValue": false
+    },
+    {
+      "name": "jsprocessor.watch.quiet-period-millis",
+      "type": "java.lang.Long",
+      "sourceType": "com.jslogicextractor.config.WatchProperties",
+      "defaultValue": 0
+    }
+  ],
+  "hints": [],
+  "ignored": {
+    "properties": []
+  }
+}

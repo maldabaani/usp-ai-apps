@@ -1,0 +1,11 @@
+{
+  "relativePath" : "backend/pipeline/runner.py",
+  "agentName" : "ollama-logic-extractor",
+  "success" : true,
+  "skipped" : false,
+  "content" : "{\"file\": \"backend/pipeline/runner.py\", \"summary\": \"The runner module drives the StoryForge LangGraph by starting jobs, automatically resuming pauses that do not require human input, and providing explicit resume points for clarification answers and review approval. It includes functions to start a new job, get the current state of an existing job, and resume paused jobs after receiving clarification or review.\", \"rules\": [{\"name\": \"_drive\", \"description\": \"Advances the graph by invoking nodes until it reaches a pause that requires human input.\", \"conditions\": [\"resume_value is None for non-resume calls\"], \"actions\": [\"Invoke graph nodes based on conditions, updating state and snapshot as needed\"]}, {\"name\": \"start_job\", \"description\": \"Starts a new job from analyze_node up to the first genuine human-in-the-loop pause.\", \"conditions\": [\"initial_state provided\"], \"actions\": [\"Calls _drive with initial_state\"]}, {\"name\": \"get_job_state\", \"description\": \"Returns the current state of an existing job or None if it doesn't exist.\", \"conditions\": [\"job_id provided\"], \"actions\": [\"Gets and returns the snapshot values for the specified job_id\"]}, {\"name\": \"resume_after_clarification\", \"description\": \"Applies clarification answers to a paused job and resumes the graph through generate_node onward.\", \"conditions\": [\"job_id, answers provided\"], \"actions\": [\"Updates state with answers, sets status to generating, then calls _drive\"]}, {\"name\": \"resume_after_review\", \"description\": \"Applies human-approved stories to a paused job and resumes the graph through create_ado_node/export_document_node/create_notion_node based on settings.\", \"conditions\": [\"job_id, approved_stories provided\"], \"actions\": [\"Updates state with approved stories, sets status to creating, then calls _drive\"]}], \"dependencies\": [\"pipeline.graph\", \"pipeline.state\"]}",
+  "errorMessage" : null,
+  "durationMillis" : 189633,
+  "promptTokens" : 795,
+  "completionTokens" : 392
+}

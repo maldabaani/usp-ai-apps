@@ -1,0 +1,11 @@
+{
+  "relativePath" : "backend/api/routers/export.py",
+  "agentName" : "ollama-logic-extractor",
+  "success" : true,
+  "skipped" : false,
+  "content" : "{\"file\": \"backend/api/routers/export.py\", \"summary\": \"This file contains an endpoint for downloading a generated document based on a job ID. It uses FastAPI to create the route and handles HTTP exceptions if the job or document is not found.\", \"rules\": [{\"name\": \"get_export_document\", \"description\": \"Retrieve the export document associated with a given job ID.\", \"conditions\": [\"Job state must exist for the provided job_id.\", \"Document path must be valid and exist on disk.\"], \"actions\": [\"Return an HTTP 404 error if the job or document is not found.\", \"Serve the document as a FileResponse with appropriate media type.\"]},{\"name\": \"get_job_state\", \"description\": \"Fetches the state of a given job ID from the pipeline runner module.\", \"conditions\": [], \"actions\": [\"Returns None if no state exists for the provided job_id.\"]}], \"dependencies\": [\"fastapi\", \"os\", \"pipeline.runner\"]}",
+  "errorMessage" : null,
+  "durationMillis" : 187791,
+  "promptTokens" : 344,
+  "completionTokens" : 202
+}
