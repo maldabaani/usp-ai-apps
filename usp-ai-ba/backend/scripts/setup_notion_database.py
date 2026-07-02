@@ -5,15 +5,22 @@ sharing a parent page with it:
 
     cd backend && python -m scripts.setup_notion_database
 
-It prints the resulting database ID — paste that into NOTION_DATABASE_ID in
+NOTION_PARENT_PAGE_ID may be the raw page ID or a full Notion page URL
+(pasted straight from the browser address bar / "Copy link") -- it's
+normalized automatically. It must point to a plain page, not a database:
+Notion doesn't allow creating a database inside another database.
+
+It prints the resulting database ID -- paste that into NOTION_DATABASE_ID in
 .env. Re-running this script creates a second, separate database; it does not
 look for or reuse an existing one.
 """
 from __future__ import annotations
 
 import asyncio
+import re
 
 from notion_client import AsyncClient
+from notion_client.errors import APIResponseError
 
 from config import settings
 
@@ -36,6 +43,55 @@ PROPERTIES = {
     "Created": {"date": {}},
 }
 
+_ID_RE = re.compile(
+    r"[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}"
+)
+
+
+def _normalize_notion_id(raw: str) -> str:
+    """Accept a raw Notion ID (dashed or not) or a full Notion URL and return a
+    dashed UUID string suitable for the API.
+    """
+    match = _ID_RE.search(raw.strip())
+    if not match:
+        raise RuntimeError(
+            f"Could not find a Notion page ID in NOTION_PARENT_PAGE_ID ({raw!r}). "
+            "Set it to either the raw page ID or the full Notion page URL "
+            "(copied from the browser address bar or the page's \"Copy link\" action)."
+        )
+    hex_id = match.group(0).replace("-", "")
+    return f"{hex_id[0:8]}-{hex_id[8:12]}-{hex_id[12:16]}-{hex_id[16:20]}-{hex_id[20:32]}"
+
+
+async def _resolve_and_validate_parent_page(client: AsyncClient, raw_parent_id: str) -> str:
+    """Normalize NOTION_PARENT_PAGE_ID and confirm it resolves to a page your
+    integration can see -- and that it's a page, not a database -- before
+    attempting to create anything under it, so failures are clear instead of
+    surfacing a raw Notion API traceback.
+    """
+    page_id = _normalize_notion_id(raw_parent_id)
+
+    try:
+        await client.pages.retrieve(page_id=page_id)
+        return page_id
+    except APIResponseError as page_exc:
+        try:
+            await client.databases.retrieve(database_id=page_id)
+        except APIResponseError:
+            raise RuntimeError(
+                f"NOTION_PARENT_PAGE_ID ({raw_parent_id!r}) doesn't resolve to a page "
+                "your integration can see. Make sure it's a real page ID and that the "
+                'page is shared with your integration (page "•••" menu -> Connections '
+                "-> add the integration)."
+            ) from page_exc
+        else:
+            raise RuntimeError(
+                f"NOTION_PARENT_PAGE_ID ({raw_parent_id!r}) points to a Notion "
+                "*database*, not a page. Notion doesn't allow creating a database "
+                "inside another database -- pick a plain page instead, share it with "
+                "your integration, and use that page's ID/URL."
+            ) from page_exc
+
 
 async def main() -> None:
     if not settings.NOTION_API_KEY:
@@ -44,8 +100,12 @@ async def main() -> None:
         raise RuntimeError("NOTION_PARENT_PAGE_ID is not configured in .env")
 
     client = AsyncClient(auth=settings.NOTION_API_KEY)
+    parent_page_id = await _resolve_and_validate_parent_page(
+        client, settings.NOTION_PARENT_PAGE_ID
+    )
+
     database = await client.databases.create(
-        parent={"type": "page_id", "page_id": settings.NOTION_PARENT_PAGE_ID},
+        parent={"type": "page_id", "page_id": parent_page_id},
         title=[{"type": "text", "text": {"content": DATABASE_TITLE}}],
         properties=PROPERTIES,
     )
