@@ -65,6 +65,13 @@ export class StatusComponent implements OnInit, OnDestroy {
   private lastActiveStep = '';
   private pollHandle: ReturnType<typeof setInterval> | null = null;
   private redirected = false;
+  // Set right after retry()/recreateTasks() triggers a background action.
+  // The action runs in a FastAPI BackgroundTask scheduled *after* the POST
+  // response, so the very next poll can still see the job's pre-action
+  // status (e.g. still "done" right after clicking recreate) -- treating
+  // that stale value as "finished" would stop polling before the action
+  // even started. Consumed (cleared) after one poll cycle.
+  private pendingAction = false;
 
   constructor(
     private route: ActivatedRoute,
@@ -101,9 +108,18 @@ export class StatusComponent implements OnInit, OnDestroy {
         } else if (state.status === 'reviewing' && state.review_mode) {
           this.redirectOnce(['/review', this.jobId]);
         } else if (state.status === 'done' || state.status === 'error') {
+          if (this.pendingAction) {
+            // Might just be the stale pre-action status -- give the
+            // background task one more poll cycle to actually start before
+            // trusting a "done"/"error" this soon after triggering it.
+            this.pendingAction = false;
+            return;
+          }
           if (state.status === 'done') {
             this.storiesText = this.formatStories(state.approved_stories);
           }
+          this.retrying = false;
+          this.recreating = false;
           this.stopPolling();
         }
       },
@@ -146,7 +162,9 @@ export class StatusComponent implements OnInit, OnDestroy {
 
     this.storyForgeService.retryAssessment(this.jobId).subscribe({
       next: () => {
-        this.retrying = false;
+        // retrying stays true -- poll() clears it once it observes the job
+        // actually reach done/error (see pendingAction above).
+        this.pendingAction = true;
         this.redirected = false;
         this.poll();
         if (!this.pollHandle) {
@@ -177,7 +195,9 @@ export class StatusComponent implements OnInit, OnDestroy {
 
     this.storyForgeService.recreateTasks(this.jobId).subscribe({
       next: () => {
-        this.recreating = false;
+        // recreating stays true -- poll() clears it once it observes the
+        // job actually reach done/error (see pendingAction above).
+        this.pendingAction = true;
         this.redirected = false;
         this.poll();
         if (!this.pollHandle) {
