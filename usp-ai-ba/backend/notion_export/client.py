@@ -8,6 +8,7 @@ the ``mcp`` package.
 from __future__ import annotations
 
 from notion_client import AsyncClient
+from notion_client.errors import APIErrorCode, APIResponseError
 
 from config import settings
 
@@ -84,8 +85,22 @@ class NotionExportClient:
     async def archive_page(self, page_id: str) -> None:
         """Archive (soft-delete, moves to Trash) a previously-created page --
         used by pipeline/runner.py's recreate_tasks() to clear out a job's old
-        Notion pages before creating fresh ones."""
-        await self._client.pages.update(page_id=page_id, archived=True)
+        Notion pages before creating fresh ones.
+
+        A page that's already gone (deleted, or unreachable because its own
+        ancestor is already archived/trashed) is treated as a no-op success,
+        not a failure -- the goal ("this old page shouldn't be live") is
+        already true either way, so there's nothing useful to report. Any
+        other error still propagates so recreate_tasks() can warn about it.
+        """
+        try:
+            await self._client.pages.update(page_id=page_id, archived=True)
+        except APIResponseError as exc:
+            if exc.code == APIErrorCode.ObjectNotFound:
+                return
+            if exc.code == APIErrorCode.ValidationError and "archived" in str(exc).lower():
+                return
+            raise
 
 
 _client_instance: NotionExportClient | None = None
