@@ -40,7 +40,7 @@ def _config(job_id: str) -> dict:
 async def _drive(job_id: str, resume_value=None) -> StoryForgeState:
     """Advance the graph, auto-continuing past pauses that don't require human
     input, and stopping (without error) at pauses that do."""
-    graph = get_graph()
+    graph = await get_graph()
     config = _config(job_id)
 
     state = await graph.ainvoke(resume_value, config)
@@ -71,14 +71,14 @@ async def start_job(initial_state: StoryForgeState) -> StoryForgeState:
 
 async def get_job_state(job_id: str) -> StoryForgeState | None:
     """Return the current StoryForgeState for a job, or None if it doesn't exist."""
-    graph = get_graph()
+    graph = await get_graph()
     snapshot = await graph.aget_state(_config(job_id))
     return snapshot.values or None
 
 
 async def resume_after_clarification(job_id: str, answers: dict) -> StoryForgeState:
     """Apply clarification answers and resume the graph through generate_node onward."""
-    graph = get_graph()
+    graph = await get_graph()
     config = _config(job_id)
     await graph.aupdate_state(
         config,
@@ -94,7 +94,7 @@ async def resume_after_clarification(job_id: str, answers: dict) -> StoryForgeSt
 async def resume_after_review(job_id: str, approved_stories: list[dict]) -> StoryForgeState:
     """Apply human-approved stories and resume the graph through create_ado_node /
     export_document_node / create_notion_node (whichever settings.OUTPUT_MODE selects)."""
-    graph = get_graph()
+    graph = await get_graph()
     config = _config(job_id)
     await graph.aupdate_state(
         config,
@@ -140,7 +140,7 @@ async def retry_failed_step(job_id: str) -> StoryForgeState:
     failure can produce duplicate ADO work items / Notion pages / a
     re-generated document for the items that succeeded on the first attempt.
     """
-    graph = get_graph()
+    graph = await get_graph()
     config = _config(job_id)
     snapshot = await graph.aget_state(config)
     state = snapshot.values

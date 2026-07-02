@@ -8,6 +8,7 @@ langchain-ollama
 langchain-chroma
 langchain-mcp-adapters
 langgraph
+langgraph-checkpoint-sqlite
 chromadb
 pypdf
 python-docx

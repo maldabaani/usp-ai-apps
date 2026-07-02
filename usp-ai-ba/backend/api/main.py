@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.routers import ado, assess, clarify, export, ingest, review
 from config import settings
+from pipeline.graph import close_graph, get_graph
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -17,7 +18,9 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("StoryForge AI backend starting up")
+    await get_graph()  # open the persistent checkpoint DB now, not on first request
     yield
+    await close_graph()
     logger.info("StoryForge AI backend shutting down")
 
 

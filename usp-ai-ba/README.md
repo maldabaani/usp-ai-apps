@@ -66,7 +66,7 @@ SDD PDF ───▶ POST /api/assess ───▶  LangGraph pipeline (pipeline
                                                    Angular SPA (poll /api/assess/status)
 ```
 
-The graph is checkpointed (`MemorySaver`, keyed by `job_id`) and interrupts before `generate_node` and before whichever of `export_document_node` / `create_ado_node` / `create_notion_node` is selected by `OUTPUT_MODE`, so jobs can pause for human clarification/review and resume later via dedicated endpoints. Every node-to-node edge is conditional on `status`: if any node fails and sets `status == "error"`, the graph routes straight to `END` instead of letting downstream nodes run against incomplete state.
+The graph is checkpointed (`AsyncSqliteSaver`, persisted to `JOBS_DIR/checkpoints.sqlite`, keyed by `job_id`) and interrupts before `generate_node` and before whichever of `export_document_node` / `create_ado_node` / `create_notion_node` is selected by `OUTPUT_MODE`, so jobs can pause for human clarification/review and resume later via dedicated endpoints. Because the checkpoint is on disk rather than only in process memory, a job's full state — including one paused mid-review or one that failed and hasn't been retried yet — survives a backend restart. Every node-to-node edge is conditional on `status`: if any node fails and sets `status == "error"`, the graph routes straight to `END` instead of letting downstream nodes run against incomplete state.
 
 ## Project structure
 
@@ -207,7 +207,7 @@ All backend configuration is environment-variable driven (`backend/.env`, loaded
 | `NOTION_DATABASE_ID` | _(empty)_ | ID of the "StoryForge Epics" database `create_notion_node` writes pages into — created once via `python -m scripts.setup_notion_database` |
 | `NOTION_PARENT_PAGE_ID` | _(empty)_ | ID of the Notion page (shared with the integration) under which `scripts/setup_notion_database.py` creates the database; only needed to run that script |
 | `CORS_ORIGINS` | `http://localhost:4200` | Comma-separated list of allowed CORS origins |
-| `JOBS_DIR` | `./jobs` | Reserved directory for job-related persistence |
+| `JOBS_DIR` | `./jobs` | Holds `checkpoints.sqlite` (LangGraph's persisted pipeline state, one row per job step) and `assess_jobs.json` (the dashboard's job list) — both survive a backend restart |
 | `UPLOADS_DIR` | `./uploads` | Directory uploaded SDD PDFs are saved to (`{job_id}.pdf`) |
 | `EXPORTS_DIR` | `./exports` | Directory generated `.docx` files are saved to (`{ppm_number}_{ppm_name}_{system_name}_V_{n}.docx`, sanitized and versioned per project), used when `OUTPUT_MODE=document` |
 | `PROMPT_VARIANT` | `production` | `production` uses `prompts/system_prompt.py`. `selftest` swaps in `prompts/system_prompt_selftest.py`, a variant tuned for assessing SDDs about StoryForge AI's own codebase (Python/FastAPI/LangGraph/Angular) instead of the default telecom/Spring Boot domain assumptions. |
@@ -316,7 +316,7 @@ Every `dev_tasks` entry has exactly one corresponding `unit_test_tasks` entry at
 
 ## Pipeline state machine
 
-`pipeline/graph.py` wires 7 nodes into a LangGraph `StateGraph`, checkpointed per `job_id`:
+`pipeline/graph.py` wires 7 nodes into a LangGraph `StateGraph`, checkpointed per `job_id` to `JOBS_DIR/checkpoints.sqlite` (survives a backend restart):
 
 | Node | Sets `status` to | Notes |
 |---|---|---|

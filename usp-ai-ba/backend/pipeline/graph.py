@@ -28,7 +28,11 @@ the pause.
 """
 from __future__ import annotations
 
-from langgraph.checkpoint.memory import MemorySaver
+import asyncio
+import os
+from contextlib import AsyncExitStack
+
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, StateGraph
 
 from config import settings
@@ -69,8 +73,9 @@ def _route_after_review(state: StoryForgeState) -> str:
     return NODE_EXPORT_DOCUMENT
 
 
-def build_graph():
-    """Compile the StoryForge LangGraph with checkpointing and human-in-the-loop interrupts."""
+def build_graph(checkpointer):
+    """Compile the StoryForge LangGraph with the given checkpointer and
+    human-in-the-loop interrupts."""
     builder = StateGraph(StoryForgeState)
 
     builder.add_node(NODE_ANALYZE, analyze_node)
@@ -100,7 +105,6 @@ def build_graph():
     builder.add_edge(NODE_EXPORT_DOCUMENT, END)
     builder.add_edge(NODE_CREATE_NOTION, END)
 
-    checkpointer = MemorySaver()
     return builder.compile(
         checkpointer=checkpointer,
         interrupt_before=[
@@ -113,11 +117,45 @@ def build_graph():
 
 
 _graph = None
+_checkpointer_stack: AsyncExitStack | None = None
+_init_lock = asyncio.Lock()
 
 
-def get_graph():
-    """Return a singleton compiled StoryForge graph instance."""
-    global _graph
-    if _graph is None:
-        _graph = build_graph()
+async def get_graph():
+    """Return the singleton compiled StoryForge graph, opening its persistent
+    SQLite checkpointer (settings.JOBS_DIR/checkpoints.sqlite) on first call.
+
+    Jobs are checkpointed per job_id (== LangGraph thread_id), so a job's full
+    state -- including one paused mid-review or one that failed and hasn't
+    been retried yet -- survives a backend restart, instead of only living in
+    process memory for as long as the server stays up.
+    """
+    global _graph, _checkpointer_stack
+    if _graph is not None:
+        return _graph
+
+    async with _init_lock:
+        if _graph is not None:  # another caller won the race while we waited
+            return _graph
+
+        os.makedirs(settings.JOBS_DIR, exist_ok=True)
+        db_path = os.path.join(settings.JOBS_DIR, "checkpoints.sqlite")
+
+        _checkpointer_stack = AsyncExitStack()
+        checkpointer = await _checkpointer_stack.enter_async_context(
+            AsyncSqliteSaver.from_conn_string(db_path)
+        )
+        await checkpointer.setup()
+
+        _graph = build_graph(checkpointer)
+
     return _graph
+
+
+async def close_graph() -> None:
+    """Close the checkpointer's DB connection. Call on app shutdown."""
+    global _graph, _checkpointer_stack
+    if _checkpointer_stack is not None:
+        await _checkpointer_stack.aclose()
+    _graph = None
+    _checkpointer_stack = None
