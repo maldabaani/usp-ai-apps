@@ -4,16 +4,19 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
-from api.routers import ado, assess, auth, clarify, export, ingest, review
+from api.routers import ado, assess, auth, clarify, export, ingest, monitoring, review
 from api.routers import settings as settings_router
 from api.user_store import ensure_default_admin
 from config import settings
+from monitoring.log_capture import install as install_error_capture
 from pipeline.graph import close_graph, get_graph
 
 logging.basicConfig(level=logging.INFO)
+install_error_capture()
 logger = logging.getLogger(__name__)
 
 
@@ -46,6 +49,15 @@ def create_app() -> FastAPI:
     app.include_router(ado.router, prefix="/api")
     app.include_router(export.router, prefix="/api")
     app.include_router(settings_router.router, prefix="/api")
+    app.include_router(monitoring.router, prefix="/api")
+
+    @app.exception_handler(Exception)
+    async def unhandled_exception_handler(request: Request, exc: Exception):
+        # Routes through the same logger install_error_capture() is attached
+        # to, so an unhandled 500 lands in the monitoring store too, not just
+        # the server console.
+        logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
+        return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
     async def health():
         return {

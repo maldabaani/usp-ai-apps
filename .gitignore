@@ -6,6 +6,7 @@ code-mind-app/target/
 code-mind-app/output/
 code-mind-app/watch-input/
 code-mind-app/codemind-runtime.properties
+code-mind-app/codemind-error-log.json
 
 # usp-ai-ba backend (Python)
 usp-ai-ba/backend/venv/

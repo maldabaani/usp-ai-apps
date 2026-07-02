@@ -1,0 +1,41 @@
+<div class="sf-page">
+  <h1>Monitoring</h1>
+
+  <p *ngIf="loading">Loading errors…</p>
+  <p *ngIf="loadError" class="sf-error-text">{{ loadError }}</p>
+
+  <ng-container *ngIf="!loading && !loadError">
+    <div class="sf-card">
+      <div class="sf-monitoring-header">
+        <h2 class="sf-section-title">Recent Errors ({{ errors.length }})</h2>
+        <button class="sf-btn sf-btn-secondary" (click)="load()">Refresh</button>
+      </div>
+
+      <p *ngIf="!errors.length" class="sf-monitoring-empty">No errors recorded. Everything looks healthy.</p>
+
+      <table class="sf-table" *ngIf="errors.length">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>App</th>
+            <th>Logger</th>
+            <th>Message</th>
+          </tr>
+        </thead>
+        <tbody>
+          <ng-container *ngFor="let error of errors; let i = index">
+            <tr class="sf-monitoring-row" (click)="toggleTraceback(i)">
+              <td class="sf-monitoring-time">{{ formatTimestamp(error.timestamp) }}</td>
+              <td><span class="sf-badge sf-badge-{{ error.app === 'StoryForge' ? 'storyforge' : 'codemind' }}">{{ error.app }}</span></td>
+              <td class="sf-monitoring-logger">{{ error.logger }}</td>
+              <td class="sf-monitoring-message">{{ error.message }}</td>
+            </tr>
+            <tr class="sf-monitoring-traceback-row" *ngIf="expandedIndexes[i] && error.traceback">
+              <td colspan="4"><pre class="sf-monitoring-traceback">{{ error.traceback }}</pre></td>
+            </tr>
+          </ng-container>
+        </tbody>
+      </table>
+    </div>
+  </ng-container>
+</div>
