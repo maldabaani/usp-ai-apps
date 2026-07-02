@@ -1,6 +1,13 @@
 # StoryForge AI
 
-StoryForge AI turns a Solution Design Document (SDD) PDF into a fully-detailed, ready-to-create Azure DevOps work item hierarchy — **Epic → User Story → Dev Tasks + Unit Test Tasks** — using Claude for analysis/generation, a local Ollama embedding model + ChromaDB for retrieval-augmented context (RAG) over your existing codebase, user manuals, and JPA entities, and a human-in-the-loop review/clarification workflow before anything is written to ADO.
+StoryForge AI turns a Solution Design Document (SDD) PDF into a fully-detailed, ready-to-create Azure DevOps work item hierarchy — **Epic → User Story → Dev Tasks + Unit Test Tasks** — using a local Ollama model (`qwen2.5:14b` by default) for analysis/generation, the same Ollama server for embeddings + ChromaDB for retrieval-augmented context (RAG) over your existing codebase, user manuals, and JPA entities, and a human-in-the-loop review/clarification workflow before anything is written to ADO.
+
+> `clarify_node` and `generate_node` run at `temperature=0` with a fixed seed, so the
+> same SDD produces the same clarification questions and the same generated stories on
+> every run. Both nodes retry (with a nudged seed) on transient failures or malformed
+> JSON before giving up — see [`backend/pipeline/nodes/llm_retry.py`](backend/pipeline/nodes/llm_retry.py).
+> `ANTHROPIC_API_KEY`/`CLAUDE_MODEL` are configured in `config.py` but are not currently
+> called anywhere in the pipeline — Claude is not used by this app today.
 
 It is a two-part application:
 
@@ -33,7 +40,7 @@ It is a two-part application:
 
 1. **Ingest once** — index your User Manual PDFs and your Maven multi-module monorepo (Spring Boot services + Angular + legacy JS/jQuery) into ChromaDB. This only needs to be re-run when the source manuals/codebase change meaningfully.
 2. **Assess** — submit an SDD PDF along with a PPM number/name and system name. The pipeline extracts the SDD text, retrieves relevant context from the three ChromaDB collections, and (optionally) pauses to ask clarifying questions if it detects ambiguity in four specific categories (undefined status/error codes, missing API contracts, unspecified middleware topics, unconfirmed DB changes).
-3. **Generate** — Claude produces one User Story (with 7-section Dev Tasks and 5-section Unit Test Tasks, 1:1 mapped) per distinct feature found in the SDD, grounded in the retrieved context.
+3. **Generate** — the local model produces one User Story (with 7-section Dev Tasks and 5-section Unit Test Tasks, 1:1 mapped) per distinct feature found in the SDD, grounded in the retrieved context.
 4. **Review** (optional, `review_mode`) — a human can edit the generated stories before anything is created downstream.
 5. **Export** — depending on `OUTPUT_MODE`, the approved Epic → User Story → Dev Tasks + Unit Test Tasks hierarchy is either written to a `.docx` (`document`, default), pushed to Azure DevOps as an Epic/User Story/Task hierarchy via a local Node.js MCP server (`ado`), or pushed to a Notion database as one Epic page per story with the tasks rendered as nested blocks (`notion`) — with results (file path, work item IDs + URLs, or Notion page URLs) reported back to the UI.
 
@@ -50,7 +57,7 @@ PDFs / Codebase ───▶ │   Ingestion (one-time)  │ ───▶ Chroma
 SDD PDF ───▶ POST /api/assess ───▶  LangGraph pipeline (pipeline/graph.py)
                                   analyze ─▶ clarify ─▶ generate ─▶ review ─▶ export_document | create_ado | create_notion
                                      │           │          │          │              │             │             │
-                              extract text  ambiguity   Claude    human edit      .docx file    ADO MCP      Notion API
+                              extract text  ambiguity   local model human edit      .docx file    ADO MCP      Notion API
                               + RAG fetch    detection  generation  gate       (OUTPUT_MODE=    (Node.js,    (notion-client,
                                                                                  document,        stdio,      OUTPUT_MODE=
                                                                                  default)      OUTPUT_MODE=ado)   notion)
@@ -84,8 +91,9 @@ backend/
     runner.py                 start_job / resume_after_clarification / resume_after_review / get_job_state
     nodes/
       analyze.py              Node 1: PDF text extraction + parallel RAG retrieval
-      clarify.py               Node 2: ambiguity detection via Claude, pauses graph if needed
-      generate.py              Node 3: story/task generation via Claude
+      clarify.py               Node 2: ambiguity detection via a local Ollama model (temperature=0, fixed seed), pauses graph if needed
+      generate.py              Node 3: story/task generation via a local Ollama model (temperature=0, fixed seed)
+      llm_retry.py              Shared retry helper for clarify.py/generate.py: retries with a nudged seed on transient failures or malformed JSON
       review.py                Node 4: human review pass-through gate
       create_ado.py            Node 5 (OUTPUT_MODE=ado): creates the Epic/Story/Task hierarchy via MCP
       export_document.py       Node 5 (OUTPUT_MODE=document, default): writes the same hierarchy to a .docx
@@ -99,7 +107,7 @@ backend/
   notion_export/
     client.py                  notion-client AsyncClient wrapper: page/block creation, 100-block batching, rich_text chunking
   prompts/
-    system_prompt.py           Full Claude system prompt + JSON output schema
+    system_prompt.py           Full generate_node system prompt + JSON output schema
   config.py                   Settings loaded from environment / .env
   requirements.txt
   .env.example
@@ -122,8 +130,7 @@ frontend/storyforge-ui/
 - Python 3.11+
 - Node.js 18+ and npm (for the Angular frontend)
 - Node.js (separately) for the Azure DevOps MCP server process the backend spawns over stdio
-- [Ollama](https://ollama.com) running locally with an embedding model pulled (default: `nomic-embed-text`)
-- An Anthropic API key with access to Claude
+- [Ollama](https://ollama.com) running locally with an embedding model pulled (default: `nomic-embed-text`) and a chat model pulled for clarify/generate (default: `qwen2.5:14b`)
 - Azure DevOps organization/project + a PAT-backed MCP server binary that implements `create_epic` / `create_user_story` / `create_task` (required only when `OUTPUT_MODE=ado`)
 - A Notion account with an internal integration token and a parent page shared with that integration (required only when `OUTPUT_MODE=notion`)
 
@@ -187,10 +194,11 @@ All backend configuration is environment-variable driven (`backend/.env`, loaded
 
 | Variable | Default | Description |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | _(required)_ | Anthropic API key used by both `clarify_node` and `generate_node` |
-| `CLAUDE_MODEL` | `claude-sonnet-4-6` | Claude model id used for clarification + generation |
-| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL for embeddings |
+| `ANTHROPIC_API_KEY` | _(unused)_ | Configured but not currently called anywhere in the pipeline — `clarify_node`/`generate_node` use `OLLAMA_LLM_MODEL` instead |
+| `CLAUDE_MODEL` | `claude-sonnet-4-6` | Configured but not currently used (see `ANTHROPIC_API_KEY` above) |
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL, used for both embeddings and clarify/generate |
 | `OLLAMA_EMBED_MODEL` | `nomic-embed-text` | Embedding model name |
+| `OLLAMA_LLM_MODEL` | `qwen2.5:14b` | Chat model used by `clarify_node` and `generate_node`, both run at `temperature=0` with a fixed seed for reproducible output across runs of the same SDD |
 | `CHROMA_PERSIST_PATH` | `./chroma_db` | On-disk path for the persistent ChromaDB store |
 | `MCP_SERVER_PATH` | _(empty)_ | Path to the ADO MCP server's Node.js entry script |
 | `ADO_ORGANIZATION` | _(empty)_ | Azure DevOps organization name, passed to the MCP server |
@@ -269,7 +277,7 @@ All endpoints are served under the FastAPI app created in `backend/api/main.py`,
 
 ## Generated story JSON schema
 
-`generate_node` (see `backend/prompts/system_prompt.py` for the full prompt) asks Claude to return a JSON array, one object per distinct feature in the SDD:
+`generate_node` (see `backend/prompts/system_prompt.py` for the full prompt) asks the local model to return a JSON array, one object per distinct feature in the SDD:
 
 ```jsonc
 [
@@ -312,8 +320,8 @@ Every `dev_tasks` entry has exactly one corresponding `unit_test_tasks` entry at
 | Node | Sets `status` to | Notes |
 |---|---|---|
 | `analyze_node` | `analyzing` (or `error`) | Extracts SDD text via `pypdf`, retrieves top-10 chunks per collection in parallel |
-| `clarify_node` | `clarifying` or `generating` | Asks Claude to flag ambiguities in 4 categories; fails open (proceeds without clarification) on LLM/parse error |
-| `generate_node` | `reviewing`/`creating` (or `error`) | Generates the full story/task JSON array |
+| `clarify_node` | `clarifying` or `generating` | Asks the local model to flag ambiguities in 4 categories; retries on transient/parse failures ([`llm_retry.py`](backend/pipeline/nodes/llm_retry.py)), then fails open (proceeds without clarification) if all retries are exhausted |
+| `generate_node` | `reviewing`/`creating` (or `error`) | Generates the full story/task JSON array; retries on transient/parse failures ([`llm_retry.py`](backend/pipeline/nodes/llm_retry.py)), then sets `error` if all retries are exhausted |
 | `review_node` | `reviewing` or `creating` | Pass-through when `review_mode` is off; otherwise waits for human edits |
 | `export_document_node` | `done` (or `error`) | Default (`OUTPUT_MODE=document`): renders the approved hierarchy to a `.docx` via `python-docx`, saved to `EXPORTS_DIR/{job_id}.docx` |
 | `create_ado_node` | `done` (or `error`) | `OUTPUT_MODE=ado`: creates Epic → User Story → Tasks via the MCP client; one story failing doesn't abort the rest |

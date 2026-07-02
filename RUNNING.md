@@ -47,19 +47,21 @@ Run tests: `./mvnw test`
 
 ## usp-ai-ba (StoryForge AI — Python/FastAPI + Angular)
 
-Turns an SDD PDF into an Epic → User Story → Dev/Unit-Test Task hierarchy (Claude + RAG over ChromaDB), exported as `.docx`/ADO/Notion.
+Turns an SDD PDF into an Epic → User Story → Dev/Unit-Test Task hierarchy (local Ollama
+model + RAG over ChromaDB), exported as `.docx`/ADO/Notion.
 
-**Requirements:** Python 3.11+, Node.js 18+, Ollama (embedding model), `ANTHROPIC_API_KEY`.
+**Requirements:** Python 3.11+, Node.js 18+, Ollama running locally with both
+`nomic-embed-text` (embeddings) and `qwen2.5:14b` (clarify/generate) pulled.
 
-> **`qwen2.5:14b` is not usable here yet.** Unlike CodeMind, StoryForge's Ollama
-> integration (`OLLAMA_BASE_URL`/`OLLAMA_EMBED_MODEL`) is wired up for **embeddings
-> only** (`nomic-embed-text`, used for RAG retrieval during ingestion/assess). The
-> `clarify_node` and `generate_node` steps — the actual analysis/generation phases —
-> call Claude directly (`CLAUDE_MODEL`) with no config switch to a local chat model and
-> no fallback logic. `ANTHROPIC_API_KEY` is required for every assessment regardless of
-> Ollama settings. Making `qwen2.5:14b` drive those phases (with Claude as a fallback)
-> would need code changes to `backend/pipeline/nodes/clarify.py` and `generate.py`, not
-> just configuration.
+> **Correction from an earlier version of this doc:** StoryForge's `clarify_node` and
+> `generate_node` (the analysis/generation phases) already run entirely on
+> `OLLAMA_LLM_MODEL` (default `qwen2.5:14b`) via `ChatOllama` — this was true from the
+> very first commit in this repo, it's not something that changed recently. Claude is
+> **not** used anywhere in this pipeline; `ANTHROPIC_API_KEY`/`CLAUDE_MODEL` are
+> configured in `config.py` but never called. Both nodes now run at `temperature=0` with
+> a fixed seed, so the same SDD produces the same clarifications and the same generated
+> stories on every run, and both retry (with a nudged seed) on transient Ollama failures
+> or malformed JSON before giving up — see `backend/pipeline/nodes/llm_retry.py`.
 
 ### 1. Backend
 
@@ -68,9 +70,11 @@ cd usp-ai-ba/backend
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env        # then edit .env and fill in ANTHROPIC_API_KEY etc.
+cp .env.example .env        # ANTHROPIC_API_KEY isn't actually used by this pipeline
+                             # today (see note above) — no need to fill it in to run
 
 ollama pull nomic-embed-text
+ollama pull qwen2.5:14b
 ollama serve                # if not already running
 
 uvicorn api.main:app --reload --port 8000
@@ -100,13 +104,14 @@ Then open **http://localhost:4200** and submit an SDD PDF via the **Assess** pag
 
 ---
 
-## Unified deployment (both apps under one origin, with tabs)
+## Unified deployment (both apps under one origin)
 
-`storyforge-ui` now includes a tab bar ("AI BA" / "CodeMind") at the top of the app. The
-"CodeMind" tab embeds CodeMind's existing UI in an iframe. In production this is served
-through a single nginx gateway so both apps share one origin:
+`storyforge-ui` now includes a landing page ("/") with two cards — "CodeMind" and "AI
+Business Analyst" — that route to each app. The CodeMind card leads to a page that embeds
+CodeMind's existing UI in an iframe. In production this is served through a single nginx
+gateway so both apps share one origin:
 
-- `/` → Angular shell (StoryForge AI, tab bar, all existing pages)
+- `/` → Angular shell landing page + all StoryForge pages (`/ai-ba`, `/assess`, etc.)
 - `/api/*` → StoryForge FastAPI backend
 - `/codemind-app/*` → CodeMind (Spring Boot, running with `server.servlet.context-path=/codemind-app`)
 
@@ -117,15 +122,16 @@ export ANTHROPIC_API_KEY=sk-ant-...
 docker compose up --build
 ```
 
-Open **http://localhost/** — the AI BA tab is the existing StoryForge flow, the CodeMind
-tab embeds CodeMind's job UI. Only the `gateway` service publishes a host port (`80`);
-`codemind` and `storyforge-backend` are reachable only inside the compose network.
+Open **http://localhost/** — pick a card to enter the AI Business Analyst flow or
+CodeMind's job UI. Only the `gateway` service publishes a host port (`80`); `codemind`
+and `storyforge-backend` are reachable only inside the compose network.
 
-Ollama (used by both apps for embeddings) is expected to run on the host, not in a
-container. `OLLAMA_BASE_URL` defaults to `http://host.docker.internal:11434`, mapped via
-`extra_hosts: host-gateway` in `docker-compose.yml` so it resolves on Linux too — make
-sure `ollama serve` is running on the host before starting the compose stack if any
-Ollama-backed feature is needed.
+Ollama is expected to run on the host, not in a container. It's used by both apps for
+embeddings, and by StoryForge for `clarify_node`/`generate_node` too (`qwen2.5:14b`) —
+make sure both `nomic-embed-text` and `qwen2.5:14b` are pulled. `OLLAMA_BASE_URL`
+defaults to `http://host.docker.internal:11434`, mapped via `extra_hosts: host-gateway`
+in `docker-compose.yml` so it resolves on Linux too — make sure `ollama serve` is
+running on the host before starting the compose stack.
 
 > `docker-compose.yml`'s `codemind` service doesn't currently pass through
 > `JSPROCESSOR_OLLAMA_ENABLED`/`OLLAMA_MODEL`/`JSPROCESSOR_QA_MODEL`/`JSPROCESSOR_QA_OLLAMA_MODEL`

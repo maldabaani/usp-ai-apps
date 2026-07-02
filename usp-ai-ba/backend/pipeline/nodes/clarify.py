@@ -8,15 +8,21 @@ from langchain_ollama import ChatOllama
 
 from config import settings
 from pipeline.nodes.json_response import extract_json, extract_text
+from pipeline.nodes.llm_retry import invoke_and_parse_with_retry
 from pipeline.state import StoryForgeState
 
 logger = logging.getLogger(__name__)
+
+# temperature=0 + a fixed seed makes the same SDD produce the same
+# clarification questions on every run instead of a different set each time.
+BASE_SEED = 42
 
 _llm = ChatOllama(
     model=settings.OLLAMA_LLM_MODEL,
     base_url=settings.OLLAMA_BASE_URL,
     num_predict=2048,
-    temperature=0.3,
+    temperature=0,
+    seed=BASE_SEED,
 )
 
 CLARIFY_SYSTEM_PROMPT = """You are a senior business analyst. You will be given a Solution Design Document (SDD) along with retrieved context from the existing codebase, user manuals, and JPA entities.
@@ -78,28 +84,32 @@ def _parse_ambiguities(raw_text: str) -> list[str]:
     return []
 
 
+def _log_and_parse_ambiguities(raw_text: str) -> list[str]:
+    logger.info("clarify_node raw LLM output (first 500 chars): %s", raw_text[:500])
+    return _parse_ambiguities(raw_text)
+
+
 async def clarify_node(state: StoryForgeState) -> StoryForgeState:
     """Ask the LLM to flag in-scope ambiguities; pause the graph if any are found."""
     try:
-        response = await _llm.ainvoke(
+        ambiguities = await invoke_and_parse_with_retry(
+            _llm,
             [
                 SystemMessage(content=CLARIFY_SYSTEM_PROMPT),
                 HumanMessage(content=_build_user_message(state)),
-            ]
+            ],
+            _log_and_parse_ambiguities,
+            extract_text,
+            base_seed=BASE_SEED,
+            node_name="clarify_node",
         )
-        raw_text = extract_text(response.content)
-        logger.info("clarify_node raw LLM output (first 500 chars): %s", raw_text[:500])
-        ambiguities = _parse_ambiguities(raw_text)
     except Exception as exc:  # noqa: BLE001 - surfaced to caller via state errors
-        logger.exception("clarify_node failed; proceeding without clarification")
-        raw_for_error = locals().get("raw_text", "(response not yet captured)")
+        logger.exception("clarify_node failed after retries; proceeding without clarification")
         return {
             **state,
             "clarification_needed": False,
             "clarification_questions": [],
-            "errors": state["errors"] + [
-                f"clarify_node: {exc} | raw={raw_for_error[:200]}"
-            ],
+            "errors": state["errors"] + [f"clarify_node: {exc}"],
         }
 
     if ambiguities:

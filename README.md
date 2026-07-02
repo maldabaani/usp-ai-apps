@@ -1,16 +1,16 @@
 # USP AI Apps
 
 This repository hosts two independent AI-powered developer tools, served together as a
-single **unified platform** — one Angular shell with a tab bar, one nginx gateway, one
-origin. Each app also works completely standalone.
+single **unified platform** — one Angular shell with a landing-page app selector, one
+nginx gateway, one origin. Each app also works completely standalone.
 
 | | [CodeMind](code-mind-app/) | [StoryForge AI](usp-ai-ba/) |
 |---|---|---|
 | Purpose | Reverse-engineers business logic out of an existing codebase | Forward-generates a full Azure DevOps work item hierarchy from a design doc |
 | Stack | Java 17, Spring Boot 3.5.0, Spring AI, Thymeleaf | Python/FastAPI + LangGraph backend, Angular 17+ SPA frontend |
-| Model | Claude (+ optional local Ollama agent) | Claude (analysis/generation) + Ollama (RAG embeddings only) |
+| Model | Claude (+ optional local Ollama agent) | Local Ollama model (`qwen2.5:14b`, deterministic — `temperature=0` + fixed seed) for analysis/generation and RAG embeddings; `ANTHROPIC_API_KEY`/Claude are configured but unused |
 | Standalone port | `8085` | backend `8000` / frontend `4200` |
-| Tab in unified shell | "CodeMind" (embedded via iframe) | "AI BA" (native) |
+| Landing page card | "CodeMind" (embedded via iframe) | "AI Business Analyst" (native) |
 
 ## Quick start (unified platform)
 
@@ -76,9 +76,11 @@ Full details, configuration reference, and the complete API/REST table:
 
 Turns a Solution Design Document (SDD) PDF into a fully-detailed, ready-to-create Azure
 DevOps work item hierarchy — **Epic → User Story → Dev Tasks + Unit Test Tasks** — using
-Claude for analysis/generation, RAG over your codebase/user manuals/JPA entities
-(ChromaDB + Ollama embeddings), and a human-in-the-loop review/clarification workflow
-before anything is written downstream.
+a local Ollama model (`qwen2.5:14b`) for analysis/generation, RAG over your
+codebase/user manuals/JPA entities (ChromaDB + Ollama embeddings), and a human-in-the-loop
+review/clarification workflow before anything is written downstream. Analysis/generation
+run at `temperature=0` with a fixed seed, so the same SDD produces the same output on
+every run, with automatic retry (nudged seed) on transient failures or malformed JSON.
 
 **Pipeline** (LangGraph state machine, checkpointed per job): `analyze → clarify →
 generate → review → export_document | create_ado | create_notion`. The graph interrupts
@@ -116,7 +118,9 @@ RUNNING.md              How to run each app standalone, the unified platform, an
 
 ## Notes
 
-- Both apps require `ANTHROPIC_API_KEY`; Claude is not optional in either today (see
-  [RUNNING.md](RUNNING.md) for exactly which phases can currently offload to a local
-  Ollama model, and which can't).
+- CodeMind requires `ANTHROPIC_API_KEY` — Claude is genuinely used there (round-robin
+  with an optional local agent, always for BATCH mode). StoryForge AI's `clarify_node`/
+  `generate_node` run entirely on a local Ollama model instead; `ANTHROPIC_API_KEY` is
+  configured in `config.py` but not currently called anywhere in that pipeline. See
+  [RUNNING.md](RUNNING.md) for the full breakdown per phase.
 - Ollama is expected to run on the host, not in a container, for both apps.

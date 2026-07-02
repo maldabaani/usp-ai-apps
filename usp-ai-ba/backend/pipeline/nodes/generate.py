@@ -1,4 +1,4 @@
-"""Node 3: generate User Stories, Dev Tasks, and Unit Test Tasks via Claude Sonnet."""
+"""Node 3: generate User Stories, Dev Tasks, and Unit Test Tasks via a local Ollama model."""
 from __future__ import annotations
 
 import logging
@@ -8,6 +8,7 @@ from langchain_ollama import ChatOllama
 
 from config import settings
 from pipeline.nodes.json_response import extract_json, extract_text
+from pipeline.nodes.llm_retry import invoke_and_parse_with_retry
 from pipeline.state import StoryForgeState
 from prompts.system_prompt import SYSTEM_PROMPT as PRODUCTION_SYSTEM_PROMPT
 from prompts.system_prompt_selftest import SYSTEM_PROMPT as SELFTEST_SYSTEM_PROMPT
@@ -15,6 +16,10 @@ from prompts.system_prompt_selftest import SYSTEM_PROMPT as SELFTEST_SYSTEM_PROM
 logger = logging.getLogger(__name__)
 
 MAX_OUTPUT_TOKENS = 8192
+
+# temperature=0 + a fixed seed makes the same SDD produce the same epics/
+# stories on every run instead of a different set each time.
+BASE_SEED = 42
 
 SYSTEM_PROMPT = (
     SELFTEST_SYSTEM_PROMPT if settings.PROMPT_VARIANT == "selftest" else PRODUCTION_SYSTEM_PROMPT
@@ -24,6 +29,8 @@ _llm = ChatOllama(
     model=settings.OLLAMA_LLM_MODEL,
     base_url=settings.OLLAMA_BASE_URL,
     num_predict=MAX_OUTPUT_TOKENS,
+    temperature=0,
+    seed=BASE_SEED,
 )
 
 
@@ -78,7 +85,7 @@ def _parse_stories(raw_text: str) -> list[dict]:
         if not isinstance(item, dict):
             logger.warning("Skipping non-dict story item: %r", item)
             continue
-        # Normalise common alternate key names from non-Claude models
+        # Normalise common alternate key names the local model sometimes uses
         if "title" in item and "epic_title" not in item:
             item["epic_title"] = item.pop("title")
         if "story" in item and "user_story" not in item:
@@ -93,20 +100,27 @@ def _parse_stories(raw_text: str) -> list[dict]:
     return stories
 
 
+def _log_and_parse_stories(raw_text: str) -> list[dict]:
+    logger.info("generate_node raw LLM output (first 500 chars): %s", raw_text[:500])
+    return _parse_stories(raw_text)
+
+
 async def generate_node(state: StoryForgeState) -> StoryForgeState:
     """Send the SDD + RAG context + clarification answers to the LLM and parse stories."""
     try:
-        response = await _llm.ainvoke(
+        stories = await invoke_and_parse_with_retry(
+            _llm,
             [
                 SystemMessage(content=SYSTEM_PROMPT),
                 HumanMessage(content=_build_user_message(state)),
-            ]
+            ],
+            _log_and_parse_stories,
+            extract_text,
+            base_seed=BASE_SEED,
+            node_name="generate_node",
         )
-        raw_text = extract_text(response.content)
-        logger.info("generate_node raw LLM output (first 500 chars): %s", raw_text[:500])
-        stories = _parse_stories(raw_text)
     except Exception as exc:  # noqa: BLE001 - surfaced to caller via state errors
-        logger.exception("generate_node failed")
+        logger.exception("generate_node failed after retries")
         return {
             **state,
             "errors": state["errors"] + [f"generate_node: {exc}"],

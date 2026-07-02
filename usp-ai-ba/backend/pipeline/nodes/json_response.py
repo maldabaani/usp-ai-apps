@@ -1,4 +1,4 @@
-"""Shared helpers for parsing Claude's text/JSON responses across pipeline nodes."""
+"""Shared helpers for parsing the local LLM's text/JSON responses across pipeline nodes."""
 from __future__ import annotations
 
 import json
@@ -7,7 +7,7 @@ from json_repair import repair_json
 
 
 def extract_text(content) -> str:
-    """Flatten an Anthropic message's content (str or content-block list) into plain text."""
+    """Flatten a chat message's content (str or content-block list) into plain text."""
     if isinstance(content, str):
         return content
     return "".join(
@@ -23,7 +23,7 @@ def extract_json(raw_text: str):
     the model appends after the JSON despite being told to respond with only
     JSON. A plain json.loads() rejects that trailing text as "Extra data".
 
-    If the JSON itself is malformed (e.g. Claude writes an unescaped quote
+    If the JSON itself is malformed (e.g. the model writes an unescaped quote
     inside a string value, like `the "status" field`), falls back to
     json_repair, which specifically targets this class of LLM JSON mistakes.
     """
