@@ -1,0 +1,22 @@
+# macOS
+.DS_Store
+
+# code-mind-app (Java/Maven)
+code-mind-app/target/
+code-mind-app/output/
+code-mind-app/watch-input/
+
+# usp-ai-ba backend (Python)
+usp-ai-ba/backend/venv/
+usp-ai-ba/backend/__pycache__/
+**/__pycache__/
+*.pyc
+usp-ai-ba/backend/.env
+usp-ai-ba/backend/chroma_db/
+usp-ai-ba/backend/jobs/
+usp-ai-ba/backend/uploads/
+usp-ai-ba/backend/exports/
+
+# usp-ai-ba frontend (Angular)
+usp-ai-ba/frontend/storyforge-ui/node_modules/
+usp-ai-ba/frontend/storyforge-ui/dist/
