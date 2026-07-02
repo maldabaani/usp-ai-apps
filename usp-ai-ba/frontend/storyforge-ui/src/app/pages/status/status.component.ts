@@ -24,7 +24,7 @@ interface StepDef {
 const STEP_DEFS: StepDef[] = [
   { key: 'analyzing',  label: 'Analyzing Document',      activeDesc: 'Reading and parsing your solution design document…' },
   { key: 'clarifying', label: 'Checking Clarifications', activeDesc: 'Identifying ambiguities before generating stories…' },
-  { key: 'generating', label: 'Generating Stories',       activeDesc: 'Claude is writing user stories and tasks…' },
+  { key: 'generating', label: 'Generating Stories',       activeDesc: 'Our AI LLM is writing user stories and tasks…' },
   { key: 'reviewing',  label: 'Awaiting Review',          activeDesc: 'Waiting for your approval of the generated stories…' },
   { key: 'creating',   label: 'Creating Tasks',           activeDesc: 'Pushing approved tasks to your workspace…' },
   { key: 'done',       label: 'Complete',                 activeDesc: '' },
