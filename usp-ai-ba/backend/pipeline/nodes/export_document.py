@@ -14,6 +14,7 @@ from docx import Document
 from docx.shared import Pt
 
 from config import settings
+from pipeline.nodes.naming import build_epic_title
 from pipeline.state import StoryForgeState
 
 logger = logging.getLogger(__name__)
@@ -50,8 +51,8 @@ def _add_dict_or_list(document: Document, value) -> None:
         document.add_paragraph(str(value))
 
 
-def _add_story(document: Document, story: dict) -> None:
-    document.add_heading(story.get("epic_title", "Untitled Epic"), level=1)
+def _add_story(document: Document, story: dict, epic_title: str) -> None:
+    document.add_heading(epic_title, level=1)
 
     document.add_heading("User Story", level=2)
     document.add_paragraph(story.get("user_story", ""))
@@ -119,8 +120,11 @@ async def export_document_node(state: StoryForgeState) -> StoryForgeState:
             f"{state['system_name']} | {state['ppm_number']} | {state['ppm_name']}", level=0
         )
 
+        epic_title = build_epic_title(
+            state["ppm_number"], state["ppm_name"], state["system_name"]
+        )
         for story in state["approved_stories"]:
-            _add_story(document, story)
+            _add_story(document, story, epic_title)
 
         os.makedirs(settings.EXPORTS_DIR, exist_ok=True)
         base_name = "_".join(

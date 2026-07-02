@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 
 from ado_mcp.ado_client import get_ado_mcp_client
+from pipeline.nodes.naming import build_epic_title
 from pipeline.state import StoryForgeState
 
 logger = logging.getLogger(__name__)
@@ -82,11 +83,12 @@ async def create_ado_node(state: StoryForgeState) -> StoryForgeState:
     system_name = state["system_name"]
     ppm_number = state["ppm_number"]
     ppm_name = state["ppm_name"]
+    epic_title = build_epic_title(ppm_number, ppm_name, system_name)
 
     for story in state["approved_stories"]:
         try:
             epic = await client.create_epic(
-                title=story.get("epic_title", _story_title(system_name, ppm_number, ppm_name)),
+                title=epic_title,
                 description=_story_description(story),
                 tags=_join_tags(system_name, "USP-Project"),
             )
