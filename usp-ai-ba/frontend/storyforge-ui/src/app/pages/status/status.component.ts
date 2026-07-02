@@ -52,6 +52,8 @@ export class StatusComponent implements OnInit, OnDestroy {
   retryError = '';
   recreating = false;
   recreateError = '';
+  updating = false;
+  updateError = '';
 
   readonly stepDefs = STEP_DEFS;
   readonly ragSections: { key: keyof RetrievedContext; label: string }[] = [
@@ -122,6 +124,7 @@ export class StatusComponent implements OnInit, OnDestroy {
           }
           this.retrying = false;
           this.recreating = false;
+          this.updating = false;
           this.stopPolling();
         }
       },
@@ -209,6 +212,38 @@ export class StatusComponent implements OnInit, OnDestroy {
       error: (err) => {
         this.recreating = false;
         this.recreateError = err?.error?.detail || 'Re-create failed.';
+      },
+    });
+  }
+
+  get canUpdate(): boolean {
+    if (!this.state || this.state.status !== 'done') return false;
+    return this.state.output_mode === 'notion';
+  }
+
+  updateTasks(): void {
+    if (!this.jobId || this.updating || !this.state) return;
+    if (!confirm('Update tasks in Notion? This will overwrite the existing pages\' content in place.')) {
+      return;
+    }
+
+    this.updating = true;
+    this.updateError = '';
+
+    this.storyForgeService.updateTasks(this.jobId).subscribe({
+      next: () => {
+        // updating stays true -- poll() clears it once it observes the
+        // job actually reach done/error (see pendingAction above).
+        this.pendingAction = true;
+        this.redirected = false;
+        this.poll();
+        if (!this.pollHandle) {
+          this.pollHandle = setInterval(() => this.poll(), POLL_INTERVAL_MS);
+        }
+      },
+      error: (err) => {
+        this.updating = false;
+        this.updateError = err?.error?.detail || 'Update failed.';
       },
     });
   }

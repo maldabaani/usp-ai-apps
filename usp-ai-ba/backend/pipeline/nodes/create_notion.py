@@ -135,14 +135,29 @@ def _unit_test_blocks(task: dict) -> list[dict]:
 
 
 async def create_notion_node(state: StoryForgeState) -> StoryForgeState:
-    """Create one Notion page per dev task and unit test task."""
+    """Create one Notion page per dev task and unit test task -- or, when
+    state["notion_update_mode"] is set (by pipeline/runner.py's
+    update_tasks()), update the job's existing pages in place instead.
+
+    Update mode matches old to new by position: the task at flattened index
+    i (dev tasks then unit tests, per story, same order this function always
+    iterates in) updates state["notion_results"][i] if that index exists,
+    otherwise (more new tasks than old) it's created fresh. Any old entries
+    left over beyond the new count (fewer new tasks than old) are archived.
+    notion_update_mode is always cleared before returning -- it's a one-shot
+    flag for the single recreate/update action that set it, not a persistent
+    job setting.
+    """
+    update_mode = bool(state.get("notion_update_mode"))
     logger.info(
-        "create_notion_node: job=%s stories=%d",
+        "create_notion_node: job=%s stories=%d mode=%s",
         state.get("job_id"),
         len(state.get("approved_stories", [])),
+        "update" if update_mode else "create",
     )
     notion_results: list[dict] = []
     new_errors: list[str] = []
+    new_warnings: list[str] = []
 
     try:
         client = get_notion_export_client()
@@ -153,12 +168,24 @@ async def create_notion_node(state: StoryForgeState) -> StoryForgeState:
             "notion_results": [],
             "errors": state["errors"] + [f"create_notion_node: client init failed: {exc}"],
             "status": "error",
+            "notion_update_mode": False,
         }
 
     ppm_number = state["ppm_number"]
     ppm_name = state["ppm_name"]
     system_name = state["system_name"]
     epic_name = build_epic_title(ppm_number, ppm_name, system_name)
+    old_results = state.get("notion_results") or [] if update_mode else []
+
+    async def _create_or_update(task_title: str, properties: dict, blocks: list[dict]) -> dict:
+        flat_index = len(notion_results)
+        if update_mode and flat_index < len(old_results):
+            old_page_id = old_results[flat_index]["page_id"]
+            updated = await client.update_page(old_page_id, properties, blocks)
+            if updated is not None:
+                return updated
+            logger.info("Old Notion page %s is gone -- creating fresh instead", old_page_id)
+        return await client.create_epic_page(properties, blocks)
 
     for story in state["approved_stories"]:
         epic_title = story.get("epic_title", "Untitled Epic")
@@ -170,11 +197,11 @@ async def create_notion_node(state: StoryForgeState) -> StoryForgeState:
             try:
                 properties = _task_properties(task_title)
                 blocks = context + _dev_task_blocks(dev_task)
-                created = await client.create_epic_page(properties, blocks)
+                created = await _create_or_update(task_title, properties, blocks)
                 notion_results.append(
                     {"task_title": task_title, "page_id": created["id"], "page_url": created["url"]}
                 )
-                logger.info("Created Notion task: %s", task_title)
+                logger.info("%s Notion task: %s", "Updated" if update_mode else "Created", task_title)
             except Exception as exc:  # noqa: BLE001
                 logger.exception("Failed to create Notion page for dev task %s", task_title)
                 new_errors.append(f"create_notion_node: {task_title}: {exc}")
@@ -184,18 +211,29 @@ async def create_notion_node(state: StoryForgeState) -> StoryForgeState:
             try:
                 properties = _task_properties(task_title)
                 blocks = context + _unit_test_blocks(unit_test)
-                created = await client.create_epic_page(properties, blocks)
+                created = await _create_or_update(task_title, properties, blocks)
                 notion_results.append(
                     {"task_title": task_title, "page_id": created["id"], "page_url": created["url"]}
                 )
-                logger.info("Created Notion task: %s", task_title)
+                logger.info("%s Notion task: %s", "Updated" if update_mode else "Created", task_title)
             except Exception as exc:  # noqa: BLE001
                 logger.exception("Failed to create Notion page for unit test %s", task_title)
                 new_errors.append(f"create_notion_node: {task_title}: {exc}")
+
+    # Fewer new tasks than old: archive the leftover old pages that no longer
+    # correspond to anything (position-matched, so these are the tail end).
+    for leftover in old_results[len(notion_results):]:
+        try:
+            await client.archive_page(leftover["page_id"])
+        except Exception as exc:  # noqa: BLE001 - one page failing to archive shouldn't block the rest
+            logger.exception("Failed to archive leftover Notion page %s", leftover.get("page_id"))
+            new_warnings.append(f"Could not archive old Notion page {leftover.get('page_id')}: {exc}")
 
     return {
         **state,
         "notion_results": notion_results,
         "errors": state["errors"] + new_errors,
+        "warnings": (state.get("warnings") or []) + new_warnings,
         "status": "done" if not new_errors else "error",
+        "notion_update_mode": False,
     }

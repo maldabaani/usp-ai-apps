@@ -13,11 +13,13 @@ from api.job_registry import list_assess_jobs, register_assess_job
 from config import settings
 from pipeline.runner import (
     RECREATABLE_OUTPUT_MODES,
+    UPDATABLE_OUTPUT_MODES,
     get_job_state,
     identify_retryable_failure,
     recreate_tasks,
     retry_failed_step,
     start_job,
+    update_tasks,
 )
 from pipeline.state import StoryForgeState, new_state, resolve_output_mode
 
@@ -178,6 +180,36 @@ async def recreate_assessment_tasks(
 
     background_tasks.add_task(_run_recreate, job_id)
     return {"status": "recreating"}
+
+
+async def _run_update(job_id: str) -> None:
+    try:
+        await update_tasks(job_id)
+        logger.info("Update job=%s completed", job_id)
+    except Exception:
+        logger.exception("Update job=%s crashed — job is stuck", job_id)
+
+
+@router.post("/update/{job_id}")
+async def update_assessment_tasks(
+    job_id: str, background_tasks: BackgroundTasks, user: dict = Depends(require_auth)
+):
+    """Update a completed job's existing Notion pages in place (position-
+    matched against its approved stories/tasks) instead of archiving and
+    recreating them. Notion only -- see pipeline/runner.py's update_tasks."""
+    state = await get_job_state(job_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if state.get("status") != "done":
+        raise HTTPException(status_code=409, detail="Job must be complete before tasks can be updated")
+    if resolve_output_mode(state, settings.OUTPUT_MODE) not in UPDATABLE_OUTPUT_MODES:
+        raise HTTPException(
+            status_code=409,
+            detail="Updating tasks in place is only available for the Notion output mode",
+        )
+
+    background_tasks.add_task(_run_update, job_id)
+    return {"status": "updating"}
 
 
 @router.get("/jobs")

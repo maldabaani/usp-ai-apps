@@ -107,9 +107,14 @@
     </div>
   </div>
 
-  <!-- Re-create tasks -->
-  <div class="sf-card sf-recreate-card" *ngIf="canRecreate">
-    <button class="sf-btn sf-btn-secondary" (click)="recreateTasks()" [disabled]="recreating">
+  <!-- Re-create / update tasks -->
+  <div class="sf-card sf-recreate-card" *ngIf="canRecreate || canUpdate">
+    <button *ngIf="canUpdate" class="sf-btn sf-btn-secondary" (click)="updateTasks()" [disabled]="updating">
+      {{ updating ? 'Updating…' : 'Update tasks in Notion' }}
+    </button>
+    <p class="sf-error-text" *ngIf="updateError">{{ updateError }}</p>
+
+    <button *ngIf="canRecreate" class="sf-btn sf-btn-secondary" (click)="recreateTasks()" [disabled]="recreating">
       {{ recreating ? 'Re-creating…' : 'Re-create tasks in ' + (state?.output_mode === 'notion' ? 'Notion' : 'ADO') }}
     </button>
     <p class="sf-error-text" *ngIf="recreateError">{{ recreateError }}</p>

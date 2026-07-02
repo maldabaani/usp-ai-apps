@@ -45,6 +45,13 @@ class StoryForgeState(TypedDict):
     # Notion results (used when output_mode == "notion")
     notion_results: list[dict]  # [{epic_title, page_id, page_url}]
 
+    # One-shot flag: set by pipeline/runner.py's update_tasks() right before
+    # rewinding to re-run create_notion_node, so that node updates the job's
+    # existing Notion pages in place (position-matched against notion_results)
+    # instead of creating fresh ones. create_notion_node always clears this
+    # back to False in its own return -- it's never a persistent job setting.
+    notion_update_mode: bool
+
     errors: list[str]
     # Non-fatal issues that don't affect job status -- e.g. recreate_tasks()
     # failing to archive an old Notion page. Older checkpoints predating this
@@ -82,6 +89,7 @@ def new_state(
         ado_results=[],
         document_path="",
         notion_results=[],
+        notion_update_mode=False,
         errors=[],
         warnings=[],
         status="analyzing",

@@ -20,6 +20,7 @@ from pipeline.graph import (
 from pipeline.state import StoryForgeState, resolve_output_mode
 
 RECREATABLE_OUTPUT_MODES = ("ado", "notion")
+UPDATABLE_OUTPUT_MODES = ("notion",)
 
 logger = logging.getLogger(__name__)
 
@@ -210,5 +211,41 @@ async def recreate_tasks(job_id: str) -> StoryForgeState:
 
     await graph.aupdate_state(
         config, {"status": "creating", "errors": [], "warnings": archive_warnings}, as_node=NODE_REVIEW
+    )
+    return await _drive(job_id)
+
+
+async def update_tasks(job_id: str) -> StoryForgeState:
+    """Push a completed job's approved stories to Notion again, updating its
+    existing pages in place (position-matched) instead of creating fresh
+    ones or archiving first. Notion only -- ADO has no update/delete
+    capability available to this codebase (same gap as recreate_tasks).
+
+    Reuses the same checkpoint-rewind mechanism as recreate_tasks/
+    retry_failed_step: rewind to NODE_REVIEW so the interrupt before
+    create_notion_node fires again, with notion_update_mode set so that node
+    updates in place this time instead of creating fresh (see its own
+    docstring for the position-matching rules).
+    """
+    graph = await get_graph()
+    config = _config(job_id)
+    snapshot = await graph.aget_state(config)
+    state = snapshot.values
+    if not state:
+        raise ValueError(f"No job found for job_id={job_id}")
+    if state.get("status") != "done":
+        raise ValueError(f"Job {job_id} is not done (status={state.get('status')!r})")
+
+    output_mode = resolve_output_mode(state, settings.OUTPUT_MODE)
+    if output_mode not in UPDATABLE_OUTPUT_MODES:
+        raise ValueError(
+            f"Job {job_id}'s output mode ({output_mode!r}) doesn't support updating tasks in place "
+            f"-- only {UPDATABLE_OUTPUT_MODES} do"
+        )
+
+    await graph.aupdate_state(
+        config,
+        {"status": "creating", "errors": [], "notion_update_mode": True},
+        as_node=NODE_REVIEW,
     )
     return await _drive(job_id)

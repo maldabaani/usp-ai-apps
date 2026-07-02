@@ -100,6 +100,40 @@ class NotionExportClient:
 
         return {"id": page["id"], "url": page.get("url", "")}
 
+    async def update_page(self, page_id: str, properties: dict, blocks: list[dict]) -> dict | None:
+        """Update an existing page in place: replace its properties and, via
+        erase_content=True, wipe its entire existing body content in one
+        call -- then append the fresh blocks the same way create_epic_page
+        does (pages.update, unlike pages.create, has no way to attach
+        children in the same request, so every batch goes through
+        blocks.children.append).
+
+        Used by pipeline/runner.py's update_tasks() to update a job's
+        existing Notion pages instead of archiving and recreating them.
+        Returns None (not an error) if the page is gone or already
+        archived, since there's nothing left to update -- same
+        not-found/already-archived swallowing as archive_page;
+        pipeline/nodes/create_notion.py falls back to creating a fresh page
+        in that case.
+        """
+        try:
+            page = await self._client.pages.update(
+                page_id=page_id, properties=properties, erase_content=True
+            )
+        except APIResponseError as exc:
+            if exc.code == APIErrorCode.ObjectNotFound:
+                return None
+            if exc.code == APIErrorCode.ValidationError and "archived" in str(exc).lower():
+                return None
+            raise
+
+        for batch in chunk_blocks(blocks):
+            if not batch:
+                continue
+            await self._client.blocks.children.append(block_id=page["id"], children=batch)
+
+        return {"id": page["id"], "url": page.get("url", "")}
+
     async def archive_page(self, page_id: str) -> None:
         """Archive (soft-delete, moves to Trash) a previously-created page --
         used by pipeline/runner.py's recreate_tasks() to clear out a job's old
