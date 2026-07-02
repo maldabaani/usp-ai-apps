@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 
+from config import settings
 from notion_export.client import get_notion_export_client
 from pipeline.graph import (
     NODE_CLARIFY,
@@ -16,7 +17,7 @@ from pipeline.graph import (
     NODE_REVIEW,
     get_graph,
 )
-from pipeline.state import StoryForgeState
+from pipeline.state import StoryForgeState, resolve_output_mode
 
 RECREATABLE_OUTPUT_MODES = ("ado", "notion")
 
@@ -189,7 +190,7 @@ async def recreate_tasks(job_id: str) -> StoryForgeState:
     if state.get("status") != "done":
         raise ValueError(f"Job {job_id} is not done (status={state.get('status')!r})")
 
-    output_mode = state.get("output_mode")
+    output_mode = resolve_output_mode(state, settings.OUTPUT_MODE)
     if output_mode not in RECREATABLE_OUTPUT_MODES:
         raise ValueError(
             f"Job {job_id}'s output mode ({output_mode!r}) doesn't support re-creating tasks "

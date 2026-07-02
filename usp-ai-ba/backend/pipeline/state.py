@@ -81,3 +81,21 @@ def new_state(
         errors=[],
         status="analyzing",
     )
+
+
+def resolve_output_mode(state: StoryForgeState, default: str) -> str:
+    """Best-effort output_mode for a job, including ones created before that
+    field existed (their persisted checkpoint simply won't have the key).
+    Since only one output path ever actually runs for a given job, a
+    non-empty notion_results/ado_results is a reliable signal of which one it
+    was, even without the field; falls back to the current global default
+    for a job with neither (e.g. document mode, or one that failed before
+    creating anything)."""
+    mode = state.get("output_mode")
+    if mode:
+        return mode
+    if state.get("notion_results"):
+        return "notion"
+    if state.get("ado_results"):
+        return "ado"
+    return default

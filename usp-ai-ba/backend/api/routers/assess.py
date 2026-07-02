@@ -18,7 +18,7 @@ from pipeline.runner import (
     retry_failed_step,
     start_job,
 )
-from pipeline.state import StoryForgeState, new_state
+from pipeline.state import StoryForgeState, new_state, resolve_output_mode
 
 logger = logging.getLogger(__name__)
 
@@ -162,7 +162,7 @@ async def recreate_assessment_tasks(job_id: str, background_tasks: BackgroundTas
         raise HTTPException(status_code=404, detail="Job not found")
     if state.get("status") != "done":
         raise HTTPException(status_code=409, detail="Job must be complete before tasks can be re-created")
-    if state.get("output_mode") not in RECREATABLE_OUTPUT_MODES:
+    if resolve_output_mode(state, settings.OUTPUT_MODE) not in RECREATABLE_OUTPUT_MODES:
         raise HTTPException(
             status_code=409,
             detail="Re-create is only available for Notion or ADO output modes",
@@ -195,4 +195,7 @@ async def get_assessment_status(job_id: str):
     state = await get_job_state(job_id)
     if state is None:
         raise HTTPException(status_code=404, detail="Job not found")
-    return state
+    # Jobs created before output_mode existed won't have it in their
+    # persisted state; resolve it (from which results are actually
+    # populated) so the UI's "Re-create tasks" button still knows what to show.
+    return {**state, "output_mode": resolve_output_mode(state, settings.OUTPUT_MODE)}
