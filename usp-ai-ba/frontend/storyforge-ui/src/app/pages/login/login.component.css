@@ -1,0 +1,32 @@
+.sf-login-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 100vh;
+}
+
+.sf-login-card {
+  width: 320px;
+}
+
+.sf-login-title {
+  margin: 0 0 4px;
+  font-size: 20px;
+}
+
+.sf-login-sub {
+  margin: 0 0 20px;
+  color: var(--sf-text);
+  opacity: 0.7;
+  font-size: 14px;
+}
+
+.sf-login-btn {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.sf-error-text {
+  color: var(--sf-error);
+}

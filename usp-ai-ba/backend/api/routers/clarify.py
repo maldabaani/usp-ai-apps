@@ -1,9 +1,10 @@
 """Clarification answer endpoint: resumes a job paused at the clarify gate."""
 from __future__ import annotations
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 
+from api.deps import require_auth
 from pipeline.runner import get_job_state, resume_after_clarification
 
 router = APIRouter(prefix="/clarify", tags=["clarify"])
@@ -15,7 +16,10 @@ class ClarifyAnswerRequest(BaseModel):
 
 @router.post("/answer/{job_id}")
 async def submit_clarification_answers(
-    job_id: str, request: ClarifyAnswerRequest, background_tasks: BackgroundTasks
+    job_id: str,
+    request: ClarifyAnswerRequest,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(require_auth),
 ):
     state = await get_job_state(job_id)
     if state is None:

@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 
+from api.deps import require_auth
 from api.ingest_jobs import fail_job, finish_job, get_ingest_job, register_job, update_progress
 from ingestion.ingest_code import ingest_code
 from ingestion.ingest_pdfs import ingest_pdfs
@@ -44,7 +45,9 @@ async def _run_code_ingestion(job_id: str, repo_path: str) -> None:
 
 
 @router.post("/pdfs")
-async def ingest_pdfs_endpoint(request: IngestPdfsRequest, background_tasks: BackgroundTasks):
+async def ingest_pdfs_endpoint(
+    request: IngestPdfsRequest, background_tasks: BackgroundTasks, user: dict = Depends(require_auth)
+):
     job_id = str(uuid.uuid4())
     register_job(job_id, kind="pdfs")
     background_tasks.add_task(_run_pdf_ingestion, job_id, request.folder_path)
@@ -52,7 +55,9 @@ async def ingest_pdfs_endpoint(request: IngestPdfsRequest, background_tasks: Bac
 
 
 @router.post("/code")
-async def ingest_code_endpoint(request: IngestCodeRequest, background_tasks: BackgroundTasks):
+async def ingest_code_endpoint(
+    request: IngestCodeRequest, background_tasks: BackgroundTasks, user: dict = Depends(require_auth)
+):
     job_id = str(uuid.uuid4())
     register_job(job_id, kind="code")
     background_tasks.add_task(_run_code_ingestion, job_id, request.repo_path)
@@ -60,7 +65,7 @@ async def ingest_code_endpoint(request: IngestCodeRequest, background_tasks: Bac
 
 
 @router.get("/status/{job_id}")
-async def ingest_status_endpoint(job_id: str):
+async def ingest_status_endpoint(job_id: str, user: dict = Depends(require_auth)):
     job = get_ingest_job(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Ingestion job not found")

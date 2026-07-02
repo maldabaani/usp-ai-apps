@@ -7,8 +7,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routers import ado, assess, clarify, export, ingest, review
+from api.routers import ado, assess, auth, clarify, export, ingest, review
 from api.routers import settings as settings_router
+from api.user_store import ensure_default_admin
 from config import settings
 from pipeline.graph import close_graph, get_graph
 
@@ -19,6 +20,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("StoryForge AI backend starting up")
+    ensure_default_admin()
     await get_graph()  # open the persistent checkpoint DB now, not on first request
     yield
     await close_graph()
@@ -36,6 +38,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    app.include_router(auth.router, prefix="/api")
     app.include_router(ingest.router, prefix="/api")
     app.include_router(assess.router, prefix="/api")
     app.include_router(clarify.router, prefix="/api")

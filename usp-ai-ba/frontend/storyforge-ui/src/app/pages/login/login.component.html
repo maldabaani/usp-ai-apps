@@ -1,0 +1,36 @@
+<div class="sf-login-page">
+  <div class="sf-card sf-login-card">
+    <h1 class="sf-login-title">AI powered Apps</h1>
+    <p class="sf-login-sub">Log in to continue</p>
+
+    <div class="sf-field">
+      <label for="username">Username</label>
+      <input
+        id="username"
+        class="sf-input"
+        type="text"
+        [(ngModel)]="username"
+        (keyup.enter)="login()"
+        autocomplete="username"
+      />
+    </div>
+
+    <div class="sf-field">
+      <label for="password">Password</label>
+      <input
+        id="password"
+        class="sf-input"
+        type="password"
+        [(ngModel)]="password"
+        (keyup.enter)="login()"
+        autocomplete="current-password"
+      />
+    </div>
+
+    <p *ngIf="loginError" class="sf-error-text">{{ loginError }}</p>
+
+    <button class="sf-btn sf-login-btn" [disabled]="!canSubmit" (click)="login()">
+      {{ submitting ? 'Logging in...' : 'Log In' }}
+    </button>
+  </div>
+</div>

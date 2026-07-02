@@ -17,3 +17,5 @@ json-repair
 python-multipart
 httpx
 python-dotenv
+pyjwt
+bcrypt

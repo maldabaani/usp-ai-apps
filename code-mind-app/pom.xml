@@ -79,6 +79,29 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- Verifies (never issues) the JWT that StoryForge's FastAPI backend
+             issues on login. Both apps share the same JWT_SECRET so a single
+             login covers the whole umbrella app. No spring-boot-starter-security
+             needed: CodeMind has no login UI of its own, just a request filter
+             checking a shared-secret signature. -->
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+            <version>0.12.6</version>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+            <version>0.12.6</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+            <version>0.12.6</version>
+            <scope>runtime</scope>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>

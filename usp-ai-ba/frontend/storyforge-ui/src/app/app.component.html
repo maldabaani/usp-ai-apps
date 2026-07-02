@@ -1,7 +1,9 @@
 <header class="sf-header">
   <a routerLink="/" class="sf-brand">AI powered Apps</a>
-  <nav class="sf-header-nav">
+  <nav class="sf-header-nav" *ngIf="isAuthenticated">
     <a routerLink="/settings" routerLinkActive="sf-nav-active" class="sf-nav-link">Settings</a>
+    <span class="sf-nav-username">{{ username }}</span>
+    <a class="sf-nav-link" (click)="logout()">Logout</a>
   </nav>
 </header>
 

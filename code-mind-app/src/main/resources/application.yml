@@ -24,6 +24,15 @@ spring:
 server:
   port: ${SERVER_PORT:8085}
 
+# JWT_SECRET must match the same value StoryForge's FastAPI backend uses
+# (backend/config.py's JWT_SECRET) -- CodeMind never issues its own tokens,
+# only verifies the ones StoryForge's login endpoint issues, so a single
+# login covers both apps. CORS_ORIGINS allows the Angular shell's origin to
+# call this API directly (e.g. for the /settings screen).
+security:
+  jwt-secret: ${JWT_SECRET:}
+  cors-origins: ${CORS_ORIGINS:http://localhost:4200}
+
 jsprocessor:
   default-output-directory: ./output
   included-extensions: .js,.jsx,.mjs,.cjs,.ts,.tsx,.py,.pyw,.java,.kt,.kts,.go,.cs,.rb,.rs,.php

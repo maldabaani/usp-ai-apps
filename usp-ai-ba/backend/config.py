@@ -1,11 +1,15 @@
 """Central configuration for StoryForge AI, loaded from environment variables / .env."""
 from __future__ import annotations
 
+import logging
 import os
+import secrets
 from functools import lru_cache
 from pathlib import Path
 
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 # Load backend/.env specifically, not whatever load_dotenv()'s default
 # upward search from the current working directory happens to find first.
@@ -18,6 +22,28 @@ load_dotenv(Path(__file__).resolve().parent / ".env")
 
 def _split_origins(raw: str) -> list[str]:
     return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
+
+def _default_jwt_secret(jobs_dir: str) -> str:
+    """A random secret persisted to disk under JOBS_DIR, so restarts don't
+    invalidate every login session -- used only when JWT_SECRET isn't set
+    explicitly in .env. Note: for CodeMind's login (SSO) to work, both apps
+    must share the SAME secret -- this auto-generated one only exists for
+    StoryForge's own convenience; set JWT_SECRET explicitly in both apps'
+    environments to the same value to make cross-app auth work."""
+    secret_path = Path(jobs_dir) / ".jwt_secret"
+    if secret_path.exists():
+        return secret_path.read_text().strip()
+    secret_path.parent.mkdir(parents=True, exist_ok=True)
+    secret = secrets.token_hex(32)
+    secret_path.write_text(secret)
+    logger.warning(
+        "JWT_SECRET not set -- generated and saved one to %s for this install only. "
+        "Set JWT_SECRET explicitly (same value in both apps' environments) for "
+        "CodeMind's login to accept StoryForge-issued tokens.",
+        secret_path,
+    )
+    return secret
 
 
 class Settings:
@@ -62,6 +88,14 @@ class Settings:
     JOBS_DIR: str = os.getenv("JOBS_DIR", "./jobs")
     UPLOADS_DIR: str = os.getenv("UPLOADS_DIR", "./uploads")
     EXPORTS_DIR: str = os.getenv("EXPORTS_DIR", "./exports")
+
+    # Signs/verifies login JWTs (api/routers/auth.py). Falls back to a
+    # per-install random secret persisted under JOBS_DIR/.jwt_secret if unset
+    # -- see _default_jwt_secret's docstring for why that alone isn't enough
+    # for CodeMind's SSO to work.
+    JWT_SECRET: str = os.getenv("JWT_SECRET") or _default_jwt_secret(os.getenv("JOBS_DIR", "./jobs"))
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRE_MINUTES: int = int(os.getenv("JWT_EXPIRE_MINUTES", "480"))
 
     # "production" (default) uses prompts/system_prompt.py. "selftest" swaps in
     # prompts/system_prompt_selftest.py, used only when assessing SDDs that

@@ -3,16 +3,17 @@ from __future__ import annotations
 
 import os
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 
+from api.deps import require_auth
 from pipeline.runner import get_job_state
 
 router = APIRouter(prefix="/export", tags=["export"])
 
 
 @router.get("/document/{job_id}")
-async def get_export_document(job_id: str):
+async def get_export_document(job_id: str, user: dict = Depends(require_auth)):
     state = await get_job_state(job_id)
     if state is None:
         raise HTTPException(status_code=404, detail="Job not found")

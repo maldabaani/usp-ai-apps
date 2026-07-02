@@ -1,9 +1,10 @@
 """Review approval endpoint: resumes a job paused at the review gate toward ADO creation."""
 from __future__ import annotations
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 
+from api.deps import require_auth
 from pipeline.runner import get_job_state, resume_after_review
 
 router = APIRouter(prefix="/review", tags=["review"])
@@ -15,7 +16,10 @@ class ReviewApproveRequest(BaseModel):
 
 @router.post("/approve/{job_id}")
 async def approve_review(
-    job_id: str, request: ReviewApproveRequest, background_tasks: BackgroundTasks
+    job_id: str,
+    request: ReviewApproveRequest,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(require_auth),
 ):
     state = await get_job_state(job_id)
     if state is None:

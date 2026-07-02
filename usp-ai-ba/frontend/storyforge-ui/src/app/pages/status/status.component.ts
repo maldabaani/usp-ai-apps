@@ -2,6 +2,7 @@ import { CommonModule } from '@angular/common';
 import { ChangeDetectorRef, Component, OnDestroy, OnInit } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 
+import { AuthService } from '../../services/auth.service';
 import {
   DevTask,
   GeneratedStory,
@@ -77,6 +78,7 @@ export class StatusComponent implements OnInit, OnDestroy {
     private route: ActivatedRoute,
     private router: Router,
     private storyForgeService: StoryForgeService,
+    private authService: AuthService,
     private changeDetectorRef: ChangeDetectorRef
   ) {}
 
@@ -258,7 +260,12 @@ export class StatusComponent implements OnInit, OnDestroy {
   }
 
   get documentDownloadUrl(): string {
-    return this.storyForgeService.getDocumentDownloadUrl(this.jobId);
+    // A plain <a href> download isn't routed through HttpClient, so the
+    // auth interceptor never sees it -- the token has to ride along as a
+    // query param instead (same convention as the CodeMind iframe).
+    const token = this.authService.getToken();
+    const url = this.storyForgeService.getDocumentDownloadUrl(this.jobId);
+    return token ? `${url}?token=${encodeURIComponent(token)}` : url;
   }
 
   copyToClipboard(): void {

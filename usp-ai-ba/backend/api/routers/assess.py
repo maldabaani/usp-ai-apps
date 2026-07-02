@@ -6,8 +6,9 @@ import shutil
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 
+from api.deps import require_auth
 from api.job_registry import list_assess_jobs, register_assess_job
 from config import settings
 from pipeline.runner import (
@@ -49,6 +50,7 @@ async def submit_assessment(
     system_name: str = Form(...),
     review_mode: bool = Form(False),
     output_mode: str = Form(default=None),
+    user: dict = Depends(require_auth),
 ):
     job_id = str(uuid.uuid4())
     resolved_output_mode = output_mode or settings.OUTPUT_MODE
@@ -75,7 +77,9 @@ async def submit_assessment(
 
 
 @router.post("/rerun/{job_id}")
-async def rerun_assessment(job_id: str, background_tasks: BackgroundTasks):
+async def rerun_assessment(
+    job_id: str, background_tasks: BackgroundTasks, user: dict = Depends(require_auth)
+):
     """Create a new job using the stored PDF from a previous job."""
     original = next((j for j in list_assess_jobs() if j["job_id"] == job_id), None)
     if original is None:
@@ -124,7 +128,9 @@ async def _run_retry(job_id: str) -> None:
 
 
 @router.post("/retry/{job_id}")
-async def retry_assessment(job_id: str, background_tasks: BackgroundTasks):
+async def retry_assessment(
+    job_id: str, background_tasks: BackgroundTasks, user: dict = Depends(require_auth)
+):
     """Re-run just the step that failed (generate_node, or whichever create_*
     node OUTPUT_MODE selects), without redoing SDD parsing, RAG retrieval,
     clarification, generation, or review that already succeeded."""
@@ -153,7 +159,9 @@ async def _run_recreate(job_id: str) -> None:
 
 
 @router.post("/recreate/{job_id}")
-async def recreate_assessment_tasks(job_id: str, background_tasks: BackgroundTasks):
+async def recreate_assessment_tasks(
+    job_id: str, background_tasks: BackgroundTasks, user: dict = Depends(require_auth)
+):
     """Push a completed job's approved stories to Notion/ADO again from
     scratch (Notion: archives the old pages first; ADO: no delete capability
     exists, so this just creates a fresh hierarchy alongside the old one)."""
@@ -173,7 +181,7 @@ async def recreate_assessment_tasks(job_id: str, background_tasks: BackgroundTas
 
 
 @router.get("/jobs")
-async def list_jobs():
+async def list_jobs(user: dict = Depends(require_auth)):
     summaries = []
     for job in list_assess_jobs():
         state = await get_job_state(job["job_id"])
@@ -191,7 +199,7 @@ async def list_jobs():
 
 
 @router.get("/status/{job_id}")
-async def get_assessment_status(job_id: str):
+async def get_assessment_status(job_id: str, user: dict = Depends(require_auth)):
     state = await get_job_state(job_id)
     if state is None:
         raise HTTPException(status_code=404, detail="Job not found")

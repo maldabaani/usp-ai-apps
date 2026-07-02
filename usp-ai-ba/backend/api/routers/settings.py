@@ -7,11 +7,12 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 import ado_mcp.ado_client as ado_client
 import notion_export.client as notion_client
+from api.deps import require_admin, require_auth
 from config import settings
 from config_store import update_env_file
 
@@ -113,12 +114,14 @@ def _current_settings() -> SettingsResponse:
 
 
 @router.get("", response_model=SettingsResponse)
-async def get_settings_view() -> SettingsResponse:
+async def get_settings_view(user: dict = Depends(require_auth)) -> SettingsResponse:
     return _current_settings()
 
 
 @router.put("", response_model=SettingsResponse)
-async def update_settings_view(body: SettingsUpdate) -> SettingsResponse:
+async def update_settings_view(
+    body: SettingsUpdate, user: dict = Depends(require_admin)
+) -> SettingsResponse:
     current_mask = _mask_secret(settings.NOTION_API_KEY)
     provided = body.model_dump(exclude_unset=True, exclude_none=True)
 
