@@ -61,19 +61,37 @@ class NotionExportClient:
             self._data_source_id = data_sources[0]["id"]
         return self._data_source_id
 
-    async def create_epic_page(self, properties: dict, blocks: list[dict]) -> dict:
-        """Create a database page with the given properties, then append the
-        remaining content blocks in batches of <=100 (the first batch goes in
-        the create call itself)."""
-        batches = chunk_blocks(blocks)
-        first_batch, remaining_batches = batches[0], batches[1:]
-
-        data_source_id = await self._get_data_source_id()
-        page = await self._client.pages.create(
+    async def _create_page(self, data_source_id: str, properties: dict, first_batch: list[dict]) -> dict:
+        return await self._client.pages.create(
             parent={"type": "data_source_id", "data_source_id": data_source_id},
             properties=properties,
             children=first_batch,
         )
+
+    async def create_epic_page(self, properties: dict, blocks: list[dict]) -> dict:
+        """Create a database page with the given properties, then append the
+        remaining content blocks in batches of <=100 (the first batch goes in
+        the create call itself).
+
+        Self-heals from a stale cached data source ID: the process-lifetime
+        cache in _get_data_source_id() has no way to know if the database's
+        data source changes for a reason outside this app's own control (e.g.
+        someone archives/restores/recreates it directly in Notion) -- if the
+        create fails with "object not found" for that reason, re-resolve once
+        and retry, instead of failing every call until the backend restarts.
+        """
+        batches = chunk_blocks(blocks)
+        first_batch, remaining_batches = batches[0], batches[1:]
+
+        data_source_id = await self._get_data_source_id()
+        try:
+            page = await self._create_page(data_source_id, properties, first_batch)
+        except APIResponseError as exc:
+            if exc.code != APIErrorCode.ObjectNotFound:
+                raise
+            self._data_source_id = None
+            data_source_id = await self._get_data_source_id()
+            page = await self._create_page(data_source_id, properties, first_batch)
 
         for batch in remaining_batches:
             if not batch:
