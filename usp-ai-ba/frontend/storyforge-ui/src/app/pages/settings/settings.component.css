@@ -1,0 +1,29 @@
+.sf-section-title {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0 0 16px;
+}
+
+.sf-select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--sf-border);
+  border-radius: 6px;
+  font-size: 14px;
+  background: var(--sf-surface);
+  color: var(--sf-text);
+  cursor: pointer;
+  outline: none;
+}
+
+.sf-select:focus {
+  border-color: var(--sf-primary);
+}
+
+.sf-error-text {
+  color: var(--sf-error);
+}
+
+.sf-success-text {
+  color: var(--sf-primary);
+}

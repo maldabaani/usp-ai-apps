@@ -29,13 +29,20 @@ class StoryForgeState(TypedDict):
     human_approved: bool
     approved_stories: list[dict]
 
+    # Which output mode this job targets ("document"|"ado"|"notion") -- chosen
+    # per-job at submission time (see api/routers/assess.py), rather than
+    # always following whatever settings.OUTPUT_MODE currently holds. Older
+    # checkpoints predating this field won't have it; pipeline/graph.py's
+    # _route_after_review falls back to settings.OUTPUT_MODE in that case.
+    output_mode: str
+
     # ADO results
     ado_results: list[dict]  # [{story_id, story_url, tasks: [{id, url, type}]}]
 
-    # Document export results (used when settings.OUTPUT_MODE == "document")
+    # Document export results (used when output_mode == "document")
     document_path: str
 
-    # Notion results (used when settings.OUTPUT_MODE == "notion")
+    # Notion results (used when output_mode == "notion")
     notion_results: list[dict]  # [{epic_title, page_id, page_url}]
 
     errors: list[str]
@@ -49,6 +56,7 @@ def new_state(
     system_name: str,
     solution_doc_path: str,
     review_mode: bool,
+    output_mode: str,
 ) -> StoryForgeState:
     """Build a fresh StoryForgeState for a newly submitted assessment job."""
     return StoryForgeState(
@@ -66,6 +74,7 @@ def new_state(
         review_mode=review_mode,
         human_approved=False,
         approved_stories=[],
+        output_mode=output_mode,
         ado_results=[],
         document_path="",
         notion_results=[],

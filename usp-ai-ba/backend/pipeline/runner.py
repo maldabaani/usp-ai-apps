@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 
+from notion_export.client import get_notion_export_client
 from pipeline.graph import (
     NODE_CLARIFY,
     NODE_CREATE_ADO,
@@ -16,6 +17,8 @@ from pipeline.graph import (
     get_graph,
 )
 from pipeline.state import StoryForgeState
+
+RECREATABLE_OUTPUT_MODES = ("ado", "notion")
 
 logger = logging.getLogger(__name__)
 
@@ -158,4 +161,50 @@ async def retry_failed_step(job_id: str) -> StoryForgeState:
 
     rewind_to_node, new_status = _RETRYABLE_REWIND_POINTS[failed_node]
     await graph.aupdate_state(config, {"status": new_status, "errors": []}, as_node=rewind_to_node)
+    return await _drive(job_id)
+
+
+async def recreate_tasks(job_id: str) -> StoryForgeState:
+    """Push a completed job's approved stories to its task-management system
+    again, from scratch. Only valid for output_mode "ado" or "notion" -- a
+    "document" job has nothing to "recreate" (it's just a file download).
+
+    For Notion, the job's previously-created pages (state["notion_results"])
+    are archived first, so re-creating doesn't leave duplicates behind. ADO
+    has no delete capability available to this codebase (the external MCP
+    server at settings.MCP_SERVER_PATH exposes only create_* tools), so ADO
+    re-create just creates a fresh Epic/Story/Tasks hierarchy alongside
+    whatever was created before.
+
+    Reuses the same checkpoint-rewind mechanism as retry_failed_step: rewind
+    to NODE_REVIEW so the interrupt before the create node fires again, then
+    let _drive continue into it.
+    """
+    graph = await get_graph()
+    config = _config(job_id)
+    snapshot = await graph.aget_state(config)
+    state = snapshot.values
+    if not state:
+        raise ValueError(f"No job found for job_id={job_id}")
+    if state.get("status") != "done":
+        raise ValueError(f"Job {job_id} is not done (status={state.get('status')!r})")
+
+    output_mode = state.get("output_mode")
+    if output_mode not in RECREATABLE_OUTPUT_MODES:
+        raise ValueError(
+            f"Job {job_id}'s output mode ({output_mode!r}) doesn't support re-creating tasks "
+            f"-- only {RECREATABLE_OUTPUT_MODES} do"
+        )
+
+    if output_mode == "notion":
+        client = get_notion_export_client()
+        for result in state.get("notion_results") or []:
+            try:
+                await client.archive_page(result["page_id"])
+            except Exception:  # noqa: BLE001 - one page failing to archive shouldn't block the rest
+                logger.exception(
+                    "Failed to archive prior Notion page %s for job %s", result.get("page_id"), job_id
+                )
+
+    await graph.aupdate_state(config, {"status": "creating", "errors": []}, as_node=NODE_REVIEW)
     return await _drive(job_id)

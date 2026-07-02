@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.routers import ado, assess, clarify, export, ingest, review
+from api.routers import settings as settings_router
 from config import settings
 from pipeline.graph import close_graph, get_graph
 
@@ -41,6 +42,7 @@ def create_app() -> FastAPI:
     app.include_router(review.router, prefix="/api")
     app.include_router(ado.router, prefix="/api")
     app.include_router(export.router, prefix="/api")
+    app.include_router(settings_router.router, prefix="/api")
 
     async def health():
         return {

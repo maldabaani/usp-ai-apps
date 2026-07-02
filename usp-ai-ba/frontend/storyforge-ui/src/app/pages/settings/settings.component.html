@@ -1,0 +1,99 @@
+<div class="sf-page">
+  <h1>Settings</h1>
+
+  <p *ngIf="loading">Loading settings…</p>
+  <p *ngIf="loadError" class="sf-error-text">{{ loadError }}</p>
+
+  <ng-container *ngIf="!loading && !loadError">
+
+    <div class="sf-card">
+      <h2 class="sf-section-title">LLM Configuration</h2>
+
+      <div class="sf-field">
+        <label for="ollamaBaseUrl">Ollama Base URL</label>
+        <input id="ollamaBaseUrl" class="sf-input" type="text" [(ngModel)]="ollamaBaseUrl" placeholder="http://localhost:11434" />
+      </div>
+
+      <div class="sf-field">
+        <label for="ollamaLlmModel">LLM Model</label>
+        <input id="ollamaLlmModel" class="sf-input" type="text" [(ngModel)]="ollamaLlmModel" placeholder="qwen2.5:14b" />
+      </div>
+
+      <div class="sf-field">
+        <label for="ollamaEmbedModel">Embedding Model</label>
+        <input id="ollamaEmbedModel" class="sf-input" type="text" [(ngModel)]="ollamaEmbedModel" placeholder="nomic-embed-text" />
+      </div>
+
+      <div class="sf-field">
+        <label for="promptVariant">Prompt Variant</label>
+        <select id="promptVariant" class="sf-select" [(ngModel)]="promptVariant">
+          <option value="production">Production</option>
+          <option value="selftest">Selftest</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="sf-card">
+      <h2 class="sf-section-title">Task Management System</h2>
+
+      <div class="sf-field">
+        <label for="outputMode">Default System (new assessments)</label>
+        <select id="outputMode" class="sf-select" [(ngModel)]="outputMode">
+          <option value="document">Document (.docx export)</option>
+          <option value="notion">Notion</option>
+          <option value="ado">Azure DevOps</option>
+        </select>
+      </div>
+
+      <ng-container *ngIf="outputMode === 'ado'">
+        <div class="sf-field">
+          <label for="adoOrganization">ADO Organization</label>
+          <input id="adoOrganization" class="sf-input" type="text" [(ngModel)]="adoOrganization" />
+        </div>
+        <div class="sf-field">
+          <label for="adoProject">ADO Project</label>
+          <input id="adoProject" class="sf-input" type="text" [(ngModel)]="adoProject" />
+        </div>
+        <div class="sf-field">
+          <label for="mcpServerPath">MCP Server Path</label>
+          <input id="mcpServerPath" class="sf-input" type="text" [(ngModel)]="mcpServerPath" />
+        </div>
+      </ng-container>
+
+      <ng-container *ngIf="outputMode === 'notion'">
+        <div class="sf-field">
+          <label for="notionApiKey">Notion API Key</label>
+          <input id="notionApiKey" class="sf-input" type="password" [(ngModel)]="notionApiKeyInput" />
+        </div>
+        <div class="sf-field">
+          <label for="notionDatabaseId">Notion Database ID</label>
+          <input id="notionDatabaseId" class="sf-input" type="text" [(ngModel)]="notionDatabaseId" />
+        </div>
+        <div class="sf-field">
+          <label for="notionParentPageId">Notion Parent Page ID</label>
+          <input id="notionParentPageId" class="sf-input" type="text" [(ngModel)]="notionParentPageId" />
+        </div>
+        <div class="sf-field">
+          <label for="notionTitleProperty">Title Property Name</label>
+          <input id="notionTitleProperty" class="sf-input" type="text" [(ngModel)]="notionTitleProperty" />
+        </div>
+        <div class="sf-field">
+          <label for="notionStatusProperty">Status Property Name</label>
+          <input id="notionStatusProperty" class="sf-input" type="text" [(ngModel)]="notionStatusProperty" />
+        </div>
+        <div class="sf-field">
+          <label for="notionStatusValue">Status Value</label>
+          <input id="notionStatusValue" class="sf-input" type="text" [(ngModel)]="notionStatusValue" />
+        </div>
+      </ng-container>
+    </div>
+
+    <p *ngIf="saveError" class="sf-error-text">{{ saveError }}</p>
+    <p *ngIf="saved" class="sf-success-text">Settings saved.</p>
+
+    <button class="sf-btn" [disabled]="saving" (click)="save()">
+      {{ saving ? 'Saving...' : 'Save Settings' }}
+    </button>
+
+  </ng-container>
+</div>

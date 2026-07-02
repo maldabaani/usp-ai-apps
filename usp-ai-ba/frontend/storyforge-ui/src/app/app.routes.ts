@@ -6,6 +6,7 @@ import { CodeMindComponent } from './pages/codemind/codemind.component';
 import { DashboardComponent } from './pages/dashboard/dashboard.component';
 import { LandingComponent } from './pages/landing/landing.component';
 import { ReviewComponent } from './pages/review/review.component';
+import { SettingsComponent } from './pages/settings/settings.component';
 import { StatusComponent } from './pages/status/status.component';
 
 export const routes: Routes = [
@@ -16,5 +17,6 @@ export const routes: Routes = [
   { path: 'review/:jobId', component: ReviewComponent },
   { path: 'status/:jobId', component: StatusComponent },
   { path: 'codemind', component: CodeMindComponent },
+  { path: 'settings', component: SettingsComponent },
   { path: '**', redirectTo: '' },
 ];

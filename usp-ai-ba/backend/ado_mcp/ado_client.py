@@ -122,3 +122,12 @@ def get_ado_mcp_client() -> AdoMcpClient:
     if _client_instance is None:
         _client_instance = AdoMcpClient()
     return _client_instance
+
+
+def reset_client() -> None:
+    """Drop the cached client so the next get_ado_mcp_client() call rebuilds
+    it (and respawns the MCP server subprocess) from current settings --
+    call this after the Settings screen changes any ADO field, since
+    _server_config() is only read once at construction time."""
+    global _client_instance
+    _client_instance = None

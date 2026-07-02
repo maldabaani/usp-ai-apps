@@ -37,10 +37,19 @@
       </div>
     </div>
 
+    <div class="sf-field">
+      <label for="outputMode">Task Management System</label>
+      <select id="outputMode" class="sf-select" [(ngModel)]="outputMode">
+        <option value="document">Document (.docx export)</option>
+        <option value="notion">Notion</option>
+        <option value="ado">Azure DevOps</option>
+      </select>
+    </div>
+
     <div class="sf-field sf-toggle-field">
       <label class="sf-toggle">
         <input type="checkbox" [(ngModel)]="reviewMode" />
-        <span>{{ reviewMode ? 'Review before ADO' : 'Auto-create on ADO' }}</span>
+        <span>{{ reviewMode ? 'Review before creating tasks' : 'Auto-create tasks' }}</span>
       </label>
     </div>
 

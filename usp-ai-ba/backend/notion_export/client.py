@@ -81,6 +81,12 @@ class NotionExportClient:
 
         return {"id": page["id"], "url": page.get("url", "")}
 
+    async def archive_page(self, page_id: str) -> None:
+        """Archive (soft-delete, moves to Trash) a previously-created page --
+        used by pipeline/runner.py's recreate_tasks() to clear out a job's old
+        Notion pages before creating fresh ones."""
+        await self._client.pages.update(page_id=page_id, archived=True)
+
 
 _client_instance: NotionExportClient | None = None
 
@@ -91,3 +97,12 @@ def get_notion_export_client() -> NotionExportClient:
     if _client_instance is None:
         _client_instance = NotionExportClient()
     return _client_instance
+
+
+def reset_client() -> None:
+    """Drop the cached client so the next get_notion_export_client() call
+    rebuilds it from the current settings.NOTION_API_KEY -- call this after
+    the Settings screen changes any Notion field, since __init__ captures the
+    API key once at construction time."""
+    global _client_instance
+    _client_instance = None

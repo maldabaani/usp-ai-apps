@@ -10,7 +10,14 @@ from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Uploa
 
 from api.job_registry import list_assess_jobs, register_assess_job
 from config import settings
-from pipeline.runner import get_job_state, identify_retryable_failure, retry_failed_step, start_job
+from pipeline.runner import (
+    RECREATABLE_OUTPUT_MODES,
+    get_job_state,
+    identify_retryable_failure,
+    recreate_tasks,
+    retry_failed_step,
+    start_job,
+)
 from pipeline.state import StoryForgeState, new_state
 
 logger = logging.getLogger(__name__)
@@ -23,7 +30,7 @@ async def _run_assessment(initial_state: StoryForgeState) -> None:
     logger.info(
         "Starting assessment job=%s output_mode=%s ppm=%s",
         job_id,
-        settings.OUTPUT_MODE,
+        initial_state["output_mode"],
         initial_state["ppm_number"],
     )
     try:
@@ -41,8 +48,10 @@ async def submit_assessment(
     ppm_name: str = Form(...),
     system_name: str = Form(...),
     review_mode: bool = Form(False),
+    output_mode: str = Form(default=None),
 ):
     job_id = str(uuid.uuid4())
+    resolved_output_mode = output_mode or settings.OUTPUT_MODE
 
     uploads_dir = Path(settings.UPLOADS_DIR)
     uploads_dir.mkdir(parents=True, exist_ok=True)
@@ -56,9 +65,10 @@ async def submit_assessment(
         system_name=system_name,
         solution_doc_path=str(solution_doc_path),
         review_mode=review_mode,
+        output_mode=resolved_output_mode,
     )
 
-    register_assess_job(job_id, ppm_number, ppm_name, system_name)
+    register_assess_job(job_id, ppm_number, ppm_name, system_name, resolved_output_mode)
     background_tasks.add_task(_run_assessment, initial_state)
 
     return {"job_id": job_id}
@@ -79,6 +89,10 @@ async def rerun_assessment(job_id: str, background_tasks: BackgroundTasks):
     new_pdf = Path(settings.UPLOADS_DIR) / f"{new_job_id}.pdf"
     shutil.copy2(stored_pdf, new_pdf)
 
+    # Older registry rows predate output_mode; fall back to the current global
+    # default so a re-run of one of those still works.
+    resolved_output_mode = original.get("output_mode") or settings.OUTPUT_MODE
+
     initial_state = new_state(
         job_id=new_job_id,
         ppm_number=original["ppm_number"],
@@ -86,9 +100,16 @@ async def rerun_assessment(job_id: str, background_tasks: BackgroundTasks):
         system_name=original["system_name"],
         solution_doc_path=str(new_pdf),
         review_mode=False,
+        output_mode=resolved_output_mode,
     )
 
-    register_assess_job(new_job_id, original["ppm_number"], original["ppm_name"], original["system_name"])
+    register_assess_job(
+        new_job_id,
+        original["ppm_number"],
+        original["ppm_name"],
+        original["system_name"],
+        resolved_output_mode,
+    )
     background_tasks.add_task(_run_assessment, initial_state)
 
     return {"job_id": new_job_id}
@@ -121,6 +142,34 @@ async def retry_assessment(job_id: str, background_tasks: BackgroundTasks):
 
     background_tasks.add_task(_run_retry, job_id)
     return {"status": "retrying"}
+
+
+async def _run_recreate(job_id: str) -> None:
+    try:
+        await recreate_tasks(job_id)
+        logger.info("Recreate job=%s completed", job_id)
+    except Exception:
+        logger.exception("Recreate job=%s crashed — job is stuck", job_id)
+
+
+@router.post("/recreate/{job_id}")
+async def recreate_assessment_tasks(job_id: str, background_tasks: BackgroundTasks):
+    """Push a completed job's approved stories to Notion/ADO again from
+    scratch (Notion: archives the old pages first; ADO: no delete capability
+    exists, so this just creates a fresh hierarchy alongside the old one)."""
+    state = await get_job_state(job_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if state.get("status") != "done":
+        raise HTTPException(status_code=409, detail="Job must be complete before tasks can be re-created")
+    if state.get("output_mode") not in RECREATABLE_OUTPUT_MODES:
+        raise HTTPException(
+            status_code=409,
+            detail="Re-create is only available for Notion or ADO output modes",
+        )
+
+    background_tasks.add_task(_run_recreate, job_id)
+    return {"status": "recreating"}
 
 
 @router.get("/jobs")

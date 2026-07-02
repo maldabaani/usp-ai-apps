@@ -74,6 +74,17 @@ class Settings:
     # unchanged either way; only the routing in pipeline/graph.py picks one.
     OUTPUT_MODE: str = os.getenv("OUTPUT_MODE", "document")
 
+    def apply_updates(self, updates: dict) -> None:
+        """Mutate this singleton's attributes in place so every module holding
+        a ``from config import settings`` reference sees the change
+        immediately -- no restart, no re-import needed. Only ever called with
+        values freshly written to .env (see config_store.update_env_file);
+        never touches the os.getenv(..., "...") fallback expressions above,
+        which stay fixed regardless of what's edited at runtime.
+        """
+        for key, value in updates.items():
+            setattr(self, key, value)
+
 
 @lru_cache
 def get_settings() -> Settings:

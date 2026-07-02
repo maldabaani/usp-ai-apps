@@ -37,7 +37,7 @@ def _save() -> None:
 
 
 def register_assess_job(
-    job_id: str, ppm_number: str, ppm_name: str, system_name: str
+    job_id: str, ppm_number: str, ppm_name: str, system_name: str, output_mode: str
 ) -> None:
     jobs = _load()
     jobs.append(
@@ -46,6 +46,7 @@ def register_assess_job(
             "ppm_number": ppm_number,
             "ppm_name": ppm_name,
             "system_name": system_name,
+            "output_mode": output_mode,
             "created_at": time.time(),
         }
     )

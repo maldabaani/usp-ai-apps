@@ -1,8 +1,9 @@
 import { CommonModule } from '@angular/common';
-import { Component } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 
+import { SettingsService } from '../../services/settings.service';
 import { StoryForgeService } from '../../services/storyforge.service';
 
 @Component({
@@ -12,11 +13,12 @@ import { StoryForgeService } from '../../services/storyforge.service';
   templateUrl: './assess.component.html',
   styleUrl: './assess.component.css',
 })
-export class AssessComponent {
+export class AssessComponent implements OnInit {
   ppmNumber = '';
   ppmName = '';
   systemName = '';
   reviewMode = true;
+  outputMode = 'document';
 
   selectedFile: File | null = null;
   isDragOver = false;
@@ -24,7 +26,20 @@ export class AssessComponent {
   submitting = false;
   submitError = '';
 
-  constructor(private storyForgeService: StoryForgeService, private router: Router) {}
+  constructor(
+    private storyForgeService: StoryForgeService,
+    private settingsService: SettingsService,
+    private router: Router
+  ) {}
+
+  ngOnInit(): void {
+    this.settingsService.getSettings().subscribe({
+      next: (s) => (this.outputMode = s.output_mode),
+      error: () => {
+        // Keep the 'document' fallback -- settings just couldn't be loaded.
+      },
+    });
+  }
 
   onDragOver(event: DragEvent): void {
     event.preventDefault();
@@ -86,7 +101,8 @@ export class AssessComponent {
         this.ppmNumber.trim(),
         this.ppmName.trim(),
         this.systemName.trim(),
-        this.reviewMode
+        this.reviewMode,
+        this.outputMode
       )
       .subscribe({
         next: ({ job_id }) => {

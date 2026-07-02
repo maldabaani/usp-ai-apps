@@ -9,6 +9,7 @@ export interface JobSummary {
   ppm_number: string;
   ppm_name: string;
   system_name: string;
+  output_mode: string;
   status: string;
   story_count: number;
   task_count: number;
@@ -116,6 +117,7 @@ export interface StoryForgeJobState {
   review_mode: boolean;
   human_approved: boolean;
   approved_stories: GeneratedStory[];
+  output_mode: string;
   ado_results: AdoResult[];
   document_path: string;
   notion_results: NotionResult[];
@@ -156,7 +158,8 @@ export class StoryForgeService {
     ppmNumber: string,
     ppmName: string,
     systemName: string,
-    reviewMode: boolean
+    reviewMode: boolean,
+    outputMode: string
   ): Observable<{ job_id: string }> {
     const formData = new FormData();
     formData.append('file', file);
@@ -164,6 +167,7 @@ export class StoryForgeService {
     formData.append('ppm_name', ppmName);
     formData.append('system_name', systemName);
     formData.append('review_mode', String(reviewMode));
+    formData.append('output_mode', outputMode);
     return this.http.post<{ job_id: string }>(`${API_BASE_URL}/assess`, formData);
   }
 
@@ -173,6 +177,10 @@ export class StoryForgeService {
 
   retryAssessment(jobId: string): Observable<{ status: string }> {
     return this.http.post<{ status: string }>(`${API_BASE_URL}/assess/retry/${jobId}`, {});
+  }
+
+  recreateTasks(jobId: string): Observable<{ status: string }> {
+    return this.http.post<{ status: string }>(`${API_BASE_URL}/assess/recreate/${jobId}`, {});
   }
 
   listJobs(): Observable<JobSummary[]> {

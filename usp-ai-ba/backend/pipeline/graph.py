@@ -11,9 +11,10 @@ those downstream nodes find empty input (e.g. no stories to review/create)
 and finish "successfully", overwriting ``status`` back to something like
 "done" and silently masking the original failure.
 
-After ``review_node``, the graph branches on ``settings.OUTPUT_MODE``: the
-default "document" mode writes approved stories to a .docx via
-``export_document_node``; "ado" mode pushes to Azure DevOps via
+After ``review_node``, the graph branches on ``state["output_mode"]`` (falling
+back to ``settings.OUTPUT_MODE`` for older checkpoints that predate this
+per-job field): the default "document" mode writes approved stories to a
+.docx via ``export_document_node``; "ado" mode pushes to Azure DevOps via
 ``create_ado_node``; "notion" mode pushes to a Notion database via
 ``create_notion_node``. All three nodes are registered unconditionally so the
 mode can be flipped at runtime without recompiling.
@@ -66,9 +67,12 @@ def _route_unless_error(next_node: str):
 def _route_after_review(state: StoryForgeState) -> str:
     if state.get("status") == "error":
         return END
-    if settings.OUTPUT_MODE == "ado":
+    # state["output_mode"] is set per-job at submission time; fall back to
+    # the global default for checkpoints persisted before that field existed.
+    mode = state.get("output_mode") or settings.OUTPUT_MODE
+    if mode == "ado":
         return NODE_CREATE_ADO
-    if settings.OUTPUT_MODE == "notion":
+    if mode == "notion":
         return NODE_CREATE_NOTION
     return NODE_EXPORT_DOCUMENT
 

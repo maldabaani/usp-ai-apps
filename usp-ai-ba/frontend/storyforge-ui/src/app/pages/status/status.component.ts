@@ -49,6 +49,8 @@ export class StatusComponent implements OnInit, OnDestroy {
   copyButtonLabel = COPY_LABEL;
   retrying = false;
   retryError = '';
+  recreating = false;
+  recreateError = '';
 
   readonly stepDefs = STEP_DEFS;
   readonly ragSections: { key: keyof RetrievedContext; label: string }[] = [
@@ -154,6 +156,37 @@ export class StatusComponent implements OnInit, OnDestroy {
       error: (err) => {
         this.retrying = false;
         this.retryError = err?.error?.detail || 'Retry failed. Submit a new assessment instead.';
+      },
+    });
+  }
+
+  get canRecreate(): boolean {
+    if (!this.state || this.state.status !== 'done') return false;
+    return this.state.output_mode === 'notion' || this.state.output_mode === 'ado';
+  }
+
+  recreateTasks(): void {
+    if (!this.jobId || this.recreating || !this.state) return;
+    const target = this.state.output_mode === 'notion' ? 'Notion' : 'ADO';
+    if (!confirm(`Re-create tasks in ${target}? This will archive/replace what was already created.`)) {
+      return;
+    }
+
+    this.recreating = true;
+    this.recreateError = '';
+
+    this.storyForgeService.recreateTasks(this.jobId).subscribe({
+      next: () => {
+        this.recreating = false;
+        this.redirected = false;
+        this.poll();
+        if (!this.pollHandle) {
+          this.pollHandle = setInterval(() => this.poll(), POLL_INTERVAL_MS);
+        }
+      },
+      error: (err) => {
+        this.recreating = false;
+        this.recreateError = err?.error?.detail || 'Re-create failed.';
       },
     });
   }
