@@ -14,30 +14,6 @@
   text-decoration: none;
 }
 
-.sf-tabs {
-  display: flex;
-  gap: 4px;
-}
-
-.sf-tab {
-  padding: 6px 14px;
-  border-radius: 6px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--sf-muted);
-  text-decoration: none;
-}
-
-.sf-tab:hover {
-  color: var(--sf-text);
-  background: rgba(22, 163, 74, 0.08);
-}
-
-.sf-tab.active {
-  color: var(--sf-primary-dark);
-  background: rgba(22, 163, 74, 0.15);
-}
-
 :host {
   display: flex;
   flex-direction: column;
