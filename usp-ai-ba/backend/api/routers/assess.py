@@ -195,7 +195,11 @@ async def get_assessment_status(job_id: str):
     state = await get_job_state(job_id)
     if state is None:
         raise HTTPException(status_code=404, detail="Job not found")
-    # Jobs created before output_mode existed won't have it in their
-    # persisted state; resolve it (from which results are actually
-    # populated) so the UI's "Re-create tasks" button still knows what to show.
-    return {**state, "output_mode": resolve_output_mode(state, settings.OUTPUT_MODE)}
+    # Jobs created before output_mode/warnings existed won't have those keys
+    # in their persisted state -- resolve/default them so the UI's
+    # "Re-create tasks" button and warning banner both have something to work with.
+    return {
+        **state,
+        "output_mode": resolve_output_mode(state, settings.OUTPUT_MODE),
+        "warnings": state.get("warnings") or [],
+    }

@@ -115,6 +115,14 @@
     <p class="sf-error-text" *ngIf="recreateError">{{ recreateError }}</p>
   </div>
 
+  <!-- Non-fatal warnings (e.g. an old Notion page that couldn't be archived) -->
+  <div class="sf-card sf-warning-box" *ngIf="state?.warnings?.length">
+    <p class="sf-warning-title">{{ state?.warnings?.length }} warning{{ (state?.warnings?.length ?? 0) > 1 ? 's' : '' }}</p>
+    <ul class="sf-warning-list">
+      <li *ngFor="let warning of state?.warnings ?? []">{{ warning }}</li>
+    </ul>
+  </div>
+
   <!-- Notion results -->
   <div class="sf-card" *ngIf="state?.status === 'done' && state?.notion_results?.length">
     <h2>Notion Tasks Created</h2>

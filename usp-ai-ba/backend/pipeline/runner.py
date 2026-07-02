@@ -197,15 +197,18 @@ async def recreate_tasks(job_id: str) -> StoryForgeState:
             f"-- only {RECREATABLE_OUTPUT_MODES} do"
         )
 
+    archive_warnings: list[str] = []
     if output_mode == "notion":
         client = get_notion_export_client()
         for result in state.get("notion_results") or []:
+            page_id = result.get("page_id")
             try:
-                await client.archive_page(result["page_id"])
-            except Exception:  # noqa: BLE001 - one page failing to archive shouldn't block the rest
-                logger.exception(
-                    "Failed to archive prior Notion page %s for job %s", result.get("page_id"), job_id
-                )
+                await client.archive_page(page_id)
+            except Exception as exc:  # noqa: BLE001 - one page failing to archive shouldn't block the rest
+                logger.exception("Failed to archive prior Notion page %s for job %s", page_id, job_id)
+                archive_warnings.append(f"Could not archive old Notion page {page_id}: {exc}")
 
-    await graph.aupdate_state(config, {"status": "creating", "errors": []}, as_node=NODE_REVIEW)
+    await graph.aupdate_state(
+        config, {"status": "creating", "errors": [], "warnings": archive_warnings}, as_node=NODE_REVIEW
+    )
     return await _drive(job_id)

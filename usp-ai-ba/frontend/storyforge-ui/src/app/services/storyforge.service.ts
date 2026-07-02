@@ -122,6 +122,7 @@ export interface StoryForgeJobState {
   document_path: string;
   notion_results: NotionResult[];
   errors: string[];
+  warnings: string[];
   status: string;
 }
 

@@ -196,6 +196,28 @@
   color: var(--sf-error);
 }
 
+/* ── Warning box (non-fatal, e.g. recreate_tasks' archive failures) ────────── */
+.sf-warning-box {
+  padding: 14px 16px;
+  background: #fef9c3;
+  border: 1px solid #fde047;
+  border-radius: 6px;
+}
+
+.sf-warning-title {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #92620a;
+}
+
+.sf-warning-list {
+  margin: 0;
+  padding-left: 18px;
+  color: #92620a;
+  font-size: 13px;
+}
+
 /* ── RAG context panel ───────────────────────────────────────────────────── */
 .sf-rag-card {
   padding: 0;

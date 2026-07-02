@@ -46,6 +46,10 @@ class StoryForgeState(TypedDict):
     notion_results: list[dict]  # [{epic_title, page_id, page_url}]
 
     errors: list[str]
+    # Non-fatal issues that don't affect job status -- e.g. recreate_tasks()
+    # failing to archive an old Notion page. Older checkpoints predating this
+    # field won't have it; treat a missing key the same as an empty list.
+    warnings: list[str]
     status: str  # "analyzing|clarifying|generating|reviewing|creating|done|error"
 
 
@@ -79,6 +83,7 @@ def new_state(
         document_path="",
         notion_results=[],
         errors=[],
+        warnings=[],
         status="analyzing",
     )
 
