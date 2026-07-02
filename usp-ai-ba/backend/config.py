@@ -3,10 +3,17 @@ from __future__ import annotations
 
 import os
 from functools import lru_cache
+from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv()
+# Load backend/.env specifically, not whatever load_dotenv()'s default
+# upward search from the current working directory happens to find first.
+# Without an explicit path, running uvicorn/python from any directory other
+# than backend/ (an IDE run config, a different terminal tab, etc.) silently
+# loads the wrong .env -- or none at all -- and every setting below quietly
+# falls back to its hardcoded default instead of erroring.
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 
 def _split_origins(raw: str) -> list[str]:
