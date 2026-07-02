@@ -47,6 +47,8 @@ export class StatusComponent implements OnInit, OnDestroy {
   loadError = '';
   storiesText = '';
   copyButtonLabel = COPY_LABEL;
+  retrying = false;
+  retryError = '';
 
   readonly stepDefs = STEP_DEFS;
   readonly ragSections: { key: keyof RetrievedContext; label: string }[] = [
@@ -133,6 +135,27 @@ export class StatusComponent implements OnInit, OnDestroy {
 
   lineComplete(key: string): boolean {
     return this.stepState(key) === 'done';
+  }
+
+  retry(): void {
+    if (!this.jobId || this.retrying) return;
+    this.retrying = true;
+    this.retryError = '';
+
+    this.storyForgeService.retryAssessment(this.jobId).subscribe({
+      next: () => {
+        this.retrying = false;
+        this.redirected = false;
+        this.poll();
+        if (!this.pollHandle) {
+          this.pollHandle = setInterval(() => this.poll(), POLL_INTERVAL_MS);
+        }
+      },
+      error: (err) => {
+        this.retrying = false;
+        this.retryError = err?.error?.detail || 'Retry failed. Submit a new assessment instead.';
+      },
+    });
   }
 
   private redirectOnce(commands: (string | number)[]): void {

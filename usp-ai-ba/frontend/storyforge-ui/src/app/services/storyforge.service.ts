@@ -171,6 +171,10 @@ export class StoryForgeService {
     return this.http.post<{ job_id: string }>(`${API_BASE_URL}/assess/rerun/${jobId}`, {});
   }
 
+  retryAssessment(jobId: string): Observable<{ status: string }> {
+    return this.http.post<{ status: string }>(`${API_BASE_URL}/assess/retry/${jobId}`, {});
+  }
+
   listJobs(): Observable<JobSummary[]> {
     return this.http.get<JobSummary[]>(`${API_BASE_URL}/assess/jobs`);
   }

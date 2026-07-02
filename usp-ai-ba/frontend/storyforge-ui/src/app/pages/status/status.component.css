@@ -188,6 +188,14 @@
   font-size: 13px;
 }
 
+.sf-error-box .sf-btn {
+  margin-top: 12px;
+}
+
+.sf-error-text {
+  color: var(--sf-error);
+}
+
 /* ── RAG context panel ───────────────────────────────────────────────────── */
 .sf-rag-card {
   padding: 0;

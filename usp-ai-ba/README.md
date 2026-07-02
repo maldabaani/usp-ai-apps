@@ -77,7 +77,7 @@ backend/
     job_registry.py         In-memory registry for /api/assess jobs (list + metadata)
     ingest_jobs.py           In-memory registry for /api/ingest jobs (progress + status)
     routers/
-      assess.py              POST /api/assess, GET /api/assess/jobs, GET /api/assess/status/{job_id}
+      assess.py              POST /api/assess, POST /api/assess/rerun/{job_id}, POST /api/assess/retry/{job_id}, GET /api/assess/jobs, GET /api/assess/status/{job_id}
       clarify.py              POST /api/clarify/answer/{job_id}
       review.py               POST /api/review/approve/{job_id}
       ado.py                  GET /api/ado/status/{job_id}
@@ -270,6 +270,7 @@ All endpoints are served under the FastAPI app created in `backend/api/main.py`,
 | `POST` | `/api/assess` | Multipart form: `file` (PDF), `ppm_number`, `ppm_name`, `system_name`, `review_mode` (bool, default `false`). Starts the pipeline in the background → `{"job_id"}` |
 | `GET` | `/api/assess/jobs` | List all submitted assessment jobs with live `status` + `story_count` |
 | `GET` | `/api/assess/status/{job_id}` | Full `StoryForgeState` for the job. 404 if unknown |
+| `POST` | `/api/assess/retry/{job_id}` | Re-runs just the pipeline step that failed (`generate_node`, or whichever `create_ado_node`/`export_document_node`/`create_notion_node` `OUTPUT_MODE` selects) without redoing earlier work (SDD parsing, RAG retrieval, clarification, generation, or review that already succeeded). Distinct from `llm_retry.py`'s per-LLM-call retries inside a single node — this is a user-triggered retry of an entire node after it already exhausted those and left the job in `status: "error"`. 404 if unknown, 409 if the job isn't in an `error` status or the failure isn't resumable (e.g. it failed inside `analyze_node`, before the first checkpoint — submit a new assessment instead). See [`pipeline/runner.py`](backend/pipeline/runner.py)'s `retry_failed_step` |
 | `POST` | `/api/clarify/answer/{job_id}` | Body: `{"answers": {question: answer}}`. 409 if job isn't awaiting clarification. Resumes the pipeline → `{"status": "generating"}` |
 | `POST` | `/api/review/approve/{job_id}` | Body: `{"approved_stories": [...]}`. 409 if job wasn't run with `review_mode=true`. Resumes the pipeline → `{"status": "creating"}` |
 | `GET` | `/api/ado/status/{job_id}` | → `{"ado_results", "errors"}`. 404 if unknown |
@@ -328,6 +329,8 @@ Every `dev_tasks` entry has exactly one corresponding `unit_test_tasks` entry at
 | `create_notion_node` | `done` (or `error`) | `OUTPUT_MODE=notion`: creates one Epic page per story in the Notion database (`NOTION_DATABASE_ID`) via `notion-client`, with Dev/Unit-Test tasks rendered as nested blocks; one story failing doesn't abort the rest |
 
 After `review_node`, the graph branches on `settings.OUTPUT_MODE` to reach `export_document_node`, `create_ado_node`, or `create_notion_node` — all three are registered unconditionally so the mode can be flipped at runtime without recompiling the graph. The graph **interrupts before** `generate_node` and before whichever of the three is reachable. `pipeline/runner.py`'s `_drive` loop auto-resumes past an interrupt when no human input is actually required (no ambiguities found / `review_mode=False`), and stops cleanly at a genuine human-in-the-loop pause otherwise. Every edge between nodes is conditional: a node that sets `status == "error"` routes straight to `END`, so a failure can never be silently overwritten back to `"done"` by a downstream node running on empty input.
+
+If `generate_node` or a create/export node fails outright (all its `llm_retry.py` attempts exhausted, or a non-LLM error like a bad `NOTION_DATABASE_ID`), `POST /api/assess/retry/{job_id}` rewinds the checkpoint to right before the failed node and re-runs just that node, reusing everything computed before it (see the API reference above). This isn't idempotent for the create/export nodes: they isolate failures per-item (one story failing doesn't abort the rest), so retrying after a *partial* failure re-creates every approved story/task from scratch, including ones that already succeeded on the first attempt — expect duplicate ADO work items / Notion pages / a re-generated document for those. A failure inside `analyze_node` has no earlier checkpoint to rewind to, so it isn't retryable this way — submit a new assessment instead.
 
 `job_id` doubles as the LangGraph checkpoint `thread_id`, so `get_job_state(job_id)` can always retrieve the latest state for polling, and `resume_after_clarification` / `resume_after_review` patch state via `aupdate_state` before resuming.
 

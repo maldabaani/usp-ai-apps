@@ -58,6 +58,10 @@
       <ul class="sf-error-list" *ngIf="state.errors.length">
         <li *ngFor="let error of state.errors">{{ error }}</li>
       </ul>
+      <button class="sf-btn" (click)="retry()" [disabled]="retrying">
+        {{ retrying ? 'Retrying…' : 'Retry' }}
+      </button>
+      <p class="sf-error-text" *ngIf="retryError">{{ retryError }}</p>
     </div>
   </div>
 

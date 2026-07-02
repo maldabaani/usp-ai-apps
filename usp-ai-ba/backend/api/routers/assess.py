@@ -10,7 +10,7 @@ from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Uploa
 
 from api.job_registry import list_assess_jobs, register_assess_job
 from config import settings
-from pipeline.runner import get_job_state, start_job
+from pipeline.runner import get_job_state, identify_retryable_failure, retry_failed_step, start_job
 from pipeline.state import StoryForgeState, new_state
 
 logger = logging.getLogger(__name__)
@@ -92,6 +92,35 @@ async def rerun_assessment(job_id: str, background_tasks: BackgroundTasks):
     background_tasks.add_task(_run_assessment, initial_state)
 
     return {"job_id": new_job_id}
+
+
+async def _run_retry(job_id: str) -> None:
+    try:
+        await retry_failed_step(job_id)
+        logger.info("Retry job=%s completed", job_id)
+    except Exception:
+        logger.exception("Retry job=%s crashed — job is stuck", job_id)
+
+
+@router.post("/retry/{job_id}")
+async def retry_assessment(job_id: str, background_tasks: BackgroundTasks):
+    """Re-run just the step that failed (generate_node, or whichever create_*
+    node OUTPUT_MODE selects), without redoing SDD parsing, RAG retrieval,
+    clarification, generation, or review that already succeeded."""
+    state = await get_job_state(job_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if state.get("status") != "error":
+        raise HTTPException(status_code=409, detail="Job is not in an error state")
+    if identify_retryable_failure(state) is None:
+        raise HTTPException(
+            status_code=409,
+            detail="This failure isn't resumable (it happened before the first "
+            "checkpoint) — submit a new assessment instead",
+        )
+
+    background_tasks.add_task(_run_retry, job_id)
+    return {"status": "retrying"}
 
 
 @router.get("/jobs")
