@@ -27,3 +27,24 @@
 .sf-success-text {
   color: var(--sf-primary);
 }
+
+.sf-toggle-field {
+  display: flex;
+  align-items: center;
+}
+
+.sf-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--sf-text);
+  cursor: pointer;
+}
+
+.sf-codemind-heading {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid var(--sf-border);
+}

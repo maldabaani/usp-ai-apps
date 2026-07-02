@@ -1,6 +1,7 @@
 package com.jslogicextractor.orchestration;
 
 import com.jslogicextractor.config.ExtractionProperties;
+import com.jslogicextractor.config.RuntimeSettings;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,10 +26,12 @@ public class JobRegistry {
 
     private final Map<UUID, ExtractionJob> jobs = new ConcurrentHashMap<>();
     private final ExtractionProperties defaults;
+    private final RuntimeSettings runtimeSettings;
     private final JobStore jobStore;
 
-    public JobRegistry(ExtractionProperties defaults, JobStore jobStore) {
+    public JobRegistry(ExtractionProperties defaults, RuntimeSettings runtimeSettings, JobStore jobStore) {
         this.defaults = defaults;
+        this.runtimeSettings = runtimeSettings;
         this.jobStore = jobStore;
     }
 
@@ -75,7 +78,9 @@ public class JobRegistry {
                 ? outputDirectoryOverride
                 : defaults.defaultOutputDirectory().resolve(id.toString());
         int maxConcurrency = maxConcurrencyOverride != null ? maxConcurrencyOverride : defaults.maxConcurrentRequests();
-        ExecutionMode executionMode = executionModeOverride != null ? executionModeOverride : defaults.executionMode();
+        // Reads the *live* default (settable via the /settings screen without a restart),
+        // not the immutable value ExtractionProperties was bound with at startup.
+        ExecutionMode executionMode = executionModeOverride != null ? executionModeOverride : runtimeSettings.executionMode();
 
         ExtractionJob job = new ExtractionJob(id, repositoryRoot, outputDirectory, maxConcurrency, executionMode, incremental);
         jobs.put(id, job);

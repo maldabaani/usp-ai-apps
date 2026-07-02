@@ -25,7 +25,23 @@ export type AppSettingsUpdate = Partial<Omit<AppSettings, 'notion_api_key_masked
   notion_api_key?: string;
 };
 
+export interface CodeMindSettings {
+  anthropicModel: string;
+  anthropicApiKeyMasked: string;
+  executionMode: string;
+  qaModel: string;
+  ollamaEnabled: boolean;
+  ollamaBaseUrl: string;
+  ollamaModel: string;
+  restartRequiredFields: string[];
+}
+
+export type CodeMindSettingsUpdate = Partial<Omit<CodeMindSettings, 'anthropicApiKeyMasked' | 'restartRequiredFields'>> & {
+  anthropicApiKey?: string;
+};
+
 const API_BASE_URL = environment.apiBaseUrl;
+const CODEMIND_API_BASE_URL = `${environment.codemindUrl}/api/v1`;
 
 @Injectable({ providedIn: 'root' })
 export class SettingsService {
@@ -37,5 +53,13 @@ export class SettingsService {
 
   updateSettings(update: AppSettingsUpdate): Observable<AppSettings> {
     return this.http.put<AppSettings>(`${API_BASE_URL}/settings`, update);
+  }
+
+  getCodeMindSettings(): Observable<CodeMindSettings> {
+    return this.http.get<CodeMindSettings>(`${CODEMIND_API_BASE_URL}/settings`);
+  }
+
+  updateCodeMindSettings(update: CodeMindSettingsUpdate): Observable<CodeMindSettings> {
+    return this.http.put<CodeMindSettings>(`${CODEMIND_API_BASE_URL}/settings`, update);
   }
 }

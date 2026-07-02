@@ -2,7 +2,13 @@ import { CommonModule } from '@angular/common';
 import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
-import { AppSettings, AppSettingsUpdate, SettingsService } from '../../services/settings.service';
+import {
+  AppSettings,
+  AppSettingsUpdate,
+  CodeMindSettings,
+  CodeMindSettingsUpdate,
+  SettingsService,
+} from '../../services/settings.service';
 
 @Component({
   selector: 'app-settings',
@@ -37,6 +43,23 @@ export class SettingsComponent implements OnInit {
   notionApiKeyMasked = '';
   notionApiKeyInput = '';
 
+  // CodeMind (separate backend/origin -- its own loading/saving/error state)
+  codeMindLoading = true;
+  codeMindLoadError = '';
+  codeMindSaving = false;
+  codeMindSaveError = '';
+  codeMindSaved = false;
+  codeMindRestartRequiredFields: string[] = [];
+
+  anthropicModel = '';
+  anthropicApiKeyMasked = '';
+  anthropicApiKeyInput = '';
+  executionMode = 'SYNC';
+  qaModel = 'claude';
+  ollamaEnabled = false;
+  codeMindOllamaBaseUrl = '';
+  codeMindOllamaModel = '';
+
   constructor(private settingsService: SettingsService) {}
 
   ngOnInit(): void {
@@ -48,6 +71,17 @@ export class SettingsComponent implements OnInit {
       error: () => {
         this.loadError = 'Unable to load settings.';
         this.loading = false;
+      },
+    });
+
+    this.settingsService.getCodeMindSettings().subscribe({
+      next: (s) => {
+        this.applyCodeMindSettings(s);
+        this.codeMindLoading = false;
+      },
+      error: () => {
+        this.codeMindLoadError = 'Unable to load CodeMind settings.';
+        this.codeMindLoading = false;
       },
     });
   }
@@ -106,6 +140,55 @@ export class SettingsComponent implements OnInit {
       error: (err) => {
         this.saving = false;
         this.saveError = err?.error?.detail || 'Failed to save settings.';
+      },
+    });
+  }
+
+  private applyCodeMindSettings(s: CodeMindSettings): void {
+    this.anthropicModel = s.anthropicModel;
+    this.anthropicApiKeyMasked = s.anthropicApiKeyMasked;
+    this.anthropicApiKeyInput = s.anthropicApiKeyMasked;
+    this.executionMode = s.executionMode;
+    this.qaModel = s.qaModel;
+    this.ollamaEnabled = s.ollamaEnabled;
+    this.codeMindOllamaBaseUrl = s.ollamaBaseUrl;
+    this.codeMindOllamaModel = s.ollamaModel;
+    this.codeMindRestartRequiredFields = s.restartRequiredFields;
+  }
+
+  isRestartRequired(field: string): boolean {
+    return this.codeMindRestartRequiredFields.includes(field);
+  }
+
+  saveCodeMind(): void {
+    this.codeMindSaving = true;
+    this.codeMindSaveError = '';
+    this.codeMindSaved = false;
+
+    const update: CodeMindSettingsUpdate = {
+      anthropicModel: this.anthropicModel,
+      executionMode: this.executionMode,
+      qaModel: this.qaModel,
+      ollamaEnabled: this.ollamaEnabled,
+      ollamaBaseUrl: this.codeMindOllamaBaseUrl,
+      ollamaModel: this.codeMindOllamaModel,
+    };
+    // Same "leave the mask unchanged means keep the current secret" convention as StoryForge's.
+    if (this.anthropicApiKeyInput !== this.anthropicApiKeyMasked) {
+      update.anthropicApiKey = this.anthropicApiKeyInput;
+    }
+
+    this.settingsService.updateCodeMindSettings(update).subscribe({
+      next: (s) => {
+        this.applyCodeMindSettings(s);
+        this.codeMindSaving = false;
+        this.codeMindSaved = true;
+      },
+      error: (err) => {
+        this.codeMindSaving = false;
+        // FastAPI-style {detail} and Spring's default {error} error bodies both handled.
+        this.codeMindSaveError =
+          err?.error?.detail || err?.error?.message || err?.error?.error || 'Failed to save CodeMind settings.';
       },
     });
   }

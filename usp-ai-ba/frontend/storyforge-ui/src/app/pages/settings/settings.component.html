@@ -96,4 +96,72 @@
     </button>
 
   </ng-container>
+
+  <h1 class="sf-codemind-heading">CodeMind Settings</h1>
+
+  <p *ngIf="codeMindLoading">Loading CodeMind settings…</p>
+  <p *ngIf="codeMindLoadError" class="sf-error-text">{{ codeMindLoadError }}</p>
+
+  <ng-container *ngIf="!codeMindLoading && !codeMindLoadError">
+
+    <div class="sf-card">
+      <h2 class="sf-section-title">LLM / Agent Configuration</h2>
+
+      <div class="sf-field">
+        <label for="anthropicApiKey">Anthropic API Key</label>
+        <input id="anthropicApiKey" class="sf-input" type="password" [(ngModel)]="anthropicApiKeyInput" />
+      </div>
+
+      <div class="sf-field">
+        <label for="anthropicModel">Anthropic Model</label>
+        <input id="anthropicModel" class="sf-input" type="text" [(ngModel)]="anthropicModel" placeholder="claude-sonnet-4-5-20250929" />
+      </div>
+
+      <div class="sf-field sf-toggle-field">
+        <label class="sf-toggle">
+          <input type="checkbox" [(ngModel)]="ollamaEnabled" />
+          <span>Enable Ollama as a second agent{{ isRestartRequired('ollamaEnabled') ? ' (restart required)' : '' }}</span>
+        </label>
+      </div>
+
+      <ng-container *ngIf="ollamaEnabled">
+        <div class="sf-field">
+          <label for="codeMindOllamaBaseUrl">Ollama Base URL{{ isRestartRequired('ollamaBaseUrl') ? ' (restart required)' : '' }}</label>
+          <input id="codeMindOllamaBaseUrl" class="sf-input" type="text" [(ngModel)]="codeMindOllamaBaseUrl" placeholder="http://localhost:11434" />
+        </div>
+        <div class="sf-field">
+          <label for="codeMindOllamaModel">Ollama Model{{ isRestartRequired('ollamaModel') ? ' (restart required)' : '' }}</label>
+          <input id="codeMindOllamaModel" class="sf-input" type="text" [(ngModel)]="codeMindOllamaModel" placeholder="qwen2.5:14b" />
+        </div>
+      </ng-container>
+    </div>
+
+    <div class="sf-card">
+      <h2 class="sf-section-title">Execution</h2>
+
+      <div class="sf-field">
+        <label for="executionMode">Execution Mode</label>
+        <select id="executionMode" class="sf-select" [(ngModel)]="executionMode">
+          <option value="SYNC">SYNC</option>
+          <option value="BATCH">BATCH</option>
+        </select>
+      </div>
+
+      <div class="sf-field">
+        <label for="qaModel">Ask Agent Model{{ isRestartRequired('qaModel') ? ' (restart required)' : '' }}</label>
+        <select id="qaModel" class="sf-select" [(ngModel)]="qaModel">
+          <option value="claude">Claude</option>
+          <option value="ollama">Ollama</option>
+        </select>
+      </div>
+    </div>
+
+    <p *ngIf="codeMindSaveError" class="sf-error-text">{{ codeMindSaveError }}</p>
+    <p *ngIf="codeMindSaved" class="sf-success-text">CodeMind settings saved.</p>
+
+    <button class="sf-btn" [disabled]="codeMindSaving" (click)="saveCodeMind()">
+      {{ codeMindSaving ? 'Saving...' : 'Save CodeMind Settings' }}
+    </button>
+
+  </ng-container>
 </div>
