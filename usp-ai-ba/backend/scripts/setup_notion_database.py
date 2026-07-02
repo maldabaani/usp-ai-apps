@@ -116,10 +116,13 @@ async def main() -> None:
         client, settings.NOTION_PARENT_PAGE_ID
     )
 
+    # Notion API 2025-09-03+: databases.create() no longer takes a top-level
+    # "properties" kwarg (the SDK silently drops it -- it's not in its picked
+    # request fields) -- the schema goes under initial_data_source instead.
     database = await client.databases.create(
         parent={"type": "page_id", "page_id": parent_page_id},
         title=[{"type": "text", "text": {"content": DATABASE_TITLE}}],
-        properties=_properties(),
+        initial_data_source={"properties": _properties()},
     )
 
     print(f"Created database '{DATABASE_TITLE}'")
