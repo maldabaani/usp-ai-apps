@@ -37,10 +37,13 @@ class Settings:
 
     # create_notion_node writes one page per Epic into NOTION_DATABASE_ID, mapping
     # onto whatever schema that database already uses. Defaults match a standard
-    # sprint board: a title property named "Task" and a status-type property named
-    # "Status" whose options include "To Do". PPM metadata is written into the page
-    # body (not as DB properties), so no extra columns are required. Set
-    # NOTION_STATUS_PROPERTY="" to skip writing the status entirely.
+    # sprint board: a title property named "Task" and a *select*-type property
+    # named "Status" whose options include "To Do" -- scripts/setup_notion_database.py
+    # provisions Status as select rather than Notion's status type, since the
+    # public API can create a new select option on write but not a new status
+    # option. PPM metadata is written into the page body (not as DB properties),
+    # so no extra columns are required. Set NOTION_STATUS_PROPERTY="" to skip
+    # writing the status entirely.
     NOTION_TITLE_PROPERTY: str = os.getenv("NOTION_TITLE_PROPERTY", "Task")
     NOTION_STATUS_PROPERTY: str = os.getenv("NOTION_STATUS_PROPERTY", "Status")
     NOTION_STATUS_VALUE: str = os.getenv("NOTION_STATUS_VALUE", "To Do")

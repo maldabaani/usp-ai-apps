@@ -26,22 +26,34 @@ from config import settings
 
 DATABASE_TITLE = "StoryForge Epics"
 
-PROPERTIES = {
-    "Name": {"title": {}},
-    "PPM Number": {"rich_text": {}},
-    "PPM Name": {"rich_text": {}},
-    "System Name": {"rich_text": {}},
-    "Status": {
-        "select": {
-            "options": [
-                {"name": "Generated", "color": "blue"},
-                {"name": "In Progress", "color": "yellow"},
-                {"name": "Done", "color": "green"},
-            ]
-        }
-    },
-    "Created": {"date": {}},
-}
+DEFAULT_STATUS_OPTIONS = [
+    {"name": "To Do", "color": "gray"},
+    {"name": "In Progress", "color": "yellow"},
+    {"name": "Done", "color": "green"},
+]
+
+
+def _properties() -> dict:
+    """Build the database schema to match config.py's NOTION_TITLE_PROPERTY /
+    NOTION_STATUS_PROPERTY / NOTION_STATUS_VALUE defaults, and create_notion.py's
+    use of a *select*-type status property (Notion's public API can't add new
+    values to a *status*-type property, so create_notion.py writes {"select":
+    ...} -- this schema must stay a select type to match).
+    """
+    status_options = list(DEFAULT_STATUS_OPTIONS)
+    if not any(opt["name"] == settings.NOTION_STATUS_VALUE for opt in status_options):
+        status_options.append({"name": settings.NOTION_STATUS_VALUE, "color": "gray"})
+
+    properties: dict = {
+        settings.NOTION_TITLE_PROPERTY: {"title": {}},
+        "PPM Number": {"rich_text": {}},
+        "PPM Name": {"rich_text": {}},
+        "System Name": {"rich_text": {}},
+        "Created": {"date": {}},
+    }
+    if settings.NOTION_STATUS_PROPERTY:
+        properties[settings.NOTION_STATUS_PROPERTY] = {"select": {"options": status_options}}
+    return properties
 
 _ID_RE = re.compile(
     r"[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}"
@@ -107,7 +119,7 @@ async def main() -> None:
     database = await client.databases.create(
         parent={"type": "page_id", "page_id": parent_page_id},
         title=[{"type": "text", "text": {"content": DATABASE_TITLE}}],
-        properties=PROPERTIES,
+        properties=_properties(),
     )
 
     print(f"Created database '{DATABASE_TITLE}'")

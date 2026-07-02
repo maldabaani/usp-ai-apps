@@ -68,8 +68,11 @@ def _task_properties(task_title: str) -> dict:
         settings.NOTION_TITLE_PROPERTY: {"title": [{"text": {"content": title}}]},
     }
     if settings.NOTION_STATUS_PROPERTY:
+        # A *select*-type payload, not *status* -- Notion's public API can create
+        # a new select option on write but cannot do the same for a status-type
+        # property, so scripts/setup_notion_database.py provisions Status as select.
         properties[settings.NOTION_STATUS_PROPERTY] = {
-            "status": {"name": settings.NOTION_STATUS_VALUE}
+            "select": {"name": settings.NOTION_STATUS_VALUE}
         }
     return properties
 
