@@ -12,7 +12,7 @@ import { AuthService } from './services/auth.service';
   styleUrl: './app.component.css',
 })
 export class AppComponent {
-  title = 'AI powered Apps';
+  title = 'Cognis AI';
 
   constructor(private authService: AuthService) {}
 

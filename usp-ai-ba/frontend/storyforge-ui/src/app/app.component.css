@@ -8,10 +8,18 @@
 }
 
 .sf-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 18px;
   font-weight: 700;
   color: var(--sf-text);
   text-decoration: none;
+}
+
+.sf-brand-icon {
+  display: block;
+  flex-shrink: 0;
 }
 
 .sf-header-nav {
