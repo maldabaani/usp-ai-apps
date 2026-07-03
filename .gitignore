@@ -22,6 +22,7 @@ usp-ai-ba/backend/chroma_db/
 usp-ai-ba/backend/jobs/
 usp-ai-ba/backend/uploads/
 usp-ai-ba/backend/exports/
+usp-ai-ba/backend/.pytest_cache/
 
 # usp-ai-ba frontend (Angular)
 usp-ai-ba/frontend/storyforge-ui/node_modules/

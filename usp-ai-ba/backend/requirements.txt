@@ -19,3 +19,4 @@ httpx
 python-dotenv
 pyjwt
 bcrypt
+pytest
