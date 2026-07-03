@@ -1,6 +1,10 @@
 # macOS
 .DS_Store
 
+# dev-up.sh (shared local JWT_SECRET + log output)
+.dev-jwt-secret
+.dev-logs/
+
 # code-mind-app (Java/Maven)
 code-mind-app/target/
 code-mind-app/output/

@@ -4,6 +4,42 @@ This repo has two independent apps, plus a unified "umbrella" deployment that
 serves both under one origin behind an nginx gateway (see the last section).
 For separate local dev, each app has its own section below.
 
+## Authentication (read this first)
+
+Both apps sit behind a shared login: StoryForge's FastAPI backend issues a JWT
+on `POST /auth/login`, and CodeMind only ever verifies that same token — it
+never issues its own. That means **both backends must be started with the
+exact same `JWT_SECRET` value**, or CodeMind will reject every request (either
+with `{"error":"Server has no JWT_SECRET configured"}` if it's unset entirely,
+or "Invalid or expired token" if the two values don't match).
+
+- **Fastest path for standalone dev:** run `./dev-up.sh` from the repo root
+  (after the one-time `venv`/`npm install` setup in the sections below). It
+  generates one shared secret (persisted to `.dev-jwt-secret`, gitignored, so
+  restarting doesn't invalidate your login), and starts StoryForge's backend,
+  CodeMind, and the Angular shell together with it. Ctrl+C stops all three.
+- **Manual standalone dev:** export the same `JWT_SECRET` value in every
+  terminal before starting either backend, e.g.
+  `export JWT_SECRET=$(openssl rand -hex 32)` in one shell, then start each
+  app from a terminal that inherits it (or pass it inline:
+  `JWT_SECRET=$JWT_SECRET uvicorn ...` / `JWT_SECRET=$JWT_SECRET ./mvnw spring-boot:run`).
+  Leaving it unset for StoryForge alone "works" in the sense that it
+  auto-generates and persists its own random one (`backend/jobs/.jwt_secret`)
+  — but CodeMind has no equivalent fallback, so that alone won't fix SSO.
+- **Docker Compose:** see the "Unified deployment" section below —
+  `docker-compose.yml` passes `JWT_SECRET` through to both containers from
+  your shell's environment.
+
+There's no user management UI or endpoint yet: the first time StoryForge's
+backend starts with no `users.json`, it seeds a default `admin` / `admin`
+account (logged loudly to the console when it happens), and that's the only
+account that exists until you add more. To add a real account (and/or retire
+this one), the only way today is calling `user_store.create_user(username,
+password, role)` directly (e.g. from a `python -c` one-liner run inside the
+backend's venv, with `JOBS_DIR` pointed at the same directory the running
+server uses) — don't expose either app beyond local testing while `admin`/
+`admin` is still the only login.
+
 ## code-mind-app (CodeMind — Java/Spring Boot)
 
 Scans a repo and extracts business logic; browse results / ask questions in a web UI.
@@ -119,6 +155,7 @@ Run everything with Docker Compose from the repo root:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
+export JWT_SECRET=$(openssl rand -hex 32)   # shared by both containers -- see "Authentication" above
 docker compose up --build
 ```
 
