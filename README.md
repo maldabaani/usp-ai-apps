@@ -95,7 +95,7 @@ downstream nodes run on incomplete state.
 **Key REST endpoints:** `POST /api/assess`, `GET /api/assess/status/{job_id}`,
 `POST /api/clarify/answer/{job_id}`, `POST /api/review/approve/{job_id}`,
 `GET /api/export/document/{job_id}`, `POST /api/ingest/pdfs`, `POST /api/ingest/code`.
-**Frontend routes:** `/` (dashboard), `/assess`, `/clarify/:jobId`, `/review/:jobId`, `/status/:jobId`.
+**Frontend routes:** `/ai-ba` (dashboard), `/assess`, `/clarify/:jobId`, `/review/:jobId`, `/status/:jobId`.
 
 Full details, configuration reference, and the complete API/schema documentation:
 [`usp-ai-ba/README.md`](usp-ai-ba/README.md).

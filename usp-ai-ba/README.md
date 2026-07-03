@@ -2,17 +2,28 @@
 
 StoryForge AI turns a Solution Design Document (SDD) PDF into a fully-detailed, ready-to-create Azure DevOps work item hierarchy — **Epic → User Story → Dev Tasks + Unit Test Tasks** — using a local Ollama model (`qwen2.5:14b` by default) for analysis/generation, the same Ollama server for embeddings + ChromaDB for retrieval-augmented context (RAG) over your existing codebase, user manuals, and JPA entities, and a human-in-the-loop review/clarification workflow before anything is written to ADO.
 
-> `clarify_node` and `generate_node` run at `temperature=0` with a fixed seed, so the
-> same SDD produces the same clarification questions and the same generated stories on
-> every run. Both nodes retry (with a nudged seed) on transient failures or malformed
-> JSON before giving up — see [`backend/pipeline/nodes/llm_retry.py`](backend/pipeline/nodes/llm_retry.py).
-> `ANTHROPIC_API_KEY`/`CLAUDE_MODEL` are configured in `config.py` but are not currently
-> called anywhere in the pipeline — Claude is not used by this app today.
+This same backend and Angular app also serve **CodeMind** — a per-repository business-logic
+extraction and Q&A tool, merged in from a formerly-standalone Java service (see the
+[CodeMind](#codemind) section below). The two flows share one FastAPI process, one
+job-persistence layer under `JOBS_DIR`, one `/settings` screen, and one error-monitoring
+feed, but otherwise don't interact — this doc's SDD-to-stories content below is unaffected
+by CodeMind's presence in the same app.
+
+> `clarify_node` and `generate_node` (StoryForge's own pipeline, below) run at
+> `temperature=0` with a fixed seed, so the same SDD produces the same clarification
+> questions and the same generated stories on every run. Both nodes retry (with a nudged
+> seed) on transient failures or malformed JSON before giving up — see
+> [`backend/pipeline/nodes/llm_retry.py`](backend/pipeline/nodes/llm_retry.py).
+> `ANTHROPIC_API_KEY`/`CLAUDE_MODEL` are configured in `config.py` but are not called
+> anywhere in *this pipeline* — Claude is genuinely used elsewhere in this same backend,
+> by CodeMind's extraction/Ask agents (see [CodeMind](#codemind) below).
 
 It is a two-part application:
 
-- **Backend** — Python / FastAPI, orchestrated by a [LangGraph](https://github.com/langchain-ai/langgraph) state machine
-- **Frontend** — Angular 17+ standalone-component SPA
+- **Backend** — Python / FastAPI. StoryForge's own flow is orchestrated by a
+  [LangGraph](https://github.com/langchain-ai/langgraph) state machine; CodeMind's flow
+  (`codemind/` package) is a simpler per-file fan-out job model, `asyncio`-based
+- **Frontend** — Angular 17+ standalone-component SPA, one shell for both flows
 
 ## Table of contents
 
@@ -33,6 +44,7 @@ It is a two-part application:
 - [Generated story JSON schema](#generated-story-json-schema)
 - [Pipeline state machine](#pipeline-state-machine)
 - [Frontend pages](#frontend-pages)
+- [CodeMind](#codemind)
 - [Testing](#testing)
 - [Troubleshooting](#troubleshooting)
 
@@ -73,7 +85,7 @@ The graph is checkpointed (`AsyncSqliteSaver`, persisted to `JOBS_DIR/checkpoint
 ```
 backend/
   api/
-    main.py                 FastAPI app factory, CORS, router registration (all under /api), /health
+    main.py                 FastAPI app factory, CORS, lifespan (job registry reload, file watcher), router registration (all under /api), /health
     job_registry.py         In-memory registry for /api/assess jobs (list + metadata)
     ingest_jobs.py           In-memory registry for /api/ingest jobs (progress + status)
     routers/
@@ -83,6 +95,10 @@ backend/
       ado.py                  GET /api/ado/status/{job_id}
       export.py                GET /api/export/document/{job_id}
       ingest.py                POST /api/ingest/pdfs, POST /api/ingest/code, GET /api/ingest/status/{job_id}
+      settings.py              GET/PUT /api/settings -- both StoryForge's and CodeMind's configuration
+      monitoring.py             GET /api/monitoring/errors -- captures ERROR+ logs from every module in this process, StoryForge's and CodeMind's alike
+      codemind_jobs.py          CodeMind's /api/v1/extraction-jobs* (see CodeMind section below)
+      codemind_ask.py            CodeMind's SSE /api/v1/.../qa/stream and /api/v1/ask/stream
   scripts/
     setup_notion_database.py  One-off script: creates the Notion "StoryForge Epics" database, prints NOTION_DATABASE_ID
   pipeline/
@@ -108,20 +124,32 @@ backend/
     client.py                  notion-client AsyncClient wrapper: page/block creation, 100-block batching, rich_text chunking
   prompts/
     system_prompt.py           Full generate_node system prompt + JSON output schema
-  config.py                   Settings loaded from environment / .env
+  codemind/                  CodeMind's own package -- see CodeMind section below for a per-module breakdown
+  config.py                   Settings loaded from environment / .env (StoryForge's and CodeMind's alike)
   requirements.txt
   .env.example
 
 frontend/storyforge-ui/
   src/app/
     pages/
-      dashboard/               Job list (PPM number/name, status, story count)
+      landing/                 "/" -- app picker (StoryForge / CodeMind cards)
+      dashboard/               "/ai-ba" -- job list (PPM number/name, status, story count)
       assess/                  New assessment submission form (PDF upload)
       clarify/                 Answer clarification questions
       review/                  Edit/approve generated stories before document export / ADO creation
       status/                  Poll job status, stepper, ADO results table (OUTPUT_MODE=ado) or Notion pages table (OUTPUT_MODE=notion), and (once done) a read-only stories/tasks text panel with copy + document-download buttons
+      settings/                 "/settings" -- one page for both StoryForge's and CodeMind's configuration
+      monitoring/                "/monitoring" -- merged error feed for both flows
+      codemind/
+        jobs-list/               "/codemind" -- start-job form + jobs table
+        job-detail/               "/codemind/:jobId" -- progress stepper, stats, file feed, viewer modal
+        job-ask/                   "/codemind/:jobId/ask" -- per-job SSE Q&A chat
+        ask-all/                   "/codemind/ask" -- cross-job SSE Q&A chat
     services/
-      storyforge.service.ts    HTTP client for the backend API
+      storyforge.service.ts    HTTP client for StoryForge's own backend API
+      codemind.service.ts       HTTP + SSE client for CodeMind's endpoints
+      settings.service.ts        Unified settings GET/PUT
+      monitoring.service.ts      Unified error feed
     app.routes.ts              SPA route table
 ```
 
@@ -190,14 +218,14 @@ Only needed when `OUTPUT_MODE=notion`:
 
 ## Configuration reference
 
-All backend configuration is environment-variable driven (`backend/.env`, loaded via `python-dotenv`). See `backend/config.py` for defaults. Everything below except `ANTHROPIC_API_KEY`/`CLAUDE_MODEL` (unused today) can also be edited from the `/settings` screen in the UI, which writes back to `.env` and applies the change to the running backend immediately — no restart needed (see [`config.py`](backend/config.py)'s `Settings.apply_updates` and [`config_store.py`](backend/config_store.py)).
+All backend configuration is environment-variable driven (`backend/.env`, loaded via `python-dotenv`). See `backend/config.py` for defaults. Everything below can also be edited from the `/settings` screen in the UI (one screen covers both StoryForge's and CodeMind's fields), which writes back to `.env` and applies the change to the running backend immediately — no restart needed for most fields (see [`config.py`](backend/config.py)'s `Settings.apply_updates` and [`config_store.py`](backend/config_store.py); a few CodeMind fields still require a restart, flagged as `restart_required_fields` in the `GET /api/settings` response).
 
 | Variable | Default | Description |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | _(unused)_ | Configured but not currently called anywhere in the pipeline — `clarify_node`/`generate_node` use `OLLAMA_LLM_MODEL` instead |
-| `CLAUDE_MODEL` | `claude-sonnet-4-6` | Configured but not currently used (see `ANTHROPIC_API_KEY` above) |
-| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL, used for both embeddings and clarify/generate |
-| `OLLAMA_EMBED_MODEL` | `nomic-embed-text` | Embedding model name |
+| `ANTHROPIC_API_KEY` | _(none)_ | Not called anywhere in *this* pipeline (`clarify_node`/`generate_node` use `OLLAMA_LLM_MODEL` instead) — but it **is** required for CodeMind's default (Claude) extraction/Ask agent, see [CodeMind](#codemind) below |
+| `CLAUDE_MODEL` | `claude-sonnet-4-6` | Not used by this pipeline; used by CodeMind as the Claude model for extraction/Ask (exposed as `anthropic_model` on the settings screen) |
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL, shared by StoryForge's embeddings/clarify/generate and CodeMind's optional Ollama agent/QA/embeddings — one physical server for both flows |
+| `OLLAMA_EMBED_MODEL` | `nomic-embed-text` | Embedding model name, shared by StoryForge's RAG and CodeMind's optional vector search |
 | `OLLAMA_LLM_MODEL` | `qwen2.5:14b` | Chat model used by `clarify_node` and `generate_node`, both run at `temperature=0` with a fixed seed for reproducible output across runs of the same SDD |
 | `CHROMA_PERSIST_PATH` | `./chroma_db` | On-disk path for the persistent ChromaDB store |
 | `MCP_SERVER_PATH` | _(empty)_ | Path to the ADO MCP server's Node.js entry script |
@@ -207,11 +235,17 @@ All backend configuration is environment-variable driven (`backend/.env`, loaded
 | `NOTION_DATABASE_ID` | _(empty)_ | ID of the "StoryForge Epics" database `create_notion_node` writes pages into — created once via `python -m scripts.setup_notion_database`. `notion_export/client.py` resolves and caches the database's *data source* ID from this at runtime (Notion API 2025-09-03+ requires pages to be parented by a data source, not a database, directly) — you only ever configure the database ID here |
 | `NOTION_PARENT_PAGE_ID` | _(empty)_ | ID of the Notion page (shared with the integration) under which `scripts/setup_notion_database.py` creates the database; only needed to run that script |
 | `CORS_ORIGINS` | `http://localhost:4200` | Comma-separated list of allowed CORS origins |
-| `JOBS_DIR` | `./jobs` | Holds `checkpoints.sqlite` (LangGraph's persisted pipeline state, one row per job step) and `assess_jobs.json` (the dashboard's job list) — both survive a backend restart |
+| `JWT_SECRET` | _(auto-generated)_ | Signs/verifies the login JWT used by every route in this app (StoryForge's and CodeMind's alike). Leave unset for local dev — a random value is generated and persisted to `JOBS_DIR/.jwt_secret` so restarts don't invalidate logins. Set explicitly before exposing the app beyond local testing |
+| `JOBS_DIR` | `./jobs` | Holds `checkpoints.sqlite` (LangGraph's persisted pipeline state), `assess_jobs.json` (the dashboard's job list), `users.json`, `.jwt_secret`, and CodeMind's `codemind_jobs/` (one JSON file per extraction job) — all survive a backend restart |
 | `UPLOADS_DIR` | `./uploads` | Directory uploaded SDD PDFs are saved to (`{job_id}.pdf`) |
 | `EXPORTS_DIR` | `./exports` | Directory generated `.docx` files are saved to (`{ppm_number}_{ppm_name}_{system_name}_V_{n}.docx`, sanitized and versioned per project), used when `OUTPUT_MODE=document` |
 | `PROMPT_VARIANT` | `production` | `production` uses `prompts/system_prompt.py`. `selftest` swaps in `prompts/system_prompt_selftest.py`, a variant tuned for assessing SDDs about StoryForge AI's own codebase (Python/FastAPI/LangGraph/Angular) instead of the default telecom/Spring Boot domain assumptions. |
 | `OUTPUT_MODE` | `document` | The **default** task-management system for new assessments — `document` writes approved stories to a `.docx` via `export_document_node`, downloadable from `GET /export/document/{job_id}`; `ado` pushes to Azure DevOps via `create_ado_node`; `notion` pushes to a Notion database via `create_notion_node`. All three nodes are registered unconditionally; only the routing picks one. Each job can override this default via the dropdown on the Assess form — the choice is stamped onto the job as `state["output_mode"]` at submission time, so changing this default later doesn't affect already-submitted jobs |
+
+CodeMind's own `CODEMIND_*` variables (extraction agents, execution mode, Ask model, vector
+search, the directory watcher, and its output directory) are documented in
+[`.env.example`](backend/.env.example) and the [CodeMind](#codemind) section below, rather
+than duplicated in this table.
 
 ## Running the app
 
@@ -264,6 +298,9 @@ All endpoints are served under the FastAPI app created in `backend/api/main.py`,
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/health` (also `/api/health`) | Liveness check → `{"status": "ok"}` |
+| `POST` | `/api/auth/login` | Body: `{"username", "password"}` → `{"access_token", "username", "role"}`. This one JWT is trusted by every route in this app, StoryForge's and CodeMind's alike |
+| `POST` | `/api/auth/logout` | Stateless — nothing to invalidate server-side; the client just drops the token |
+| `GET` | `/api/auth/me` | → the decoded `{"username", "role"}` for the caller's current token |
 | `POST` | `/api/ingest/pdfs` | Body: `{"folder_path": str}`. Starts background PDF ingestion → `{"job_id", "status": "pending"}` |
 | `POST` | `/api/ingest/code` | Body: `{"repo_path": str}`. Starts background code ingestion → `{"job_id", "status": "pending"}` |
 | `GET` | `/api/ingest/status/{job_id}` | → `{"status", "progress", "errors", "result"}` (`result` is `null` until the job finishes, then holds `files_processed`/`chunks_indexed`/etc.). 404 if unknown |
@@ -272,12 +309,17 @@ All endpoints are served under the FastAPI app created in `backend/api/main.py`,
 | `GET` | `/api/assess/status/{job_id}` | Full `StoryForgeState` for the job (including `output_mode`). 404 if unknown |
 | `POST` | `/api/assess/retry/{job_id}` | Re-runs just the pipeline step that failed (`generate_node`, or whichever `create_ado_node`/`export_document_node`/`create_notion_node` the job's `output_mode` selects) without redoing earlier work (SDD parsing, RAG retrieval, clarification, generation, or review that already succeeded). Distinct from `llm_retry.py`'s per-LLM-call retries inside a single node — this is a user-triggered retry of an entire node after it already exhausted those and left the job in `status: "error"`. 404 if unknown, 409 if the job isn't in an `error` status or the failure isn't resumable (e.g. it failed inside `analyze_node`, before the first checkpoint — submit a new assessment instead). See [`pipeline/runner.py`](backend/pipeline/runner.py)'s `retry_failed_step` |
 | `POST` | `/api/assess/recreate/{job_id}` | Pushes a **completed** job's approved stories to Notion/ADO again from scratch — shown on the status page as "Re-create tasks in Notion/ADO" once a job with `output_mode` `notion`/`ado` reaches `done`. Notion: archives the job's previously-created pages first, then creates fresh ones. ADO: no delete capability exists (the external MCP server only exposes `create_*` tools), so this just creates a fresh Epic/Story/Tasks hierarchy alongside whatever was created before. 404 if unknown, 409 if the job isn't `done` yet or its `output_mode` is `document` (nothing to "recreate" — it's just a file). See [`pipeline/runner.py`](backend/pipeline/runner.py)'s `recreate_tasks` |
+| `POST` | `/api/assess/update/{job_id}` | Updates a **completed** Notion job's existing pages in place (position-matched against the approved stories/tasks) instead of archiving and recreating them — shown as "Update tasks" alongside "Re-create tasks" for `output_mode=notion` jobs only (ADO has no update/delete tool in its MCP wrapper). 404 if unknown, 409 if the job isn't `done` or isn't Notion. See [`pipeline/runner.py`](backend/pipeline/runner.py)'s `update_tasks` |
 | `POST` | `/api/clarify/answer/{job_id}` | Body: `{"answers": {question: answer}}`. 409 if job isn't awaiting clarification. Resumes the pipeline → `{"status": "generating"}` |
 | `POST` | `/api/review/approve/{job_id}` | Body: `{"approved_stories": [...]}`. 409 if job wasn't run with `review_mode=true`. Resumes the pipeline → `{"status": "creating"}` |
 | `GET` | `/api/ado/status/{job_id}` | → `{"ado_results", "errors"}`. 404 if unknown |
 | `GET` | `/api/export/document/{job_id}` | Downloads the generated `.docx` (`output_mode=document`). 404 if the job is unknown or the document isn't generated yet. Linked from the status page via the "Download Document" button shown once the job reaches `done` |
-| `GET` | `/api/settings` | Current LLM + task-management-system configuration, read from `backend/.env`. The Notion API key is masked (last 4 chars only, e.g. `"…q5t9"`) — never returned in plaintext |
-| `PUT` | `/api/settings` | Body: any subset of the fields returned by `GET /api/settings`, plus optionally `notion_api_key` (a real new key — omitting it, or sending back the mask unchanged, leaves the current key untouched). Writes changed fields to `backend/.env` and applies them to the running backend immediately (no restart) — see [`config.py`](backend/config.py)'s `Settings.apply_updates` and [`config_store.py`](backend/config_store.py). Returns the refreshed (masked) settings |
+| `GET` | `/api/settings` | Current configuration for **both** StoryForge and CodeMind, read from `backend/.env`. Secrets (`notion_api_key`, `anthropic_api_key`) are masked (last 4 chars only, e.g. `"…q5t9"`) — never returned in plaintext. Also returns `restart_required_fields`, the subset of CodeMind fields that need a process restart to take effect |
+| `PUT` | `/api/settings` | Body: any subset of the fields returned by `GET /api/settings`, plus optionally `notion_api_key`/`anthropic_api_key` (a real new value — omitting it, or sending back the mask unchanged, leaves the current secret untouched). Writes changed fields to `backend/.env` and applies them to the running backend immediately for the fields that support hot-reload — see [`config.py`](backend/config.py)'s `Settings.apply_updates` and [`config_store.py`](backend/config_store.py). Returns the refreshed (masked) settings |
+| `GET` | `/api/monitoring/errors` | Every `ERROR`+-level log record captured from this process since startup (StoryForge's and CodeMind's modules alike — see [`monitoring/log_capture.py`](backend/monitoring/log_capture.py)), ring-buffered to the most recent N. Backs the `/monitoring` page's combined error feed |
+
+CodeMind's own endpoints (`/api/v1/extraction-jobs*`, `/api/v1/ask/stream`) are documented in
+the [CodeMind](#codemind) section below, not duplicated in this table.
 
 ## Generated story JSON schema
 
@@ -343,24 +385,133 @@ If `generate_node` or a create/export node fails outright (all its `llm_retry.py
 
 | Route | Component | Purpose |
 |---|---|---|
-| `/` | Dashboard | Lists all submitted jobs with live status + story count |
+| `/login` | Login | Username/password form; stores the returned JWT and redirects to `/` |
+| `/` | Landing | App picker — "AI Business Analyst" and "CodeMind" cards |
+| `/ai-ba` | Dashboard | Lists all submitted jobs with live status + story count |
 | `/assess` | Assess | Form to submit a new SDD PDF + PPM metadata + task-management-system dropdown (document/Notion/ADO, defaulting to the Settings screen's global default) + review mode toggle |
 | `/clarify/:jobId` | Clarify | Displays clarification questions, submits answers to resume the pipeline |
 | `/review/:jobId` | Review | Displays generated stories for human editing/approval before ADO creation |
-| `/status/:jobId` | Status | Polls job status, shows a step progress indicator, the final ADO work item results table or Notion pages table (depending on the job's own `output_mode`), a "Re-create tasks in Notion/ADO" button once a `notion`/`ado` job reaches `done`, and a read-only formatted stories/tasks panel with copy-to-clipboard and a Download Document button |
-| `/settings` | Settings | Edits LLM configuration (Ollama base URL/model/embed model, prompt variant) and the task-management-system configuration (default system + per-system Notion/ADO fields), persisted to `backend/.env` and applied to the running backend immediately |
+| `/status/:jobId` | Status | Polls job status, shows a step progress indicator, the final ADO work item results table or Notion pages table (depending on the job's own `output_mode`), "Re-create tasks"/"Update tasks" buttons once a `notion`/`ado` job reaches `done`, and a read-only formatted stories/tasks panel with copy-to-clipboard and a Download Document button |
+| `/settings` | Settings | One page for both StoryForge's configuration (Ollama base URL/model/embed model, prompt variant, task-management-system fields) and CodeMind's (Anthropic key/model, Ollama agent toggle, execution mode, Ask model, vector search toggle), persisted to `backend/.env` and applied to the running backend immediately for most fields |
+| `/monitoring` | Monitoring | Combined error feed for both StoryForge and CodeMind, tagged by which app logged each entry |
+| `/codemind`, `/codemind/:jobId`, `/codemind/:jobId/ask`, `/codemind/ask` | CodeMind pages | See [CodeMind](#codemind) below |
 | `**` | — | Redirects to `/` |
+
+## CodeMind
+
+CodeMind scans a repository, sends each source file to an LLM with a structured
+extraction prompt, and stores the resulting rules/summary/dependencies as JSON — one
+result file per source file. It was originally a standalone Java/Spring Boot service
+(`code-mind-app/`) and was ported into this same Python backend (see `git log` for the
+merge history if you're curious) to get both apps onto one tech stack and one process.
+Functionally nothing changed for end users: same REST/SSE contract, same job model, same
+extraction behavior — the differences below are internal.
+
+### How it works
+
+1. **Start a job** — `POST /api/v1/extraction-jobs` with a `repositoryPath` (and optional
+   `outputDirectory`/`maxConcurrency`/`executionMode`). The job is registered and its
+   scan/extraction runs as a FastAPI background task, not on the request thread.
+2. **Scan + filter** — `codemind/scanner.py` walks the tree (respecting included
+   extensions/excluded directories), `codemind/chunker.py` splits any file over the
+   size threshold at safe line boundaries into `part-NNNN` virtual files instead of
+   skipping it, and `codemind/filter.py` skips non-substantive files (`.d.ts`,
+   test/spec files, barrel/re-export-only files) before any LLM call.
+3. **Extract** — `codemind/orchestrator.py` fans the eligible files out across the
+   registered agents (`codemind/agents/`) with an `asyncio.Semaphore(max_concurrency)`
+   bounding concurrent LLM calls. Each file's result (or per-file failure — one bad
+   file never aborts the job) is written to `{outputDirectory}/{relativePath}.json` by
+   `codemind/output.py`.
+4. **Ask** — `codemind/qa.py` retrieves the extraction results most relevant to a
+   question (real vector search via Ollama embeddings when enabled, otherwise
+   keyword-overlap scoring) and asks an LLM to answer grounded in only that context,
+   streamed back over SSE.
+5. **Incremental re-runs** — `codemind/manifest.py` content-hashes source files per
+   repository; a job started with `incremental=true` (auto-detected when a manifest
+   already exists for that repo path) only re-processes changed/added files and removes
+   output for deleted ones.
+
+### Module layout (`backend/codemind/`)
+
+| Module | Responsibility |
+|---|---|
+| `scanner.py`, `chunker.py` | Directory/file walking, extension/exclusion filtering, large-file line-boundary chunking |
+| `filter.py` | Non-substantive-file pre-filter (test files, `.d.ts`, barrel files) |
+| `manifest.py` | SHA-256 content-hash manifest for incremental re-runs |
+| `prompts.py` | Extraction prompt builder (per-language hints + JSON output instructions) |
+| `agents/base.py` | `ExtractionResult` (camelCase on-disk JSON shape) + the `LogicExtractionAgent` protocol |
+| `agents/claude_agent.py`, `agents/ollama_agent.py` | Per-file extraction via `ChatAnthropic`/`ChatOllama`; single attempt, catches all exceptions into a failure result (per-file isolation) |
+| `agents/selector.py` | Round-robins across whichever agents are configured (`build_agents()`/`get_agent_selector()`) — Claude registers iff `ANTHROPIC_API_KEY` is set, Ollama iff `CODEMIND_OLLAMA_ENABLED=true` |
+| `qa.py` | Ask/Ask-All retrieval + answer generation (keyword or vector search) |
+| `orchestrator.py` | `ExtractionJob`/`JobPhase` + the scan → filter → fan-out → complete pipeline for one job |
+| `job_store.py`, `job_registry.py` | Per-job JSON persistence under `JOBS_DIR/codemind_jobs/`, and the in-memory registry reloaded at startup (non-terminal jobs found on disk are marked `FAILED` with `"Interrupted at server restart"`, matching a real restart's effect on any in-flight fan-out) |
+| `batch.py` | `BATCH` execution mode via the raw `anthropic.AsyncAnthropic` SDK's Message Batches API (50% token discount, built for large repos; polls every 30s with a 26h timeout) |
+| `watch.py` | Optional non-recursive directory watcher (`watchdog`) that auto-starts one job per dropped file, debounced |
+| `output.py` | Reads/writes per-file result JSON + job summary JSON, and lists recent/failed output files for the UI |
+
+### Execution modes
+
+- **SYNC** (default) — per-file calls through the registered agents, bounded by
+  `maxConcurrency` (per-job, defaults to 8). Keep this at or below
+  `OLLAMA_NUM_PARALLEL × (agent count)` if using the Ollama agent, to avoid requests
+  queuing on the Ollama side.
+- **BATCH** — always uses the Anthropic Batches API (Claude only, regardless of
+  `CODEMIND_OLLAMA_ENABLED`) for a flat 50% token discount, at the cost of higher
+  latency (results arrive once the whole batch completes, not per-file).
+
+### REST/SSE endpoints (`api/routers/codemind_jobs.py`, `api/routers/codemind_ask.py`)
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/v1/extraction-jobs` | Start a job. Body: `{"repositoryPath", "outputDirectory"?, "maxConcurrency"?, "executionMode"?}` → 202 + the job |
+| `GET` | `/api/v1/extraction-jobs` | List all jobs, newest first |
+| `GET` | `/api/v1/extraction-jobs/{id}` | Job status/progress |
+| `POST` | `/api/v1/extraction-jobs/{id}/cancel` | Soft-cancel — in-flight LLM calls finish, no new ones start |
+| `DELETE` | `/api/v1/extraction-jobs/{id}` | Delete a job + its output files |
+| `DELETE` | `/api/v1/extraction-jobs` | Clear every job + all output data |
+| `GET` | `/api/v1/extraction-jobs/{id}/output-files` | Most-recently-modified output files (50 max) |
+| `GET` | `/api/v1/extraction-jobs/{id}/output-file?relativePath=...` | Read one output file's raw JSON |
+| `GET` | `/api/v1/extraction-jobs/{id}/failed-files` | Files where extraction failed, with the error |
+| `GET` | `/api/v1/extraction-jobs/{id}/export` | Download every successful extraction for the job as one merged JSON file |
+| `POST` | `/api/v1/extraction-jobs/{id}/qa` | One-shot (non-streaming) Ask for this job |
+| `POST` | `/api/v1/extraction-jobs/{id}/qa/stream` | SSE-streamed Ask for this job (`event: sources` then `event: chunk`) |
+| `POST` | `/api/v1/ask/stream` | SSE-streamed Ask across every completed job at once |
+
+### Configuration
+
+See [`.env.example`](backend/.env.example) for the full `CODEMIND_*` list
+(`CODEMIND_OLLAMA_ENABLED`/`_MODEL`, `CODEMIND_EXECUTION_MODE`, `CODEMIND_QA_MODEL`,
+`CODEMIND_EMBEDDING_ENABLED`, `CODEMIND_DEFAULT_OUTPUT_DIRECTORY`,
+`CODEMIND_WATCH_ENABLED`/`_DIRECTORY`/`_QUIET_PERIOD_MILLIS`) — all editable from
+`/settings` except the watcher, which is startup-only (see `api/main.py`'s `lifespan`).
 
 ## Testing
 
-Backend tests use `pytest`-style assertions (or can be run as plain scripts) against `fastapi.testclient.TestClient` for the routers and against the real LangGraph engine (with node functions monkeypatched) for orchestration logic. No tests make real calls to Anthropic, Ollama, ChromaDB persistence beyond a scratch path, the ADO MCP server, or the Notion API — all are mocked/stubbed.
+```bash
+cd backend
+source venv/bin/activate
+pytest tests/ -q
+```
+
+Run against `fastapi.testclient.TestClient` for the routers, mocked chat/embedding clients
+for LLM-touching logic, and the real LangGraph engine (with node functions monkeypatched)
+for StoryForge's orchestration. `tests/codemind/` covers CodeMind's modules the same way —
+mocked `ChatAnthropic`/`ChatOllama`/embeddings, an injectable `AsyncAnthropic` client for
+Batch mode, and `run_job`/`get_agent_selector` monkeypatched in the file-watcher tests. No
+test makes a real call to Anthropic, Ollama, ChromaDB persistence beyond a scratch path,
+the ADO MCP server, the Notion API, or the Anthropic Batches API — all are mocked/stubbed.
 
 Key things to verify after making changes:
 - `backend/pipeline/graph.py` orchestration: clarification + review pause/resume across all 4 combinations of `clarification_needed` × `review_mode`
 - Error propagation: a node failure (`status == "error"`) must stop the graph rather than being masked by a downstream node finishing on empty input
 - `backend/ingestion/ingest_code.py` chunking rules against representative Java/TypeScript/JavaScript fixtures
-- All 5 FastAPI routers' status codes (`404`/`409`/`422`) and response shapes
+- CodeMind's `orchestrator.py` concurrency (no more than `max_concurrency` extractions in flight) and per-file fault isolation (one failing file doesn't sink the job)
+- All FastAPI routers' status codes (`404`/`409`/`422`) and response shapes
 - Frontend build (`ng build`) and a smoke pass over all routes with the backend unreachable (should degrade gracefully, no console errors)
+
+There is currently no automated test (nor a CI-run manual check) against the real
+Anthropic Message Batches API — verify `CODEMIND_EXECUTION_MODE=BATCH` manually against a
+real repo before relying on it in production.
 
 ## Troubleshooting
 
@@ -373,3 +524,5 @@ Key things to verify after making changes:
 - **`ChatAnthropic` raises `ValueError` on attribute assignment** — it's a Pydantic model with strict field validation; don't monkeypatch its methods directly in tests, replace the module-level `_llm` reference instead.
 - **A job's `status` shows `done` with empty `generated_stories`/`ado_results`** — check `errors` in the job state; this indicates an upstream node failed. The graph now routes failures straight to `END`, so this should only surface for jobs run before the error-routing fix.
 - **404 on direct navigation to a frontend route in a static build** — your static file server needs SPA history-mode fallback (e.g. `serve -s`).
+- **A CodeMind extraction job completes with `failedFiles` > 0 and the file viewer shows `Error code: 401 - invalid x-api-key`** — `ANTHROPIC_API_KEY` is unset/invalid. This is a per-file failure (the job itself still reaches `COMPLETED`), so check the specific file's error in the viewer or `GET .../failed-files` rather than assuming a crash; set a valid key via `.env` or the `/settings` screen and re-run (`incremental` mode will only retry the files that failed, once a manifest exists).
+- **A CodeMind job stays stuck at `PENDING` forever with nothing in `failed-files`** — this means neither extraction agent is configured (`ANTHROPIC_API_KEY` unset *and* `CODEMIND_OLLAMA_ENABLED=false`). In the old Java service this failed loudly at app startup ("No LogicExtractionAgent beans configured"); in this port, `codemind/agents/selector.py`'s `AgentSelector` still raises the equivalent error, but only lazily, the first time a job actually tries to dispatch — check the backend log for the exception rather than the job's own state, since the job itself never gets marked `FAILED` in this case. Set `ANTHROPIC_API_KEY` and/or `CODEMIND_OLLAMA_ENABLED=true` and start a new job.
