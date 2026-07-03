@@ -1,0 +1,101 @@
+<div class="sf-page">
+  <h1>CodeMind</h1>
+
+  <div class="sf-card">
+    <h2>Start New Job</h2>
+    <p class="sf-error-text" *ngIf="startError">{{ startError }}</p>
+    <form (ngSubmit)="startJob()">
+      <div class="sf-field">
+        <label for="repositoryPath">Repository path</label>
+        <input
+          id="repositoryPath"
+          class="sf-input"
+          type="text"
+          [(ngModel)]="repositoryPath"
+          name="repositoryPath"
+          placeholder="/path/to/repo"
+          required
+        />
+      </div>
+      <div class="sf-field">
+        <label for="outputDirectory">Output directory (optional)</label>
+        <input
+          id="outputDirectory"
+          class="sf-input"
+          type="text"
+          [(ngModel)]="outputDirectory"
+          name="outputDirectory"
+          placeholder="defaults to ./output/<job-id>"
+        />
+      </div>
+      <div class="sf-field">
+        <label for="maxConcurrency">Max concurrency (optional)</label>
+        <input
+          id="maxConcurrency"
+          class="sf-input"
+          type="number"
+          min="1"
+          [(ngModel)]="maxConcurrency"
+          name="maxConcurrency"
+          placeholder="defaults to configured value"
+        />
+      </div>
+      <div class="sf-field">
+        <label for="executionMode">Execution mode (optional)</label>
+        <select id="executionMode" class="sf-input" [(ngModel)]="executionMode" name="executionMode">
+          <option value="">Default</option>
+          <option value="SYNC">SYNC</option>
+          <option value="BATCH">BATCH</option>
+        </select>
+      </div>
+      <button type="submit" class="sf-btn" [disabled]="starting">
+        {{ starting ? 'Starting…' : 'Start Extraction' }}
+      </button>
+    </form>
+  </div>
+
+  <div class="sf-card">
+    <div class="cm-jobs-header">
+      <h2>Jobs</h2>
+      <button *ngIf="jobs.length" class="sf-btn sf-btn-danger" (click)="clearAll()">Clear All Data</button>
+    </div>
+
+    <p *ngIf="loading">Loading…</p>
+    <p class="sf-error-text" *ngIf="loadError">{{ loadError }}</p>
+    <p *ngIf="!loading && !jobs.length" class="cm-empty">
+      No jobs started yet — use the form above to kick one off.
+    </p>
+
+    <table class="sf-table" *ngIf="jobs.length">
+      <thead>
+        <tr>
+          <th>Job</th>
+          <th>Phase</th>
+          <th>Files</th>
+          <th>Mode</th>
+          <th>Started</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let job of jobs">
+          <td class="cm-mono">{{ shortId(job.jobId) }}</td>
+          <td><span class="sf-badge sf-badge-{{ job.phase.toLowerCase() }}">{{ job.phase }}</span></td>
+          <td>{{ job.processedFiles }} / {{ job.totalFiles }}</td>
+          <td>
+            {{ job.executionMode }}
+            <span *ngIf="job.incremental" class="sf-badge sf-badge-incremental">Incremental</span>
+          </td>
+          <td class="cm-mono">{{ job.createdAt | date: 'MMM d, HH:mm:ss' }}</td>
+          <td>
+            <a [routerLink]="['/codemind', job.jobId]">Progress</a>
+            &middot;
+            <a [routerLink]="['/codemind', job.jobId, 'ask']">Ask</a>
+            &middot;
+            <a class="cm-link-danger" (click)="deleteJob(job.jobId)">Delete</a>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>

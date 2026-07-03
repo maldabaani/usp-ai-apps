@@ -1,0 +1,28 @@
+.sf-error-text {
+  color: var(--sf-error);
+}
+
+.cm-jobs-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.cm-jobs-header h2 {
+  margin: 0;
+}
+
+.cm-empty {
+  color: var(--sf-muted);
+}
+
+.cm-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+}
+
+.cm-link-danger {
+  color: var(--sf-error);
+  cursor: pointer;
+}

@@ -1,0 +1,171 @@
+<div class="sf-page" *ngIf="job">
+  <div class="cm-tabs">
+    <a [routerLink]="['/codemind', jobId]" class="cm-tab cm-tab-active">Progress</a>
+    <a [routerLink]="['/codemind', jobId, 'ask']" class="cm-tab">Ask</a>
+  </div>
+
+  <p class="sf-error-text" *ngIf="job.phase === 'FAILED'">
+    Job failed: {{ job.failureReason || 'unknown error' }}
+  </p>
+  <p class="cm-cancelled-banner" *ngIf="job.phase === 'CANCELLED'">Job was cancelled.</p>
+
+  <div class="sf-card cm-stepper">
+    <div class="cm-step" *ngFor="let step of stepOrder; let i = index" [ngClass]="'cm-step-' + stepState(step)">
+      <div class="cm-step-dot">{{ i + 1 }}</div>
+      <div class="cm-step-label">{{ stepLabels[step] }}</div>
+    </div>
+  </div>
+
+  <div class="cm-stats">
+    <div class="sf-card cm-stat">
+      <div class="cm-stat-value">{{ job.totalFiles }}</div>
+      <div class="cm-stat-label">Total</div>
+    </div>
+    <div class="sf-card cm-stat">
+      <div class="cm-stat-value">{{ job.processedFiles }}</div>
+      <div class="cm-stat-label">Processed</div>
+    </div>
+    <div class="sf-card cm-stat">
+      <div class="cm-stat-value">{{ job.succeededFiles }}</div>
+      <div class="cm-stat-label">Succeeded</div>
+    </div>
+    <div class="sf-card cm-stat">
+      <div class="cm-stat-value">{{ job.failedFiles }}</div>
+      <div class="cm-stat-label">Failed</div>
+    </div>
+    <div class="sf-card cm-stat">
+      <div class="cm-stat-value">{{ job.skippedFiles }}</div>
+      <div class="cm-stat-label">Skipped</div>
+    </div>
+  </div>
+
+  <div class="cm-actions">
+    <button *ngIf="isActive(job.phase)" class="sf-btn sf-btn-danger" [disabled]="cancelling" (click)="cancelJob()">
+      {{ cancelling ? 'Stopping…' : 'Stop Job' }}
+    </button>
+    <a *ngIf="job.phase === 'COMPLETED'" class="sf-btn sf-btn-secondary" [href]="getExportUrl()">
+      &#8595; Export JSON
+    </a>
+  </div>
+
+  <div class="sf-card">
+    <h2>Repository</h2>
+    <p class="cm-mono">{{ job.repositoryRoot }}</p>
+    <p class="cm-muted">
+      Output: <span class="cm-mono">{{ job.outputDirectory }}</span>
+      &middot; Mode: {{ job.executionMode }}
+      <span *ngIf="job.incremental" class="sf-badge sf-badge-incremental">Incremental</span>
+    </p>
+  </div>
+
+  <div class="sf-card">
+    <h2>Recently Extracted Files</h2>
+    <p *ngIf="!files.length" class="cm-empty">Waiting for output files&hellip;</p>
+    <table class="sf-table" *ngIf="files.length">
+      <thead>
+        <tr>
+          <th>File</th>
+          <th>Size</th>
+          <th>Updated</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="cm-clickable" *ngFor="let f of files" (click)="openViewer(f.relativePath)">
+          <td class="cm-mono">{{ stripJsonExt(f.relativePath) }}</td>
+          <td>{{ formatBytes(f.sizeBytes) }}</td>
+          <td class="cm-mono">{{ f.modifiedAt | date: 'shortTime' }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="sf-card" *ngIf="failedFiles.length">
+    <h2 class="cm-danger-title">Failed Files</h2>
+    <table class="sf-table">
+      <thead>
+        <tr>
+          <th>File</th>
+          <th>Error</th>
+          <th>Time</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="cm-clickable" *ngFor="let f of failedFiles" (click)="openViewer(f.relativePath + '.json')">
+          <td class="cm-mono">{{ f.relativePath }}</td>
+          <td class="cm-error-cell">{{ truncateError(f.errorMessage) }}</td>
+          <td class="cm-mono">{{ (f.durationMillis / 1000).toFixed(1) }}s</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<p *ngIf="loadError" class="sf-error-text sf-page">{{ loadError }}</p>
+
+<div class="cm-viewer-overlay" *ngIf="viewerOpen" (click)="closeViewer()">
+  <div class="cm-viewer" (click)="$event.stopPropagation()">
+    <div class="cm-viewer-header">
+      <span class="cm-mono">{{ viewerPath }}</span>
+      <button class="cm-viewer-close" (click)="closeViewer()" aria-label="Close">&#x2715;</button>
+    </div>
+    <div class="cm-viewer-body">
+      <p *ngIf="viewerLoading">Loading&hellip;</p>
+      <p *ngIf="viewerError" class="sf-error-text">{{ viewerError }}</p>
+
+      <ng-container *ngIf="viewerResult && !viewerLoading">
+        <div *ngIf="!viewerResult.success && !viewerResult.skipped" class="cm-viewer-error-box">
+          <strong>Extraction failed</strong>
+          <pre class="cm-viewer-pre">{{ viewerResult.errorMessage || 'Unknown error' }}</pre>
+        </div>
+
+        <div *ngIf="viewerResult.skipped" class="cm-viewer-skipped-box">
+          Skipped: {{ viewerResult.errorMessage || '' }}
+        </div>
+
+        <ng-container *ngIf="viewerResult.success && !viewerResult.skipped">
+          <div *ngIf="viewerExtracted?.summary" class="cm-viewer-section">
+            <h3>Summary</h3>
+            <p>{{ viewerExtracted?.summary }}</p>
+          </div>
+
+          <div *ngIf="viewerExtracted?.rules?.length" class="cm-viewer-section">
+            <h3>Business Rules <span class="cm-viewer-count">{{ viewerExtracted?.rules?.length }}</span></h3>
+            <div class="cm-rule-card" *ngFor="let rule of viewerExtracted?.rules">
+              <div class="cm-rule-name">{{ rule.name }}</div>
+              <p *ngIf="rule.description" class="cm-rule-desc">{{ rule.description }}</p>
+              <div *ngIf="rule.conditions?.length" class="cm-rule-group">
+                <span class="cm-rule-label">Conditions</span>
+                <ul>
+                  <li *ngFor="let c of rule.conditions">{{ c }}</li>
+                </ul>
+              </div>
+              <div *ngIf="rule.actions?.length" class="cm-rule-group">
+                <span class="cm-rule-label">Actions</span>
+                <ul>
+                  <li *ngFor="let a of rule.actions">{{ a }}</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <div *ngIf="viewerExtracted?.dependencies?.length" class="cm-viewer-section">
+            <h3>Dependencies</h3>
+            <div class="cm-dep-chips">
+              <span class="cm-dep-chip" *ngFor="let d of viewerExtracted?.dependencies">{{ d }}</span>
+            </div>
+          </div>
+
+          <pre *ngIf="viewerRaw" class="cm-viewer-pre">{{ viewerRaw }}</pre>
+        </ng-container>
+
+        <div class="cm-viewer-meta" *ngIf="viewerResult.durationMillis || viewerResult.agentName">
+          <span *ngIf="viewerResult.durationMillis">{{ (viewerResult.durationMillis / 1000).toFixed(1) }}s</span>
+          <span *ngIf="viewerResult.agentName">{{ viewerResult.agentName }}</span>
+          <span *ngIf="viewerResult.promptTokens != null">
+            {{ viewerResult.promptTokens }} &rarr; {{ viewerResult.completionTokens }} tok
+          </span>
+        </div>
+      </ng-container>
+    </div>
+  </div>
+</div>

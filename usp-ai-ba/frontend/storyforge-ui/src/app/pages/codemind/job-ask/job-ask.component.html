@@ -1,0 +1,43 @@
+<div class="sf-page">
+  <div class="cm-tabs">
+    <a [routerLink]="['/codemind', jobId]" class="cm-tab">Progress</a>
+    <a [routerLink]="['/codemind', jobId, 'ask']" class="cm-tab cm-tab-active">Ask</a>
+  </div>
+
+  <div class="sf-card">
+    <h2>Ask About This Codebase's Logic</h2>
+    <p class="cm-muted">
+      Questions are answered by retrieving the extracted-logic summaries that best match your
+      question (vector search when available, falling back to keyword overlap) and asking an LLM
+      to answer using only that context.
+    </p>
+
+    <div class="cm-chat-log" #chatLog>
+      <div
+        *ngFor="let m of messages"
+        class="cm-bubble"
+        [ngClass]="'cm-bubble-' + m.role"
+        [class.cm-bubble-pending]="m.pending"
+      >
+        {{ m.text }}
+        <div class="cm-sources" *ngIf="m.sources?.length">
+          <span class="cm-source-chip" *ngFor="let s of m.sources">{{ s }}</span>
+        </div>
+      </div>
+    </div>
+
+    <form class="cm-ask-form" (ngSubmit)="ask()">
+      <input
+        class="sf-input"
+        type="text"
+        [(ngModel)]="question"
+        name="question"
+        placeholder="e.g. how does the checkout flow validate payment?"
+        autocomplete="off"
+        [disabled]="asking"
+        required
+      />
+      <button type="submit" class="sf-btn" [disabled]="asking">Ask</button>
+    </form>
+  </div>
+</div>
