@@ -67,6 +67,13 @@ class Settings:
     CODEMIND_EXECUTION_MODE: str = os.getenv("CODEMIND_EXECUTION_MODE", "SYNC")
     CODEMIND_QA_MODEL: str = os.getenv("CODEMIND_QA_MODEL", "claude")
 
+    # codemind/qa.py's vector-search path (ephemeral, per-query -- see that
+    # module's docstring). Off by default, matching Java's
+    # jsprocessor.embedding.enabled=false default; falls back to keyword
+    # overlap either way. Reuses OLLAMA_EMBED_MODEL/OLLAMA_BASE_URL above
+    # (same physical embedding model StoryForge's own RAG already uses).
+    CODEMIND_EMBEDDING_ENABLED: bool = os.getenv("CODEMIND_EMBEDDING_ENABLED", "false").lower() == "true"
+
     CHROMA_PERSIST_PATH: str = os.getenv("CHROMA_PERSIST_PATH", "./chroma_db")
 
     MCP_SERVER_PATH: str = os.getenv("MCP_SERVER_PATH", "")

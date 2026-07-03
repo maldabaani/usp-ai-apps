@@ -46,6 +46,7 @@ _FIELD_TO_ENV = {
     "codemind_ollama_model": "CODEMIND_OLLAMA_MODEL",
     "codemind_execution_mode": "CODEMIND_EXECUTION_MODE",
     "codemind_qa_model": "CODEMIND_QA_MODEL",
+    "codemind_embedding_enabled": "CODEMIND_EMBEDDING_ENABLED",
 }
 
 _ADO_FIELDS = {"ado_organization", "ado_project", "mcp_server_path"}
@@ -96,6 +97,7 @@ class SettingsResponse(BaseModel):
     codemind_ollama_model: str
     codemind_execution_mode: str
     codemind_qa_model: str
+    codemind_embedding_enabled: bool
     restart_required_fields: set[str]
 
 
@@ -123,6 +125,7 @@ class SettingsUpdate(BaseModel):
     codemind_ollama_model: Optional[str] = None
     codemind_execution_mode: Optional[str] = None
     codemind_qa_model: Optional[str] = None
+    codemind_embedding_enabled: Optional[bool] = None
 
 
 def _current_settings() -> SettingsResponse:
@@ -147,6 +150,7 @@ def _current_settings() -> SettingsResponse:
         codemind_ollama_model=settings.CODEMIND_OLLAMA_MODEL,
         codemind_execution_mode=settings.CODEMIND_EXECUTION_MODE,
         codemind_qa_model=settings.CODEMIND_QA_MODEL,
+        codemind_embedding_enabled=settings.CODEMIND_EMBEDDING_ENABLED,
         restart_required_fields=RESTART_REQUIRED_FIELDS,
     )
 
