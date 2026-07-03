@@ -1,0 +1,132 @@
+"""Covers the settings unification from Phase F2: CodeMind's fields
+(anthropic_api_key/anthropic_model, codemind_*) folded into the same
+GET/PUT /api/settings StoryForge already had, instead of a second endpoint.
+"""
+import time
+
+import jwt
+import pytest
+from fastapi.testclient import TestClient
+
+from api.main import app
+from api.user_store import create_user
+from config import settings
+
+client = TestClient(app, raise_server_exceptions=False)
+
+
+def _token(username: str, role: str) -> str:
+    payload = {"sub": username, "role": role, "exp": time.time() + 3600}
+    return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_env_writes(monkeypatch):
+    """PUT /settings normally persists to backend/.env via
+    config_store.update_env_file -- monkeypatch that specific call site
+    (api.routers.settings' imported reference, not config_store's own
+    module-level name, since the router already bound the function object at
+    import time) to a no-op, so these tests only exercise the in-memory
+    settings.apply_updates() path and never touch the real .env file on disk.
+    """
+    monkeypatch.setattr("api.routers.settings.update_env_file", lambda updates: None)
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _admin_and_user():
+    create_user("settings_test_admin", "adminpass", role="admin")
+    create_user("settings_test_user", "userpass", role="user")
+
+
+def test_get_settings_includes_codemind_fields():
+    resp = client.get("/api/settings", headers={"Authorization": f"Bearer {_token('settings_test_user', 'user')}"})
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "anthropic_api_key_masked" in body
+    assert "anthropic_model" in body
+    assert "codemind_ollama_enabled" in body
+    assert "codemind_ollama_model" in body
+    assert "codemind_execution_mode" in body
+    assert "codemind_qa_model" in body
+    assert set(body["restart_required_fields"]) == {
+        "codemind_ollama_enabled",
+        "codemind_ollama_model",
+        "codemind_qa_model",
+    }
+
+
+def test_get_settings_requires_auth():
+    resp = client.get("/api/settings")
+    assert resp.status_code == 401
+
+
+def test_put_settings_requires_admin():
+    resp = client.put(
+        "/api/settings",
+        json={"codemind_ollama_model": "llama3:8b"},
+        headers={"Authorization": f"Bearer {_token('settings_test_user', 'user')}"},
+    )
+    assert resp.status_code == 403
+
+
+def test_put_settings_updates_codemind_fields():
+    resp = client.put(
+        "/api/settings",
+        json={
+            "codemind_ollama_model": "llama3:8b",
+            "codemind_execution_mode": "BATCH",
+            "codemind_qa_model": "ollama",
+            "codemind_ollama_enabled": True,
+        },
+        headers={"Authorization": f"Bearer {_token('settings_test_admin', 'admin')}"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["codemind_ollama_model"] == "llama3:8b"
+    assert body["codemind_execution_mode"] == "BATCH"
+    assert body["codemind_qa_model"] == "ollama"
+    assert body["codemind_ollama_enabled"] is True
+
+    # Round-trips via a fresh GET too, not just the PUT response.
+    get_resp = client.get(
+        "/api/settings", headers={"Authorization": f"Bearer {_token('settings_test_admin', 'admin')}"}
+    )
+    assert get_resp.json()["codemind_ollama_model"] == "llama3:8b"
+
+
+def test_put_settings_masks_anthropic_key_and_leaves_it_unchanged_when_echoed_back():
+    admin_token = _token("settings_test_admin", "admin")
+
+    first = client.put(
+        "/api/settings",
+        json={"anthropic_api_key": "sk-ant-real-secret-value-123456"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert first.status_code == 200
+    mask = first.json()["anthropic_api_key_masked"]
+    assert mask.endswith("3456")
+    assert "sk-ant-real-secret-value" not in mask
+
+    # PUTting the mask back (as the Angular settings page does when the
+    # field wasn't touched) must not be treated as a new secret.
+    real_key_before = settings.ANTHROPIC_API_KEY
+    second = client.put(
+        "/api/settings",
+        json={"anthropic_api_key": mask, "anthropic_model": "claude-opus-4-8"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert second.status_code == 200
+    assert settings.ANTHROPIC_API_KEY == real_key_before
+    assert second.json()["anthropic_model"] == "claude-opus-4-8"
+
+
+def test_settings_generation_bumps_on_every_apply_updates_call():
+    before = settings.settings_generation
+    client.put(
+        "/api/settings",
+        json={"codemind_qa_model": "claude"},
+        headers={"Authorization": f"Bearer {_token('settings_test_admin', 'admin')}"},
+    )
+    assert settings.settings_generation == before + 1

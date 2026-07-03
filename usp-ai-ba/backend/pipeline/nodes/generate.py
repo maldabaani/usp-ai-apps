@@ -25,13 +25,27 @@ SYSTEM_PROMPT = (
     SELFTEST_SYSTEM_PROMPT if settings.PROMPT_VARIANT == "selftest" else PRODUCTION_SYSTEM_PROMPT
 )
 
-_llm = ChatOllama(
-    model=settings.OLLAMA_LLM_MODEL,
-    base_url=settings.OLLAMA_BASE_URL,
-    num_predict=MAX_OUTPUT_TOKENS,
-    temperature=0,
-    seed=BASE_SEED,
-)
+_llm: ChatOllama | None = None
+_llm_generation = -1
+
+
+def _get_llm() -> ChatOllama:
+    """Rebuilds only when settings.settings_generation has advanced (i.e. the
+    settings screen changed OLLAMA_LLM_MODEL/OLLAMA_BASE_URL) rather than on
+    every call -- previously this was a module-level singleton built once at
+    import time, so a settings change silently had no effect until a process
+    restart."""
+    global _llm, _llm_generation
+    if _llm is None or _llm_generation != settings.settings_generation:
+        _llm = ChatOllama(
+            model=settings.OLLAMA_LLM_MODEL,
+            base_url=settings.OLLAMA_BASE_URL,
+            num_predict=MAX_OUTPUT_TOKENS,
+            temperature=0,
+            seed=BASE_SEED,
+        )
+        _llm_generation = settings.settings_generation
+    return _llm
 
 
 def _format_chunks(chunks: list[dict]) -> str:
@@ -109,7 +123,7 @@ async def generate_node(state: StoryForgeState) -> StoryForgeState:
     """Send the SDD + RAG context + clarification answers to the LLM and parse stories."""
     try:
         stories = await invoke_and_parse_with_retry(
-            _llm,
+            _get_llm(),
             [
                 SystemMessage(content=SYSTEM_PROMPT),
                 HumanMessage(content=_build_user_message(state)),

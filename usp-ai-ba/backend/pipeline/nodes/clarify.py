@@ -17,13 +17,24 @@ logger = logging.getLogger(__name__)
 # clarification questions on every run instead of a different set each time.
 BASE_SEED = 42
 
-_llm = ChatOllama(
-    model=settings.OLLAMA_LLM_MODEL,
-    base_url=settings.OLLAMA_BASE_URL,
-    num_predict=2048,
-    temperature=0,
-    seed=BASE_SEED,
-)
+_llm: ChatOllama | None = None
+_llm_generation = -1
+
+
+def _get_llm() -> ChatOllama:
+    """Rebuilds only when settings.settings_generation has advanced -- see
+    generate.py's _get_llm() for why this replaced a module-level singleton."""
+    global _llm, _llm_generation
+    if _llm is None or _llm_generation != settings.settings_generation:
+        _llm = ChatOllama(
+            model=settings.OLLAMA_LLM_MODEL,
+            base_url=settings.OLLAMA_BASE_URL,
+            num_predict=2048,
+            temperature=0,
+            seed=BASE_SEED,
+        )
+        _llm_generation = settings.settings_generation
+    return _llm
 
 CLARIFY_SYSTEM_PROMPT = """You are a senior business analyst. You will be given a Solution Design Document (SDD) along with retrieved context from the existing codebase, user manuals, and JPA entities.
 
@@ -93,7 +104,7 @@ async def clarify_node(state: StoryForgeState) -> StoryForgeState:
     """Ask the LLM to flag in-scope ambiguities; pause the graph if any are found."""
     try:
         ambiguities = await invoke_and_parse_with_retry(
-            _llm,
+            _get_llm(),
             [
                 SystemMessage(content=CLARIFY_SYSTEM_PROMPT),
                 HumanMessage(content=_build_user_message(state)),

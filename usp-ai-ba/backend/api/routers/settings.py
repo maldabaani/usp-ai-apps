@@ -36,6 +36,16 @@ _FIELD_TO_ENV = {
     "notion_title_property": "NOTION_TITLE_PROPERTY",
     "notion_status_property": "NOTION_STATUS_PROPERTY",
     "notion_status_value": "NOTION_STATUS_VALUE",
+    # CodeMind's settings, unified into this same endpoint now that both
+    # apps share one backend process (see codemind/ package) -- anthropic_*
+    # is the same Anthropic account/budget StoryForge's config.py already
+    # declared (ANTHROPIC_API_KEY/CLAUDE_MODEL) but never previously exposed
+    # here, since nothing in this codebase used to call it.
+    "anthropic_model": "CLAUDE_MODEL",
+    "codemind_ollama_enabled": "CODEMIND_OLLAMA_ENABLED",
+    "codemind_ollama_model": "CODEMIND_OLLAMA_MODEL",
+    "codemind_execution_mode": "CODEMIND_EXECUTION_MODE",
+    "codemind_qa_model": "CODEMIND_QA_MODEL",
 }
 
 _ADO_FIELDS = {"ado_organization", "ado_project", "mcp_server_path"}
@@ -47,6 +57,14 @@ _NOTION_FIELDS = {
     "notion_status_value",
     "notion_api_key",
 }
+
+# Fields with no consumer wired up to rebuild on a live settings change yet
+# (see config.py's settings_generation docstring) -- unlike
+# ollama_base_url/ollama_llm_model/ollama_embed_model and anthropic_api_key/
+# anthropic_model, which do hot-reload via the generation-counter pattern.
+# Mirrors CodeMind's own Java RESTART_REQUIRED_FIELDS disclosure for the
+# equivalent settings (ollamaEnabled/ollamaModel/qaModel).
+RESTART_REQUIRED_FIELDS = {"codemind_ollama_enabled", "codemind_ollama_model", "codemind_qa_model"}
 
 
 def _mask_secret(value: str) -> str:
@@ -72,6 +90,13 @@ class SettingsResponse(BaseModel):
     notion_status_property: str
     notion_status_value: str
     notion_api_key_masked: str
+    anthropic_api_key_masked: str
+    anthropic_model: str
+    codemind_ollama_enabled: bool
+    codemind_ollama_model: str
+    codemind_execution_mode: str
+    codemind_qa_model: str
+    restart_required_fields: set[str]
 
 
 class SettingsUpdate(BaseModel):
@@ -92,6 +117,12 @@ class SettingsUpdate(BaseModel):
     # the current key unchanged" -- only a genuinely different value is
     # treated as a new secret to write.
     notion_api_key: Optional[str] = None
+    anthropic_api_key: Optional[str] = None
+    anthropic_model: Optional[str] = None
+    codemind_ollama_enabled: Optional[bool] = None
+    codemind_ollama_model: Optional[str] = None
+    codemind_execution_mode: Optional[str] = None
+    codemind_qa_model: Optional[str] = None
 
 
 def _current_settings() -> SettingsResponse:
@@ -110,6 +141,13 @@ def _current_settings() -> SettingsResponse:
         notion_status_property=settings.NOTION_STATUS_PROPERTY,
         notion_status_value=settings.NOTION_STATUS_VALUE,
         notion_api_key_masked=_mask_secret(settings.NOTION_API_KEY),
+        anthropic_api_key_masked=_mask_secret(settings.ANTHROPIC_API_KEY),
+        anthropic_model=settings.CLAUDE_MODEL,
+        codemind_ollama_enabled=settings.CODEMIND_OLLAMA_ENABLED,
+        codemind_ollama_model=settings.CODEMIND_OLLAMA_MODEL,
+        codemind_execution_mode=settings.CODEMIND_EXECUTION_MODE,
+        codemind_qa_model=settings.CODEMIND_QA_MODEL,
+        restart_required_fields=RESTART_REQUIRED_FIELDS,
     )
 
 
@@ -122,16 +160,22 @@ async def get_settings_view(user: dict = Depends(require_auth)) -> SettingsRespo
 async def update_settings_view(
     body: SettingsUpdate, user: dict = Depends(require_admin)
 ) -> SettingsResponse:
-    current_mask = _mask_secret(settings.NOTION_API_KEY)
+    current_notion_mask = _mask_secret(settings.NOTION_API_KEY)
+    current_anthropic_mask = _mask_secret(settings.ANTHROPIC_API_KEY)
     provided = body.model_dump(exclude_unset=True, exclude_none=True)
 
     changed_fields: set[str] = set()
     env_updates: dict[str, str] = {}
 
     notion_api_key = provided.pop("notion_api_key", None)
-    if notion_api_key is not None and notion_api_key != current_mask:
+    if notion_api_key is not None and notion_api_key != current_notion_mask:
         env_updates["NOTION_API_KEY"] = notion_api_key
         changed_fields.add("notion_api_key")
+
+    anthropic_api_key = provided.pop("anthropic_api_key", None)
+    if anthropic_api_key is not None and anthropic_api_key != current_anthropic_mask:
+        env_updates["ANTHROPIC_API_KEY"] = anthropic_api_key
+        changed_fields.add("anthropic_api_key")
 
     for field, value in provided.items():
         env_updates[_FIELD_TO_ENV[field]] = value

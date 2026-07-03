@@ -54,6 +54,19 @@ class Settings:
     OLLAMA_EMBED_MODEL: str = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
     OLLAMA_LLM_MODEL: str = os.getenv("OLLAMA_LLM_MODEL", "qwen2.5:14b")
 
+    # CodeMind's per-file extraction settings. CODEMIND_OLLAMA_MODEL is
+    # deliberately separate from OLLAMA_LLM_MODEL above (StoryForge's own
+    # story-generation model) -- the two could reasonably diverge (a
+    # smaller/faster model for high-volume file-by-file extraction vs. a
+    # stronger one for one-shot story generation) even though their defaults
+    # happen to coincide today. OLLAMA_BASE_URL is shared (both apps hit the
+    # same physical local Ollama server -- two independently-configurable
+    # URLs for one server would be a bug, not a feature).
+    CODEMIND_OLLAMA_ENABLED: bool = os.getenv("CODEMIND_OLLAMA_ENABLED", "false").lower() == "true"
+    CODEMIND_OLLAMA_MODEL: str = os.getenv("CODEMIND_OLLAMA_MODEL", "qwen2.5:14b")
+    CODEMIND_EXECUTION_MODE: str = os.getenv("CODEMIND_EXECUTION_MODE", "SYNC")
+    CODEMIND_QA_MODEL: str = os.getenv("CODEMIND_QA_MODEL", "claude")
+
     CHROMA_PERSIST_PATH: str = os.getenv("CHROMA_PERSIST_PATH", "./chroma_db")
 
     MCP_SERVER_PATH: str = os.getenv("MCP_SERVER_PATH", "")
@@ -108,6 +121,18 @@ class Settings:
     # unchanged either way; only the routing in pipeline/graph.py picks one.
     OUTPUT_MODE: str = os.getenv("OUTPUT_MODE", "document")
 
+    # Bumped once per apply_updates() call (regardless of which fields
+    # changed). Modules that build an LLM/embeddings client once at import
+    # time (pipeline/nodes/generate.py, clarify.py, ingestion/chroma_client.py)
+    # check this before reusing their cached client, rebuilding only when it's
+    # advanced -- the same generation-counter pattern CodeMind's Java
+    # RuntimeSettings used for its own hot-reload (see that class's
+    # docstring), applied here to close a StoryForge-side gap that predates
+    # this port: settings.apply_updates() already mutated these values, but
+    # nothing previously rebuilt the already-constructed clients, so a
+    # settings-screen change silently had no effect until a process restart.
+    settings_generation: int = 0
+
     def apply_updates(self, updates: dict) -> None:
         """Mutate this singleton's attributes in place so every module holding
         a ``from config import settings`` reference sees the change
@@ -118,6 +143,7 @@ class Settings:
         """
         for key, value in updates.items():
             setattr(self, key, value)
+        self.settings_generation += 1
 
 
 @lru_cache
