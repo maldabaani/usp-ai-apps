@@ -8,9 +8,10 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from api.routers import ado, assess, auth, clarify, export, ingest, monitoring, review
+from api.routers import ado, assess, auth, clarify, codemind_jobs, export, ingest, monitoring, review
 from api.routers import settings as settings_router
 from api.user_store import ensure_default_admin
+from codemind import job_registry
 from config import settings
 from monitoring.log_capture import install as install_error_capture
 from pipeline.graph import close_graph, get_graph
@@ -24,6 +25,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     logger.info("StoryForge AI backend starting up")
     ensure_default_admin()
+    job_registry.load_persisted_jobs()
     await get_graph()  # open the persistent checkpoint DB now, not on first request
     yield
     await close_graph()
@@ -50,6 +52,7 @@ def create_app() -> FastAPI:
     app.include_router(export.router, prefix="/api")
     app.include_router(settings_router.router, prefix="/api")
     app.include_router(monitoring.router, prefix="/api")
+    app.include_router(codemind_jobs.router, prefix="/api")
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception):
