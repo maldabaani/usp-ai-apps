@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from api.deps import require_auth
 from codemind import job_registry, manifest, output, qa
-from codemind.agents.selector import AgentSelector, build_agents
+from codemind.agents.selector import get_agent_selector
 from codemind.orchestrator import DEFAULT_OUTPUT_DIRECTORY, ExecutionMode, ExtractionJob, run as run_job
 
 logger = logging.getLogger(__name__)
@@ -31,19 +31,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1/extraction-jobs", tags=["codemind-jobs"])
 
 _OUTPUT_FILES_LIMIT = 50
-
-_agent_selector: Optional[AgentSelector] = None
-
-
-def _get_agent_selector() -> AgentSelector:
-    # Built once per process, matching Java's singleton AgentSelector bean --
-    # which agents exist only changes via codemind_ollama_enabled/the
-    # ANTHROPIC_API_KEY presence, both restart-required settings already
-    # (see api/routers/settings.py's RESTART_REQUIRED_FIELDS).
-    global _agent_selector
-    if _agent_selector is None:
-        _agent_selector = AgentSelector(build_agents())
-    return _agent_selector
 
 
 class StartJobRequest(BaseModel):
@@ -136,7 +123,7 @@ def _parse_execution_mode(raw: Optional[str]) -> Optional[ExecutionMode]:
 
 async def _run_job(job: ExtractionJob) -> None:
     try:
-        await run_job(job, _get_agent_selector())
+        await run_job(job, get_agent_selector())
     except Exception:  # noqa: BLE001 - a crashed job must not crash the process
         logger.exception("codemind job=%s crashed", job.id)
     finally:

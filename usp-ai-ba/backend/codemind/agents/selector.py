@@ -39,3 +39,20 @@ def build_agents() -> list[LogicExtractionAgent]:
     if settings.CODEMIND_OLLAMA_ENABLED:
         agents.append(OllamaLogicExtractionAgent())
     return agents
+
+
+_agent_selector: AgentSelector | None = None
+
+
+def get_agent_selector() -> AgentSelector:
+    """Process-wide singleton, shared by every caller that dispatches an
+    extraction (the /extraction-jobs router, the file-watcher) -- matching
+    Java's singleton AgentSelector bean. Which agents exist only changes via
+    codemind_ollama_enabled/the ANTHROPIC_API_KEY presence, both
+    restart-required settings already (see api/routers/settings.py's
+    RESTART_REQUIRED_FIELDS), so building this once per process is safe.
+    """
+    global _agent_selector
+    if _agent_selector is None:
+        _agent_selector = AgentSelector(build_agents())
+    return _agent_selector

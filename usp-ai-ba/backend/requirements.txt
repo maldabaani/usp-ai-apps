@@ -5,6 +5,7 @@ langchain-text-splitters
 langchain-community
 langchain-anthropic
 anthropic
+watchdog
 langchain-ollama
 langchain-chroma
 langchain-mcp-adapters
