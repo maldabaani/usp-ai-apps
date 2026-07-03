@@ -1,6 +1,7 @@
 """Covers api/routers/codemind_jobs.py, ported from
-com.jslogicextractor.web.ExtractionJobController (the SSE .../qa/stream case
-is deferred to Phase F6, matching that module's docstring).
+com.jslogicextractor.web.ExtractionJobController (the SSE .../qa/stream
+route lives in api/routers/codemind_ask.py instead -- see
+tests/test_codemind_ask_router.py).
 """
 import time
 import uuid
