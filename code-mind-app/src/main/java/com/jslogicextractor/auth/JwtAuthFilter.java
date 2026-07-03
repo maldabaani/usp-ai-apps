@@ -6,6 +6,7 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
@@ -24,11 +25,18 @@ import java.nio.charset.StandardCharsets;
  * StoryForge's backend/config.py JWT_SECRET). A single login covers both
  * apps this way.
  *
- * <p>The token can arrive either as an {@code Authorization: Bearer} header
- * (normal requests, attached by the Angular interceptor) or a {@code ?token=}
- * query param -- the latter exists because the Angular shell's CodeMind
- * iframe is cross-origin and can't share the shell's localStorage/cookies, so
- * its src URL carries the token as a query param instead.
+ * <p>The token can arrive as an {@code Authorization: Bearer} header (normal
+ * requests, attached by the Angular interceptor), a {@code cm_token} cookie,
+ * or a {@code ?token=} query param -- the latter exists because the Angular
+ * shell's CodeMind iframe is cross-origin and can't share the shell's
+ * localStorage, so its initial src URL carries the token as a query param
+ * instead. Once that first request validates, a {@code cm_token} cookie is
+ * minted so every *subsequent* same-origin request from that browser --
+ * Thymeleaf's own topnav/job links, the "start a job" form POST, this app's
+ * own polling fetch()/EventSource calls -- carries the token automatically,
+ * without the query param having to be threaded through every link and
+ * script by hand (it previously wasn't, which meant any page you navigated
+ * to past the iframe's first load looked logged-out).
  *
  * <p>Registered (via SecurityFilterConfig, not a bean-scanned {@code
  * @Component}) only for /api/** and /ui/** -- static resources (/css/**,
@@ -38,6 +46,7 @@ import java.nio.charset.StandardCharsets;
 public class JwtAuthFilter extends OncePerRequestFilter {
 
     private static final Logger log = LoggerFactory.getLogger(JwtAuthFilter.class);
+    private static final String TOKEN_COOKIE_NAME = "cm_token";
 
     private final SecretKey key;
     private final boolean secretConfigured;
@@ -86,6 +95,13 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             return;
         }
 
+        if (extractCookieToken(request) == null) {
+            Cookie cookie = new Cookie(TOKEN_COOKIE_NAME, token);
+            cookie.setHttpOnly(true);
+            cookie.setPath("/");
+            response.addCookie(cookie);
+        }
+
         chain.doFilter(request, response);
     }
 
@@ -94,9 +110,26 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         if (header != null && header.startsWith("Bearer ")) {
             return header.substring("Bearer ".length());
         }
+        String cookieToken = extractCookieToken(request);
+        if (cookieToken != null) {
+            return cookieToken;
+        }
         String queryToken = request.getParameter("token");
         if (queryToken != null && !queryToken.isBlank()) {
             return queryToken;
+        }
+        return null;
+    }
+
+    private String extractCookieToken(HttpServletRequest request) {
+        Cookie[] cookies = request.getCookies();
+        if (cookies == null) {
+            return null;
+        }
+        for (Cookie cookie : cookies) {
+            if (TOKEN_COOKIE_NAME.equals(cookie.getName()) && !cookie.getValue().isBlank()) {
+                return cookie.getValue();
+            }
         }
         return null;
     }
