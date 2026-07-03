@@ -1,23 +1,4 @@
 services:
-  codemind:
-    build:
-      context: ./code-mind-app
-    environment:
-      SERVER_SERVLET_CONTEXT_PATH: /codemind-app
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
-      # Must be the same value as storyforge-backend's JWT_SECRET below --
-      # StoryForge issues the login token, CodeMind only verifies it, so a
-      # mismatch (or leaving this unset) makes CodeMind reject every request.
-      JWT_SECRET: ${JWT_SECRET}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    volumes:
-      - codemind-jobs:/root/.js-logic-extractor
-      - codemind-output:/app/output
-    expose:
-      - "8085"
-
   storyforge-backend:
     build:
       context: ./usp-ai-ba/backend
@@ -25,9 +6,10 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
-      # Same value as codemind's JWT_SECRET above -- if left unset, this
-      # container auto-generates+persists its own random one (see
-      # config.py's _default_jwt_secret()), which won't match CodeMind's.
+      # Falls back to an auto-generated, persisted-under-/data secret if
+      # left unset (see config.py's _default_jwt_secret()) -- fine for a
+      # single-container deployment where nothing else needs to verify
+      # tokens it issues.
       JWT_SECRET: ${JWT_SECRET}
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -43,10 +25,7 @@ services:
     ports:
       - "80:80"
     depends_on:
-      - codemind
       - storyforge-backend
 
 volumes:
-  codemind-jobs:
-  codemind-output:
   storyforge-data:

@@ -1,16 +1,8 @@
 # macOS
 .DS_Store
 
-# dev-up.sh (shared local JWT_SECRET + log output)
-.dev-jwt-secret
+# dev-up.sh (log output)
 .dev-logs/
-
-# code-mind-app (Java/Maven)
-code-mind-app/target/
-code-mind-app/output/
-code-mind-app/watch-input/
-code-mind-app/codemind-runtime.properties
-code-mind-app/codemind-error-log.json
 
 # usp-ai-ba backend (Python)
 usp-ai-ba/backend/venv/
@@ -22,6 +14,8 @@ usp-ai-ba/backend/chroma_db/
 usp-ai-ba/backend/jobs/
 usp-ai-ba/backend/uploads/
 usp-ai-ba/backend/exports/
+usp-ai-ba/backend/output/
+usp-ai-ba/backend/watch-input/
 usp-ai-ba/backend/.pytest_cache/
 
 # usp-ai-ba frontend (Angular)

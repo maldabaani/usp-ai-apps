@@ -2,13 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
-import {
-  AppSettings,
-  AppSettingsUpdate,
-  CodeMindSettings,
-  CodeMindSettingsUpdate,
-  SettingsService,
-} from '../../services/settings.service';
+import { AppSettings, AppSettingsUpdate, SettingsService } from '../../services/settings.service';
 
 @Component({
   selector: 'app-settings',
@@ -43,22 +37,16 @@ export class SettingsComponent implements OnInit {
   notionApiKeyMasked = '';
   notionApiKeyInput = '';
 
-  // CodeMind (separate backend/origin -- its own loading/saving/error state)
-  codeMindLoading = true;
-  codeMindLoadError = '';
-  codeMindSaving = false;
-  codeMindSaveError = '';
-  codeMindSaved = false;
-  codeMindRestartRequiredFields: string[] = [];
-
+  // CodeMind extraction/QA (served by this same unified settings endpoint)
   anthropicModel = '';
   anthropicApiKeyMasked = '';
   anthropicApiKeyInput = '';
   executionMode = 'SYNC';
   qaModel = 'claude';
   ollamaEnabled = false;
-  codeMindOllamaBaseUrl = '';
+  embeddingEnabled = false;
   codeMindOllamaModel = '';
+  restartRequiredFields: string[] = [];
 
   constructor(private settingsService: SettingsService) {}
 
@@ -71,17 +59,6 @@ export class SettingsComponent implements OnInit {
       error: () => {
         this.loadError = 'Unable to load settings.';
         this.loading = false;
-      },
-    });
-
-    this.settingsService.getCodeMindSettings().subscribe({
-      next: (s) => {
-        this.applyCodeMindSettings(s);
-        this.codeMindLoading = false;
-      },
-      error: () => {
-        this.codeMindLoadError = 'Unable to load CodeMind settings.';
-        this.codeMindLoading = false;
       },
     });
   }
@@ -103,6 +80,20 @@ export class SettingsComponent implements OnInit {
     this.notionStatusValue = s.notion_status_value;
     this.notionApiKeyMasked = s.notion_api_key_masked;
     this.notionApiKeyInput = s.notion_api_key_masked;
+
+    this.anthropicModel = s.anthropic_model;
+    this.anthropicApiKeyMasked = s.anthropic_api_key_masked;
+    this.anthropicApiKeyInput = s.anthropic_api_key_masked;
+    this.executionMode = s.codemind_execution_mode;
+    this.qaModel = s.codemind_qa_model;
+    this.ollamaEnabled = s.codemind_ollama_enabled;
+    this.embeddingEnabled = s.codemind_embedding_enabled;
+    this.codeMindOllamaModel = s.codemind_ollama_model;
+    this.restartRequiredFields = s.restart_required_fields;
+  }
+
+  isRestartRequired(field: string): boolean {
+    return this.restartRequiredFields.includes(field);
   }
 
   save(): void {
@@ -124,11 +115,20 @@ export class SettingsComponent implements OnInit {
       notion_title_property: this.notionTitleProperty,
       notion_status_property: this.notionStatusProperty,
       notion_status_value: this.notionStatusValue,
+      anthropic_model: this.anthropicModel,
+      codemind_execution_mode: this.executionMode,
+      codemind_qa_model: this.qaModel,
+      codemind_ollama_enabled: this.ollamaEnabled,
+      codemind_ollama_model: this.codeMindOllamaModel,
+      codemind_embedding_enabled: this.embeddingEnabled,
     };
-    // Leaving the key input untouched (still showing the mask) means "keep
+    // Leaving a key input untouched (still showing the mask) means "keep
     // the current secret" -- only send it if the user actually typed something new.
     if (this.notionApiKeyInput !== this.notionApiKeyMasked) {
       update.notion_api_key = this.notionApiKeyInput;
+    }
+    if (this.anthropicApiKeyInput !== this.anthropicApiKeyMasked) {
+      update.anthropic_api_key = this.anthropicApiKeyInput;
     }
 
     this.settingsService.updateSettings(update).subscribe({
@@ -140,55 +140,6 @@ export class SettingsComponent implements OnInit {
       error: (err) => {
         this.saving = false;
         this.saveError = err?.error?.detail || 'Failed to save settings.';
-      },
-    });
-  }
-
-  private applyCodeMindSettings(s: CodeMindSettings): void {
-    this.anthropicModel = s.anthropicModel;
-    this.anthropicApiKeyMasked = s.anthropicApiKeyMasked;
-    this.anthropicApiKeyInput = s.anthropicApiKeyMasked;
-    this.executionMode = s.executionMode;
-    this.qaModel = s.qaModel;
-    this.ollamaEnabled = s.ollamaEnabled;
-    this.codeMindOllamaBaseUrl = s.ollamaBaseUrl;
-    this.codeMindOllamaModel = s.ollamaModel;
-    this.codeMindRestartRequiredFields = s.restartRequiredFields;
-  }
-
-  isRestartRequired(field: string): boolean {
-    return this.codeMindRestartRequiredFields.includes(field);
-  }
-
-  saveCodeMind(): void {
-    this.codeMindSaving = true;
-    this.codeMindSaveError = '';
-    this.codeMindSaved = false;
-
-    const update: CodeMindSettingsUpdate = {
-      anthropicModel: this.anthropicModel,
-      executionMode: this.executionMode,
-      qaModel: this.qaModel,
-      ollamaEnabled: this.ollamaEnabled,
-      ollamaBaseUrl: this.codeMindOllamaBaseUrl,
-      ollamaModel: this.codeMindOllamaModel,
-    };
-    // Same "leave the mask unchanged means keep the current secret" convention as StoryForge's.
-    if (this.anthropicApiKeyInput !== this.anthropicApiKeyMasked) {
-      update.anthropicApiKey = this.anthropicApiKeyInput;
-    }
-
-    this.settingsService.updateCodeMindSettings(update).subscribe({
-      next: (s) => {
-        this.applyCodeMindSettings(s);
-        this.codeMindSaving = false;
-        this.codeMindSaved = true;
-      },
-      error: (err) => {
-        this.codeMindSaving = false;
-        // FastAPI-style {detail} and Spring's default {error} error bodies both handled.
-        this.codeMindSaveError =
-          err?.error?.detail || err?.error?.message || err?.error?.error || 'Failed to save CodeMind settings.';
       },
     });
   }
