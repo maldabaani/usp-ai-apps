@@ -4,6 +4,7 @@ langchain
 langchain-text-splitters
 langchain-community
 langchain-anthropic
+anthropic
 langchain-ollama
 langchain-chroma
 langchain-mcp-adapters
