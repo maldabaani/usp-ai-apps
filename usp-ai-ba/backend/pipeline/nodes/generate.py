@@ -41,6 +41,7 @@ def _get_llm() -> ChatOllama:
             model=settings.OLLAMA_LLM_MODEL,
             base_url=settings.OLLAMA_BASE_URL,
             num_predict=MAX_OUTPUT_TOKENS,
+            num_ctx=settings.OLLAMA_NUM_CTX,
             temperature=0,
             seed=BASE_SEED,
         )

@@ -25,6 +25,16 @@
       </div>
 
       <div class="sf-field">
+        <label for="ollamaNumCtx">Context Window (tokens)</label>
+        <input id="ollamaNumCtx" class="sf-input" type="number" min="1" [(ngModel)]="ollamaNumCtx" placeholder="32768" />
+        <p class="sf-hint">
+          Lower this if generation is too slow for your hardware; raise it if long SDDs or
+          large amounts of retrieved context are getting truncated (check the Ollama server
+          log for "truncating input prompt" warnings).
+        </p>
+      </div>
+
+      <div class="sf-field">
         <label for="promptVariant">Prompt Variant</label>
         <select id="promptVariant" class="sf-select" [(ngModel)]="promptVariant">
           <option value="production">Production</option>

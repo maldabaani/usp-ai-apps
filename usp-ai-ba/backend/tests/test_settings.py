@@ -49,6 +49,7 @@ def test_get_settings_includes_codemind_fields():
     assert "codemind_ollama_model" in body
     assert "codemind_execution_mode" in body
     assert "codemind_qa_model" in body
+    assert "ollama_num_ctx" in body
     assert set(body["restart_required_fields"]) == {
         "codemind_ollama_enabled",
         "codemind_ollama_model",

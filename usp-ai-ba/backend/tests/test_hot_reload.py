@@ -39,6 +39,30 @@ def test_clarify_llm_rebuilds_only_when_generation_advances():
         settings.apply_updates({"OLLAMA_BASE_URL": original_url})
 
 
+def test_generate_llm_rebuilds_when_num_ctx_changes():
+    first = generate._get_llm()
+    original_num_ctx = settings.OLLAMA_NUM_CTX
+    try:
+        settings.apply_updates({"OLLAMA_NUM_CTX": 4096})
+        second = generate._get_llm()
+        assert second is not first
+        assert second.num_ctx == 4096
+    finally:
+        settings.apply_updates({"OLLAMA_NUM_CTX": original_num_ctx})
+
+
+def test_clarify_llm_rebuilds_when_num_ctx_changes():
+    first = clarify._get_llm()
+    original_num_ctx = settings.OLLAMA_NUM_CTX
+    try:
+        settings.apply_updates({"OLLAMA_NUM_CTX": 4096})
+        second = clarify._get_llm()
+        assert second is not first
+        assert second.num_ctx == 4096
+    finally:
+        settings.apply_updates({"OLLAMA_NUM_CTX": original_num_ctx})
+
+
 def test_chroma_embeddings_rebuild_only_when_generation_advances():
     first = chroma_client.get_embeddings()
     second = chroma_client.get_embeddings()

@@ -54,6 +54,16 @@ class Settings:
     OLLAMA_EMBED_MODEL: str = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
     OLLAMA_LLM_MODEL: str = os.getenv("OLLAMA_LLM_MODEL", "qwen2.5:14b")
 
+    # generate_node/clarify_node never set num_ctx before this field existed,
+    # so Ollama silently truncated any prompt exceeding whatever context size
+    # the model happened to already be loaded with (observed in production:
+    # a 16k+-token prompt -- full SDD text plus up to 30 RAG chunks -- getting
+    # cut down to ~4k tokens with no error, just silently dropped content).
+    # 32768 comfortably covers that plus generate_node's own MAX_OUTPUT_TOKENS
+    # (8192) within the same window; lower this if your hardware can't hold
+    # that much KV cache without a heavy slowdown.
+    OLLAMA_NUM_CTX: int = int(os.getenv("OLLAMA_NUM_CTX", "32768"))
+
     # CodeMind's per-file extraction settings. CODEMIND_OLLAMA_MODEL is
     # deliberately separate from OLLAMA_LLM_MODEL above (StoryForge's own
     # story-generation model) -- the two could reasonably diverge (a

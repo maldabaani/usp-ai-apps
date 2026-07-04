@@ -22,6 +22,7 @@ export class SettingsComponent implements OnInit {
   ollamaBaseUrl = '';
   ollamaLlmModel = '';
   ollamaEmbedModel = '';
+  ollamaNumCtx = 32768;
   promptVariant = 'production';
 
   // Task management
@@ -67,6 +68,7 @@ export class SettingsComponent implements OnInit {
     this.ollamaBaseUrl = s.ollama_base_url;
     this.ollamaLlmModel = s.ollama_llm_model;
     this.ollamaEmbedModel = s.ollama_embed_model;
+    this.ollamaNumCtx = s.ollama_num_ctx;
     this.promptVariant = s.prompt_variant;
 
     this.outputMode = s.output_mode;
@@ -105,6 +107,7 @@ export class SettingsComponent implements OnInit {
       ollama_base_url: this.ollamaBaseUrl,
       ollama_llm_model: this.ollamaLlmModel,
       ollama_embed_model: this.ollamaEmbedModel,
+      ollama_num_ctx: this.ollamaNumCtx,
       prompt_variant: this.promptVariant,
       output_mode: this.outputMode,
       ado_organization: this.adoOrganization,
