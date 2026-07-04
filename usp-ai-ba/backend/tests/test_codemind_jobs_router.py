@@ -11,7 +11,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from api.main import app
+from api.routers import codemind_jobs
 from codemind import job_registry, orchestrator, qa
+from codemind.orchestrator import JobPhase
 from codemind.qa import QaAnswer
 from config import settings
 
@@ -55,6 +57,32 @@ def test_start_job_returns_accepted_with_job_id(tmp_path):
     body = resp.json()
     assert uuid.UUID(body["jobId"])
     assert body["repositoryRoot"] == str(tmp_path.resolve())
+
+
+def test_start_job_marks_job_failed_instead_of_stuck_pending_when_no_agents_configured(
+    tmp_path, monkeypatch
+):
+    # Regression test: previously an exception raised before orchestrator.run()
+    # even started (e.g. AgentSelector's "No LogicExtractionAgent beans
+    # configured") was logged but never recorded on the job itself, leaving it
+    # at PENDING forever with no visible failure in the UI.
+    def raise_no_agents():
+        raise ValueError("No LogicExtractionAgent beans configured")
+
+    monkeypatch.setattr(codemind_jobs, "get_agent_selector", raise_no_agents)
+
+    start_resp = client.post(
+        "/api/v1/extraction-jobs",
+        json={"repositoryPath": str(tmp_path), "outputDirectory": str(tmp_path / "out")},
+        headers=_auth_headers(),
+    )
+    job_id = start_resp.json()["jobId"]
+
+    status_resp = client.get(f"/api/v1/extraction-jobs/{job_id}", headers=_auth_headers())
+    body = status_resp.json()
+
+    assert body["phase"] == JobPhase.FAILED.value
+    assert "No LogicExtractionAgent beans configured" in body["failureReason"]
 
 
 def test_start_job_rejects_non_directory_path(tmp_path):

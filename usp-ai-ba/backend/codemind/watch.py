@@ -95,8 +95,9 @@ class InputDirectoryWatcher:
         logger.info("Auto-started job %s for dropped file %s", job.id, resolved)
         try:
             await run_job(job, get_agent_selector())
-        except Exception:  # noqa: BLE001 - one bad drop must not kill the watcher
+        except Exception as exc:  # noqa: BLE001 - one bad drop must not kill the watcher
             logger.exception("Auto-started job %s for dropped file %s crashed", job.id, file)
+            job.mark_failed(str(exc))
         finally:
             job_registry.persist(job)
 

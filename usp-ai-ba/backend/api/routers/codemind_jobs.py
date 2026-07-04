@@ -124,8 +124,13 @@ def _parse_execution_mode(raw: Optional[str]) -> Optional[ExecutionMode]:
 async def _run_job(job: ExtractionJob) -> None:
     try:
         await run_job(job, get_agent_selector())
-    except Exception:  # noqa: BLE001 - a crashed job must not crash the process
+    except Exception as exc:  # noqa: BLE001 - a crashed job must not crash the process
         logger.exception("codemind job=%s crashed", job.id)
+        # An exception here means the run never got as far as orchestrator.run()'s
+        # own failure handling (e.g. get_agent_selector() raised before any file
+        # was scanned) -- without this, the job would otherwise sit at PENDING
+        # forever with the only trace of what happened in the server log.
+        job.mark_failed(str(exc))
     finally:
         job_registry.persist(job)
 

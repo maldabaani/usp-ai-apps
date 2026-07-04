@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from codemind import job_registry, watch
+from codemind.orchestrator import JobPhase
 from config import settings
 
 
@@ -91,5 +92,32 @@ def test_coalesces_rapid_writes_to_the_same_file_into_a_single_job(tmp_path, mon
             watcher.stop()
 
         assert recorder.calls == [file.resolve()]
+
+    asyncio.run(body())
+
+
+def test_marks_job_failed_instead_of_stuck_pending_when_run_job_raises(tmp_path, monkeypatch):
+    # Regression test: previously an exception raised before orchestrator.run()
+    # started doing anything (e.g. no agents configured) was logged but never
+    # recorded on the job itself, leaving it at PENDING forever.
+    async def failing_run_job(job, agent_selector):
+        raise ValueError("No LogicExtractionAgent beans configured")
+
+    monkeypatch.setattr(watch, "run_job", failing_run_job)
+
+    async def body():
+        watcher = watch.InputDirectoryWatcher(tmp_path, quiet_period_seconds=0.1)
+        watcher.start()
+        try:
+            file = tmp_path / "dropped.js"
+            file.write_text("const a = 1;")
+            await asyncio.sleep(0.5)
+        finally:
+            watcher.stop()
+
+        jobs = job_registry.find_all()
+        assert len(jobs) == 1
+        assert jobs[0].phase == JobPhase.FAILED
+        assert "No LogicExtractionAgent beans configured" in jobs[0].failure_reason
 
     asyncio.run(body())
