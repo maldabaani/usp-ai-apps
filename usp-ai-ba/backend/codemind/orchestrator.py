@@ -96,6 +96,12 @@ class ExtractionJob:
     succeeded_files: int = 0
     failed_files: int = 0
     skipped_files: int = 0
+    # Tracks in-flight per-file tasks so request_cancel() can interrupt a call
+    # already mid-flight (e.g. stuck in a slow ChatOllama.ainvoke()), not just
+    # stop files that haven't started yet -- without this, "Stop Job" only
+    # took effect once every currently-running file finished on its own,
+    # which could be many minutes on a slow chunk.
+    _active_tasks: set = field(default_factory=set, repr=False, compare=False)
 
     def mark_scanning(self) -> None:
         self.phase = JobPhase.SCANNING
@@ -122,6 +128,8 @@ class ExtractionJob:
 
     def request_cancel(self) -> None:
         self.cancel_requested = True
+        for task in list(self._active_tasks):
+            task.cancel()
 
     def record_result(self, success: bool) -> None:
         self.processed_files += 1
@@ -308,7 +316,18 @@ async def _run_sync_fan_out(job: ExtractionJob, files: list[SourceFile], agent_s
         async with semaphore:
             await _process_file(job, file, agent_selector)
 
-    await asyncio.gather(*(bounded_process(file) for file in files))
+    # Tasks (not bare coroutines) so request_cancel() has something to call
+    # .cancel() on -- registered on the job for the duration of this gather so
+    # a cancel requested mid-run reaches every currently-running file's
+    # in-flight LLM call immediately instead of waiting for it to finish on
+    # its own. return_exceptions=True keeps one cancelled/crashed task from
+    # aborting gather() itself before the rest have a chance to wind down.
+    tasks = [asyncio.ensure_future(bounded_process(file)) for file in files]
+    job._active_tasks.update(tasks)
+    try:
+        await asyncio.gather(*tasks, return_exceptions=True)
+    finally:
+        job._active_tasks.difference_update(tasks)
 
 
 async def _process_file(job: ExtractionJob, file: SourceFile, agent_selector) -> None:
@@ -319,6 +338,8 @@ async def _process_file(job: ExtractionJob, file: SourceFile, agent_selector) ->
         result = await agent.extract(file)
         output.write_result(job.output_directory, result.relative_path, result.to_dict())
         job.record_result(result.success)
+    except asyncio.CancelledError:
+        raise
     except Exception as exc:  # noqa: BLE001 - one file's crash must not sink the whole job
         logger.error("Unexpected error processing %s: %s", file.relative_path, exc)
         job.record_result(False)

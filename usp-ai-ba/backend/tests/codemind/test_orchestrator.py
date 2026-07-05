@@ -176,6 +176,35 @@ def test_processes_a_single_dropped_file_when_job_root_is_a_file_not_a_directory
     assert written == ["dropped.js"]
 
 
+def test_request_cancel_interrupts_an_in_flight_extraction_immediately(tmp_path, monkeypatch):
+    """Without task-level cancellation, request_cancel() only stops files that
+    haven't started yet -- a file already mid-extract() (e.g. a slow
+    ChatOllama.ainvoke()) would keep running for however long it takes,
+    leaving "Stop Job" with no visible effect until it finished on its own."""
+    (tmp_path / "a.js").write_text("const a = 1;")
+    monkeypatch.setattr(orchestrator, "SKIP_EXISTING_RESULTS", False)
+
+    started = asyncio.Event()
+
+    async def extract_fn(file: SourceFile) -> ExtractionResult:
+        started.set()
+        await asyncio.sleep(30)  # would time out the test below if not interrupted
+        return success_result(file, "test-agent", "{}", 1, None, None)
+
+    selector = AgentSelector([_StubAgent(extract_fn)])
+    job = _job(tmp_path, max_concurrency=1)
+
+    async def body() -> None:
+        run_task = asyncio.ensure_future(orchestrator.run(job, selector))
+        await asyncio.wait_for(started.wait(), timeout=2)
+        job.request_cancel()
+        await asyncio.wait_for(run_task, timeout=2)
+
+    asyncio.run(body())
+
+    assert job.phase == JobPhase.CANCELLED
+
+
 def test_incremental_job_only_processes_changed_files(tmp_path, monkeypatch):
     (tmp_path / "unchanged.js").write_text("const x = 1;")
     (tmp_path / "changed.js").write_text("const y = 2;")
