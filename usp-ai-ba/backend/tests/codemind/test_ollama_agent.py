@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 from langchain_ollama import ChatOllama
 
-from codemind.agents.ollama_agent import OllamaLogicExtractionAgent
+from codemind.agents.ollama_agent import MAX_OUTPUT_TOKENS, OllamaLogicExtractionAgent
 from codemind.models import SourceFile
 from config import settings
 
@@ -54,6 +54,12 @@ def test_returns_failure_when_chat_client_throws(monkeypatch):
 def test_uses_shared_ollama_num_ctx_setting_not_a_hardcoded_value():
     agent = OllamaLogicExtractionAgent()
     assert agent._chat.num_ctx == settings.OLLAMA_NUM_CTX
+
+
+def test_caps_num_predict_so_a_non_terminating_generation_cannot_run_to_the_full_context():
+    agent = OllamaLogicExtractionAgent()
+    assert agent._chat.num_predict == MAX_OUTPUT_TOKENS
+    assert agent._chat.num_predict < settings.OLLAMA_NUM_CTX
 
 
 def test_rebuilds_chat_client_only_when_settings_generation_changes():

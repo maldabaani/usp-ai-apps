@@ -15,6 +15,15 @@ and the same model, so requesting two different num_ctx values from the same
 model forces Ollama to repeatedly reload it (expensive on slow hardware) and
 whichever call happened last "wins" the loaded context size, silently
 re-truncating the other side's prompts.
+
+Sets an explicit num_predict cap -- without one, generation runs until a stop
+token or until the context fills up. On files where the model doesn't cleanly
+stop (a known failure mode for this kind of extraction prompt), that ceiling
+used to be bounded by the old fixed num_ctx=8192; sharing StoryForge's much
+larger OLLAMA_NUM_CTX (see above) quietly raised that same ceiling too,
+observed live as a ~6x per-file slowdown after the num_ctx unification even
+though GPU utilization stayed at 100% throughout (ruling out a hardware/
+offload cause -- the model was simply generating far more tokens per file).
 """
 from __future__ import annotations
 
@@ -34,6 +43,9 @@ logger = logging.getLogger(__name__)
 NAME = "ollama-logic-extractor"
 
 REQUEST_TIMEOUT_SECONDS = 120
+# Matches ANTHROPIC_MAX_TOKENS' default (codemind/batch.py) -- the same
+# per-file "how much extraction output is enough" budget, applied here too.
+MAX_OUTPUT_TOKENS = 4096
 
 
 class OllamaLogicExtractionAgent:
@@ -70,6 +82,7 @@ class OllamaLogicExtractionAgent:
             model=settings.CODEMIND_OLLAMA_MODEL,
             base_url=settings.OLLAMA_BASE_URL,
             num_ctx=settings.OLLAMA_NUM_CTX,
+            num_predict=MAX_OUTPUT_TOKENS,
             timeout=REQUEST_TIMEOUT_SECONDS,
         )
         self._built_at_generation = settings.settings_generation
