@@ -149,6 +149,32 @@ def test_failed_extraction_is_not_written_and_recorded_in_errors_only_on_excepti
     assert len(fake_store.docs) == 0
 
 
+def test_failed_extraction_is_retried_on_next_run_not_silently_skipped(tmp_path, monkeypatch, fake_store):
+    """Regression test: process_one() used to record a file's content hash as
+    "seen" even when the enrichment call itself raised (e.g. a real 400 from
+    an exhausted API credit balance) -- so a transient failure was silently
+    and permanently treated as done on every later run, since the file's
+    content never changed. The manifest must only remember a hash once real
+    work succeeded."""
+    _write(tmp_path, "app.py", "def handler(): pass\n")
+    monkeypatch.setattr(enrich, "build_agents", lambda: [_FailingAgent()])
+    manifests_root = tmp_path / "manifests"
+
+    asyncio.run(
+        enrich.enrich_repository(tmp_path, [tmp_path / "app.py"], enabled=True, manifests_root=manifests_root)
+    )
+
+    agent = _StubAgent()
+    monkeypatch.setattr(enrich, "build_agents", lambda: [agent])
+    result = asyncio.run(
+        enrich.enrich_repository(tmp_path, [tmp_path / "app.py"], enabled=True, manifests_root=manifests_root)
+    )
+
+    assert agent.calls == ["app.py"]  # retried, not skipped as "unchanged"
+    assert result["files_summarized"] == 1
+    assert result["files_skipped_unchanged"] == 0
+
+
 def test_incremental_skip_avoids_resummarizing_unchanged_file(tmp_path, monkeypatch, fake_store):
     _write(tmp_path, "app.py", "def handler():\n    return True\n")
     agent = _StubAgent()

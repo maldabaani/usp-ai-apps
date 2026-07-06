@@ -97,9 +97,8 @@ async def enrich_repository(
         nonlocal files_summarized, files_skipped_unchanged
         relative_path = str(path.relative_to(repo))
         digest = manifest.compute_hash(path)
-        if digest is not None:
-            current_hashes[relative_path] = digest
         if digest is not None and previous_hashes.get(relative_path) == digest:
+            current_hashes[relative_path] = digest
             files_skipped_unchanged += 1
             return
 
@@ -138,6 +137,8 @@ async def enrich_repository(
                 await chroma_client.delete_by_source_and_type("codebase", relative_path, DOC_TYPE)
                 await codebase_store.aadd_documents([document], ids=[_document_id(relative_path)])
                 files_summarized += 1
+                if digest is not None:
+                    current_hashes[relative_path] = digest
             except Exception as exc:  # noqa: BLE001 - per-file isolation
                 logger.exception("Enrichment failed for %s", relative_path)
                 errors.append(f"{relative_path}: {exc}")
