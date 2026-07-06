@@ -1,43 +1,70 @@
 <div class="sf-page">
   <a routerLink="/" class="ask-back-link">&larr; Home</a>
 
-  <div class="sf-card">
-    <h2>Ask Business Questions</h2>
-    <p class="ask-muted">
-      Answers business-team questions using the same shared ingestion corpus as Ask Technical --
-      described in plain business language, without file paths or implementation detail.
-    </p>
+  <div class="ask-layout">
+    <aside class="ask-sidebar sf-card">
+      <div class="ask-sidebar-header">
+        <h3>Conversations</h3>
+        <button class="sf-btn sf-btn-secondary" (click)="startNewConversation()">New</button>
+      </div>
+      <p *ngIf="conversationsLoading" class="ask-muted">Loading…</p>
+      <p *ngIf="!conversationsLoading && !conversations.length" class="ask-muted">No conversations yet.</p>
+      <ul class="ask-conversation-list" *ngIf="!conversationsLoading && conversations.length">
+        <li
+          *ngFor="let c of conversations"
+          class="ask-conversation-item"
+          [class.ask-conversation-item-active]="c.id === activeConversationId"
+          (click)="selectConversation(c)"
+        >
+          <span class="ask-conversation-title">{{ c.title }}</span>
+          <button
+            type="button"
+            class="ask-conversation-delete"
+            (click)="deleteConversation(c, $event)"
+            aria-label="Delete conversation"
+          >&times;</button>
+        </li>
+      </ul>
+    </aside>
 
-    <div class="ask-empty" *ngIf="!statusLoading && status && !status.has_content">
-      No content has been ingested yet. <a routerLink="/ingestion">Run ingestion</a> first.
-    </div>
+    <div class="sf-card ask-main">
+      <h2>Ask Business Questions</h2>
+      <p class="ask-muted">
+        Answers business-team questions using the same shared ingestion corpus as Ask Technical --
+        described in plain business language, without file paths or implementation detail.
+      </p>
 
-    <div class="ask-chat-log" #chatLog>
-      <div
-        *ngFor="let m of messages"
-        class="ask-bubble"
-        [ngClass]="'ask-bubble-' + m.role"
-        [class.ask-bubble-pending]="m.pending"
-      >
-        {{ m.text }}
-        <div class="ask-sources" *ngIf="m.sources?.length">
-          <span class="ask-source-chip" *ngFor="let s of m.sources">{{ s }}</span>
+      <div class="ask-empty" *ngIf="!statusLoading && status && !status.has_content">
+        No content has been ingested yet. <a routerLink="/ingestion">Run ingestion</a> first.
+      </div>
+
+      <div class="ask-chat-log" #chatLog>
+        <div
+          *ngFor="let m of messages"
+          class="ask-bubble"
+          [ngClass]="'ask-bubble-' + m.role"
+          [class.ask-bubble-pending]="m.pending"
+        >
+          {{ m.text }}
+          <div class="ask-sources" *ngIf="m.sources?.length">
+            <span class="ask-source-chip" *ngFor="let s of m.sources">{{ s }}</span>
+          </div>
         </div>
       </div>
-    </div>
 
-    <form class="ask-form" (ngSubmit)="ask()">
-      <input
-        class="sf-input"
-        type="text"
-        [(ngModel)]="question"
-        name="question"
-        placeholder="e.g. what does the login feature let customers do?"
-        autocomplete="off"
-        [disabled]="asking"
-        required
-      />
-      <button type="submit" class="sf-btn" [disabled]="asking">Ask</button>
-    </form>
+      <form class="ask-form" (ngSubmit)="ask()">
+        <input
+          class="sf-input"
+          type="text"
+          [(ngModel)]="question"
+          name="question"
+          placeholder="e.g. what does the login feature let customers do?"
+          autocomplete="off"
+          [disabled]="asking"
+          required
+        />
+        <button type="submit" class="sf-btn" [disabled]="asking">Ask</button>
+      </form>
+    </div>
   </div>
 </div>

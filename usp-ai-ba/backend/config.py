@@ -75,6 +75,18 @@ class Settings:
     # OLLAMA_BASE_URL/OLLAMA_LLM_MODEL/OLLAMA_NUM_CTX above.
     ASK_QA_MODEL: str = os.getenv("ASK_QA_MODEL", "claude")
 
+    # Character budget for how much prior conversation history
+    # api/conversation_store.py's messages get folded into a follow-up Ask
+    # Technical/Business request (api/routers/ask.py's
+    # _build_conversation_context) -- a character, not token, ceiling since
+    # this codebase's one existing precedent for this kind of budget
+    # (ingestion/ingest_code.py's CHARS_PER_TOKEN) is itself a rough
+    # characters-per-token estimate. Trimmed from the oldest turns first,
+    # silently, rather than erroring -- an unbounded history would otherwise
+    # risk exceeding OLLAMA_NUM_CTX/the model's context window on a long-running
+    # conversation.
+    CONVERSATION_HISTORY_CHAR_BUDGET: int = int(os.getenv("CONVERSATION_HISTORY_CHAR_BUDGET", "8000"))
+
     CHROMA_PERSIST_PATH: str = os.getenv("CHROMA_PERSIST_PATH", "./chroma_db")
 
     # ingest_code.py's optional LLM-summary enrichment tier (ingestion/enrichment/

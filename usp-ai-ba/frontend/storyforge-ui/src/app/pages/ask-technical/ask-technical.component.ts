@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 
 import { AskService, AskStatus } from '../../services/ask.service';
+import { Conversation, ConversationsService, ConversationSummary } from '../../services/conversations.service';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -11,6 +12,8 @@ interface ChatMessage {
   pending?: boolean;
   sources?: string[];
 }
+
+const KIND = 'technical';
 
 @Component({
   selector: 'app-ask-technical',
@@ -26,9 +29,16 @@ export class AskTechnicalComponent implements OnInit {
   status: AskStatus | null = null;
   statusLoading = true;
 
+  conversations: ConversationSummary[] = [];
+  conversationsLoading = true;
+  activeConversationId: string | null = null;
+
   @ViewChild('chatLog') chatLogRef?: ElementRef<HTMLDivElement>;
 
-  constructor(private askService: AskService) {}
+  constructor(
+    private askService: AskService,
+    private conversationsService: ConversationsService
+  ) {}
 
   ngOnInit(): void {
     this.askService.getStatus().subscribe({
@@ -38,6 +48,55 @@ export class AskTechnicalComponent implements OnInit {
       },
       error: () => {
         this.statusLoading = false;
+      },
+    });
+
+    this.loadConversations();
+  }
+
+  loadConversations(): void {
+    this.conversationsLoading = true;
+    this.conversationsService.list().subscribe({
+      next: (conversations) => {
+        this.conversations = conversations.filter((c) => c.kind === KIND);
+        this.conversationsLoading = false;
+      },
+      error: () => {
+        this.conversationsLoading = false;
+      },
+    });
+  }
+
+  startNewConversation(): void {
+    this.activeConversationId = null;
+    this.messages = [];
+  }
+
+  selectConversation(conversation: ConversationSummary): void {
+    if (conversation.id === this.activeConversationId) return;
+    this.conversationsService.get(conversation.id).subscribe({
+      next: (full: Conversation) => {
+        this.activeConversationId = full.id;
+        this.messages = full.messages.map((m) => ({
+          role: m.role,
+          text: m.text,
+          sources: m.sources.length ? m.sources : undefined,
+        }));
+        this.scrollToBottom();
+      },
+    });
+  }
+
+  deleteConversation(conversation: ConversationSummary, event: Event): void {
+    event.stopPropagation();
+    if (!confirm(`Delete conversation "${conversation.title}"?`)) return;
+
+    this.conversationsService.delete(conversation.id).subscribe({
+      next: () => {
+        if (this.activeConversationId === conversation.id) {
+          this.startNewConversation();
+        }
+        this.loadConversations();
       },
     });
   }
@@ -57,28 +116,40 @@ export class AskTechnicalComponent implements OnInit {
     this.scrollToBottom();
 
     let fullText = '';
+    let isNewConversation = false;
 
-    await this.askService.askTechnical(question, {
-      onSources: (sources) => (assistantMessage.sources = sources),
-      onChunk: (chunk) => {
-        if (assistantMessage.pending) {
+    await this.askService.askTechnical(
+      question,
+      {
+        onConversationId: (conversationId) => {
+          isNewConversation = this.activeConversationId !== conversationId;
+          this.activeConversationId = conversationId;
+        },
+        onSources: (sources) => (assistantMessage.sources = sources),
+        onChunk: (chunk) => {
+          if (assistantMessage.pending) {
+            assistantMessage.pending = false;
+          }
+          fullText += chunk;
+          assistantMessage.text = fullText;
+          this.scrollToBottom();
+        },
+        onError: (message) => {
           assistantMessage.pending = false;
-        }
-        fullText += chunk;
-        assistantMessage.text = fullText;
-        this.scrollToBottom();
+          assistantMessage.text = message;
+        },
+        onComplete: () => {
+          assistantMessage.pending = false;
+          if (!fullText) {
+            assistantMessage.text = '(No response)';
+          }
+          if (isNewConversation) {
+            this.loadConversations();
+          }
+        },
       },
-      onError: (message) => {
-        assistantMessage.pending = false;
-        assistantMessage.text = message;
-      },
-      onComplete: () => {
-        assistantMessage.pending = false;
-        if (!fullText) {
-          assistantMessage.text = '(No response)';
-        }
-      },
-    });
+      this.activeConversationId ?? undefined
+    );
 
     this.asking = false;
   }

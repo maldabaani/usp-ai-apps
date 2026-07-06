@@ -106,6 +106,8 @@ backend/
       corpus.py                 GET /api/corpus/sources -- per-source chunk-count/LLM-summary/format metadata for the corpus browser
       watch.py                  GET/POST /api/watch/targets, PATCH/DELETE /api/watch/targets/{id} -- watched-path CRUD for auto re-ingestion
       prompts.py                 GET /api/prompts/ask, PUT /api/prompts/ask/{kind} -- Ask Technical/Business prompt customization
+      conversations.py           GET/POST /api/conversations, GET/DELETE /api/conversations/{id} -- per-user conversation memory CRUD
+    conversation_store.py       File-per-conversation persistence (<JOBS_DIR>/conversations/<owner>/<id>.json), scoped per-user by directory nesting
   scripts/
     setup_notion_database.py  One-off script: creates the Notion "StoryForge Epics" database, prints NOTION_DATABASE_ID
   pipeline/
@@ -243,6 +245,7 @@ All backend configuration is environment-variable driven (`backend/.env`, loaded
 | `INGEST_OLLAMA_MODEL` | `qwen2.5:14b` | Model name for the above |
 | `INGEST_LLM_SUMMARY_ENABLED` | `true` | Whether ingestion runs its optional per-file LLM-summary enrichment tier at all (mechanical chunking always runs regardless) |
 | `ASK_QA_MODEL` | `claude` | `claude` or `ollama` — which model answers Ask Technical/Business |
+| `CONVERSATION_HISTORY_CHAR_BUDGET` | `8000` | Character ceiling (not token — see `config.py`'s comment) for how much prior conversation history is folded into a follow-up Ask Technical/Business question; trimmed oldest-turn-first |
 | `CHROMA_PERSIST_PATH` | `./chroma_db` | On-disk path for the persistent ChromaDB store |
 | `MCP_SERVER_PATH` | _(empty)_ | Path to the ADO MCP server's Node.js entry script |
 | `ADO_ORGANIZATION` | _(empty)_ | Azure DevOps organization name, passed to the MCP server |
@@ -340,6 +343,10 @@ All endpoints are served under the FastAPI app created in `backend/api/main.py`,
 | `DELETE` | `/api/watch/targets/{id}` | Admin only. Stops watching and removes the target. 404 if unknown |
 | `GET` | `/api/prompts/ask` | → `{"technical": {"custom", "default", "effective"}, "business": {...}}` for the Ask Technical/Business system prompt templates |
 | `PUT` | `/api/prompts/ask/{kind}` | Admin only. `{kind}` is `technical` or `business`. Body: `{"template": str \| null}` (`null` resets to the built-in default). 400 if the template is missing `{context}` or contains any other placeholder — takes effect on the very next `/api/ask/{kind}` request, no restart needed |
+| `GET` | `/api/conversations` | List the caller's own conversations (summaries only, sorted newest-updated-first) |
+| `POST` | `/api/conversations` | Body: `{"kind": "technical"\|"business", "title"?: str}`. Creates a new empty conversation (Ask Technical/Business auto-create one on the first question instead of calling this directly — see `AskRequest.conversation_id` below) |
+| `GET` | `/api/conversations/{id}` | Full conversation including all messages. 404 if unknown or owned by another user |
+| `DELETE` | `/api/conversations/{id}` | 404 if unknown or owned by another user |
 
 Ask Technical/Business's endpoints (`/api/ask/technical`, `/api/ask/business`, `/api/ask/status`)
 are documented in the [Ask Technical / Ask Business](#ask-technical--ask-business) section
@@ -438,9 +445,21 @@ Both retrieve the top 10 chunks per collection (`retrieve_all_collections()`) an
 the answer back over SSE (`event: sources` with the source file list, then `event: chunk`
 per text chunk) using the model selected by `ASK_QA_MODEL` (`prompts/ask_prompts.py` holds
 the two system prompt templates, sharing one grounding-rules block that governs
-same-basename-file disambiguation and cross-cutting-feature attribution). `GET
+same-basename-file disambiguation and cross-cutting-feature attribution — customizable
+per-kind from `/settings`, see `prompt_store.py`). `GET
 /api/ask/status` reports each collection's document count, so the frontend can show a
 "run ingestion first" empty state.
+
+**Conversation memory**: each page keeps a sidebar of the caller's own past conversations
+(backend-persisted, one file per conversation under `<JOBS_DIR>/conversations/<username>/`,
+see `api/conversation_store.py`). The first question of a new conversation auto-creates one
+server-side — the frontend never calls `POST /api/conversations` directly for this path —
+and its id comes back on the streamed response's `X-Conversation-Id` header (not a new SSE
+event, to avoid touching the `sources`/`chunk` frame contract). A follow-up question passes
+that same id as `AskRequest.conversation_id`; prior turns (trimmed to
+`CONVERSATION_HISTORY_CHAR_BUDGET` characters, oldest first) are threaded into the actual
+LangChain message list sent to the model — never string-concatenated into the `{context}`
+RAG placeholder, keeping conversation memory orthogonal to prompt customization above.
 
 ## Testing
 

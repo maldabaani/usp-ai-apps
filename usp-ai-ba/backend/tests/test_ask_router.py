@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import prompt_store
+from api import conversation_store
 from api.main import app
 from api.routers import ask
 from config import settings
@@ -196,3 +197,120 @@ def test_ask_status_reports_no_content_for_empty_corpus(monkeypatch):
     resp = client.get("/api/ask/status", headers=_auth_headers())
 
     assert resp.json()["has_content"] is False
+
+
+# -- Conversation memory (Phase L-E) ----------------------------------------
+
+
+def test_ask_without_conversation_id_auto_creates_one_and_returns_its_header(monkeypatch):
+    async def fake_retrieve(question, top_k=10):
+        return _SAMPLE_RETRIEVED
+
+    monkeypatch.setattr(ask, "retrieve_all_collections", fake_retrieve)
+    monkeypatch.setattr(ask, "_get_ask_chat", lambda: _FakeChat(["answer"]))
+
+    resp = client.post("/api/ask/technical", json={"question": "q"}, headers=_auth_headers())
+
+    assert resp.status_code == 200
+    conversation_id = resp.headers["X-Conversation-Id"]
+    conversation = conversation_store.get_conversation("ask_test_user", conversation_id)
+    assert conversation is not None
+    assert conversation["kind"] == "technical"
+
+
+def test_ask_persists_the_question_and_full_assistant_answer(monkeypatch):
+    async def fake_retrieve(question, top_k=10):
+        return _SAMPLE_RETRIEVED
+
+    monkeypatch.setattr(ask, "retrieve_all_collections", fake_retrieve)
+    monkeypatch.setattr(ask, "_get_ask_chat", lambda: _FakeChat(["It ", "works."]))
+
+    resp = client.post("/api/ask/technical", json={"question": "how does it work?"}, headers=_auth_headers())
+
+    conversation_id = resp.headers["X-Conversation-Id"]
+    conversation = conversation_store.get_conversation("ask_test_user", conversation_id)
+    assert conversation["messages"][0] == {
+        "role": "user",
+        "text": "how does it work?",
+        "sources": [],
+        "created_at": conversation["messages"][0]["created_at"],
+    }
+    assert conversation["messages"][1]["role"] == "assistant"
+    assert conversation["messages"][1]["text"] == "It works."
+    assert conversation["messages"][1]["sources"] == ["manual.pdf", "src/Auth.java"]
+
+
+def test_ask_with_existing_conversation_id_folds_prior_turns_into_the_message_list(monkeypatch):
+    async def fake_retrieve(question, top_k=10):
+        return _SAMPLE_RETRIEVED
+
+    monkeypatch.setattr(ask, "retrieve_all_collections", fake_retrieve)
+
+    conversation = conversation_store.create_conversation("ask_test_user", "technical")
+    conversation_store.append_message("ask_test_user", conversation["id"], "user", "first question", [])
+    conversation_store.append_message("ask_test_user", conversation["id"], "assistant", "first answer", [])
+
+    fake_chat = _FakeChat(["second answer"])
+    monkeypatch.setattr(ask, "_get_ask_chat", lambda: fake_chat)
+
+    resp = client.post(
+        "/api/ask/technical",
+        json={"question": "follow-up question", "conversation_id": conversation["id"]},
+        headers=_auth_headers(),
+    )
+
+    assert resp.status_code == 200
+    assert resp.headers["X-Conversation-Id"] == conversation["id"]
+    sent_messages = fake_chat.calls[0]
+    # [SystemMessage, HumanMessage("first question"), AIMessage("first answer"), HumanMessage("follow-up question")]
+    assert [m.content for m in sent_messages[1:]] == ["first question", "first answer", "follow-up question"]
+
+
+def test_ask_trims_old_turns_once_the_history_char_budget_is_exceeded(monkeypatch):
+    async def fake_retrieve(question, top_k=10):
+        return _SAMPLE_RETRIEVED
+
+    monkeypatch.setattr(ask, "retrieve_all_collections", fake_retrieve)
+    monkeypatch.setattr(settings, "CONVERSATION_HISTORY_CHAR_BUDGET", 10)
+
+    conversation = conversation_store.create_conversation("ask_test_user", "technical")
+    conversation_store.append_message("ask_test_user", conversation["id"], "user", "a" * 20, [])
+    conversation_store.append_message("ask_test_user", conversation["id"], "assistant", "b" * 20, [])
+    conversation_store.append_message("ask_test_user", conversation["id"], "user", "recent", [])
+
+    fake_chat = _FakeChat(["answer"])
+    monkeypatch.setattr(ask, "_get_ask_chat", lambda: fake_chat)
+
+    client.post(
+        "/api/ask/technical",
+        json={"question": "q", "conversation_id": conversation["id"]},
+        headers=_auth_headers(),
+    )
+
+    sent_messages = fake_chat.calls[0]
+    # Only the most recent prior turn ("recent") survives the tiny budget --
+    # the older, larger "a"*20/"b"*20 turns are trimmed.
+    assert [m.content for m in sent_messages[1:]] == ["recent", "q"]
+
+
+def test_ask_with_unknown_conversation_id_returns_404():
+    resp = client.post(
+        "/api/ask/technical", json={"question": "q", "conversation_id": "does-not-exist"}, headers=_auth_headers()
+    )
+
+    assert resp.status_code == 404
+
+
+def test_ask_with_no_results_still_records_the_turn_and_conversation_id(monkeypatch):
+    async def fake_retrieve(question, top_k=10):
+        return {"manuals": [], "codebase": [], "entities": []}
+
+    monkeypatch.setattr(ask, "retrieve_all_collections", fake_retrieve)
+    monkeypatch.setattr(ask, "_get_ask_chat", lambda: _RaisingChat())
+
+    resp = client.post("/api/ask/technical", json={"question": "anything?"}, headers=_auth_headers())
+
+    assert resp.status_code == 200
+    conversation_id = resp.headers["X-Conversation-Id"]
+    conversation = conversation_store.get_conversation("ask_test_user", conversation_id)
+    assert conversation["messages"][1]["text"] == ask._NO_RESULTS_MESSAGE

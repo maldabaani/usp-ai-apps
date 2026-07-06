@@ -26,11 +26,29 @@ export class AskService {
     return this.http.get<AskStatus>(`${API_BASE_URL}/ask/status`);
   }
 
-  askTechnical(question: string, handlers: AskStreamHandlers): Promise<void> {
-    return streamSse(`${API_BASE_URL}/ask/technical`, { question }, handlers, this.authService.getToken());
+  askTechnical(
+    question: string,
+    handlers: AskStreamHandlers,
+    conversationId?: string
+  ): Promise<void> {
+    return streamSse(
+      `${API_BASE_URL}/ask/technical`,
+      { question, conversation_id: conversationId ?? null },
+      handlers,
+      this.authService.getToken()
+    );
   }
 
-  askBusiness(question: string, handlers: AskStreamHandlers): Promise<void> {
-    return streamSse(`${API_BASE_URL}/ask/business`, { question }, handlers, this.authService.getToken());
+  askBusiness(
+    question: string,
+    handlers: AskStreamHandlers,
+    conversationId?: string
+  ): Promise<void> {
+    return streamSse(
+      `${API_BASE_URL}/ask/business`,
+      { question, conversation_id: conversationId ?? null },
+      handlers,
+      this.authService.getToken()
+    );
   }
 }

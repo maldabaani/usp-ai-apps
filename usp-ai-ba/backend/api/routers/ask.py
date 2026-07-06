@@ -15,14 +15,15 @@ import json
 import logging
 from typing import AsyncIterator
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from langchain_anthropic import ChatAnthropic
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_ollama import ChatOllama
 from pydantic import BaseModel, field_validator
 
 import prompt_store
+from api import conversation_store
 from api.deps import require_auth
 from config import settings
 from ingestion.chroma_client import collection_counts
@@ -52,6 +53,7 @@ _NO_RESULTS_MESSAGE = (
 
 class AskRequest(BaseModel):
     question: str
+    conversation_id: str | None = None
 
     @field_validator("question")
     @classmethod
@@ -131,12 +133,58 @@ async def _single_chunk_stream(text: str) -> AsyncIterator[str]:
     yield text
 
 
-async def _stream_answer(question: str, context: str, template: str) -> AsyncIterator[str]:
+def _build_conversation_context(messages: list[dict], budget_chars: int) -> list[BaseMessage]:
+    """Converts a conversation's persisted messages into LangChain message
+    objects for threading into chat.astream()'s own message list -- kept
+    completely separate from _build_context()'s {context} placeholder, since
+    conversation memory and RAG-retrieved context are orthogonal concerns.
+    Trimmed from the oldest turn forward (once the running total would
+    exceed budget_chars) so a long-running conversation can't silently blow
+    past the model's context window; the single most recent turn is always
+    kept even if it alone exceeds the budget, so a fresh follow-up question
+    is never starved of its own immediately preceding answer."""
+    selected: list[dict] = []
+    total = 0
+    for message in reversed(messages):
+        length = len(message["text"])
+        if selected and total + length > budget_chars:
+            break
+        selected.append(message)
+        total += length
+    selected.reverse()
+
+    return [
+        HumanMessage(content=m["text"]) if m["role"] == "user" else AIMessage(content=m["text"])
+        for m in selected
+    ]
+
+
+async def _stream_answer(
+    question: str, context: str, template: str, prior_messages: list[BaseMessage]
+) -> AsyncIterator[str]:
     chat = _get_ask_chat()
     system_prompt = template.format(context=context)
-    async for chunk in chat.astream([SystemMessage(content=system_prompt), HumanMessage(content=question)]):
+    messages = [SystemMessage(content=system_prompt), *prior_messages, HumanMessage(content=question)]
+    async for chunk in chat.astream(messages):
         if chunk.content:
             yield chunk.content
+
+
+async def _recording_stream(
+    owner: str, conversation_id: str, question: str, sources: list[str], text_stream: AsyncIterator[str]
+) -> AsyncIterator[str]:
+    """Wraps a text stream so the full accumulated answer is persisted to the
+    conversation once streaming ends -- in a finally, so a client disconnect
+    or an upstream error mid-stream still records whatever partial answer
+    was produced instead of silently dropping the turn from history."""
+    buffer = ""
+    try:
+        async for chunk in text_stream:
+            buffer += chunk
+            yield chunk
+    finally:
+        conversation_store.append_message(owner, conversation_id, "user", question, [])
+        conversation_store.append_message(owner, conversation_id, "assistant", buffer, sources)
 
 
 async def _sse_body(source_files: list[str], text_stream: AsyncIterator[str]) -> AsyncIterator[str]:
@@ -148,27 +196,46 @@ async def _sse_body(source_files: list[str], text_stream: AsyncIterator[str]) ->
         logger.exception("Ask SSE stream failed mid-response")
 
 
-async def _ask(question: str, template: str) -> StreamingResponse:
+async def _ask(question: str, template: str, kind: str, owner: str, conversation_id: str | None) -> StreamingResponse:
+    if conversation_id is not None:
+        conversation = conversation_store.get_conversation(owner, conversation_id)
+        if conversation is None:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+    else:
+        conversation = conversation_store.create_conversation(owner, kind)
+
+    prior_messages = _build_conversation_context(conversation["messages"], settings.CONVERSATION_HISTORY_CHAR_BUDGET)
+
     retrieved = await retrieve_all_collections(question)
     if not any(retrieved.values()):
-        return StreamingResponse(
-            _sse_body([], _single_chunk_stream(_NO_RESULTS_MESSAGE)), media_type="text/event-stream"
+        stream = _recording_stream(
+            owner, conversation["id"], question, [], _single_chunk_stream(_NO_RESULTS_MESSAGE)
         )
+        response = StreamingResponse(_sse_body([], stream), media_type="text/event-stream")
+        response.headers["X-Conversation-Id"] = conversation["id"]
+        return response
 
     source_files = _source_files(retrieved)
     context = _build_context(retrieved)
-    stream = _stream_answer(question, context, template)
-    return StreamingResponse(_sse_body(source_files, stream), media_type="text/event-stream")
+    text_stream = _stream_answer(question, context, template, prior_messages)
+    recorded_stream = _recording_stream(owner, conversation["id"], question, source_files, text_stream)
+    response = StreamingResponse(_sse_body(source_files, recorded_stream), media_type="text/event-stream")
+    response.headers["X-Conversation-Id"] = conversation["id"]
+    return response
 
 
 @router.post("/technical")
 async def ask_technical(request: AskRequest, user: dict = Depends(require_auth)) -> StreamingResponse:
-    return await _ask(request.question, _effective_prompt("technical"))
+    return await _ask(
+        request.question, _effective_prompt("technical"), "technical", user["username"], request.conversation_id
+    )
 
 
 @router.post("/business")
 async def ask_business(request: AskRequest, user: dict = Depends(require_auth)) -> StreamingResponse:
-    return await _ask(request.question, _effective_prompt("business"))
+    return await _ask(
+        request.question, _effective_prompt("business"), "business", user["username"], request.conversation_id
+    )
 
 
 @router.get("/status")

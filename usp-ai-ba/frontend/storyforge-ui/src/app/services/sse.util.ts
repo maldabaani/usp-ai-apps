@@ -9,6 +9,7 @@ export interface SseStreamHandlers {
   onChunk: (chunk: string) => void;
   onError: (message: string) => void;
   onComplete: () => void;
+  onConversationId?: (conversationId: string) => void;
 }
 
 export async function streamSse(
@@ -30,6 +31,11 @@ export async function streamSse(
     if (!response.ok || !response.body) {
       handlers.onError(`Error: ${response.statusText}`);
       return;
+    }
+
+    const conversationId = response.headers.get('X-Conversation-Id');
+    if (conversationId && handlers.onConversationId) {
+      handlers.onConversationId(conversationId);
     }
 
     const reader = response.body.getReader();
