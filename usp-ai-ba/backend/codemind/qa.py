@@ -47,12 +47,30 @@ _STOPWORDS = {
 _TOP_K = 6
 _MAX_CONTENT_CHARS_PER_FILE = 3000
 
+# Shared across all four prompt templates below. Targets two failure modes
+# observed live: (1) a file from one subsystem (e.g. a separate RAG-ingestion
+# module) getting its functionality misattributed to a different, unrelated
+# subsystem just because both happened to be retrieved together -- files in
+# different top-level directories are usually different subsystems, and
+# nothing in a flat list of retrieved summaries tells the model that on its
+# own; (2) confidently blending two similarly-named files' details together
+# (e.g. a job-persistence file and a job-registry file) instead of admitting
+# uncertainty about which file a specific claim belongs to.
+_GROUNDING_RULES = (
+    "Ground every claim strictly in the context provided below; do not use outside knowledge.\n"
+    "Each summary is labeled with its source file path. Files in different top-level\n"
+    "directories/modules are usually different subsystems -- do not attribute one file's\n"
+    "functionality to a different file or module just because both were retrieved together;\n"
+    "keep each file's role distinct unless the context itself shows them interacting.\n"
+    "Attribute each specific claim to the file path it came from. If you cannot confidently tie\n"
+    "a detail to a specific file, omit that detail rather than guessing or attributing it to the\n"
+    "wrong one. If the context doesn't contain enough detail to answer confidently, say so\n"
+    "explicitly rather than guessing.\n"
+)
+
 _SYSTEM_PROMPT_TEMPLATE = (
     "You are answering questions about a codebase using only the extracted logic summaries\n"
-    "provided below as context. Each summary is labeled with its source file path. Ground your\n"
-    "answer strictly in this context; if the context doesn't contain the answer, say so\n"
-    "explicitly rather than guessing. Cite the relevant file path(s) inline when you reference\n"
-    "specific logic.\n\n"
+    "provided below as context.\n\n" + _GROUNDING_RULES + "\n"
     "Context:\n{context}\n"
 )
 
@@ -90,16 +108,19 @@ _COMPREHENSIVE_SYSTEM_PROMPT_TEMPLATE = (
     "many different future questions about this codebase, so do not tailor it to any single\n"
     "question -- cover the overall architecture, key modules/components, notable business rules,\n"
     "and cross-cutting patterns (e.g. error handling, auth, data flow) that appear across multiple\n"
-    "files. Cite the relevant file path(s) inline when you reference specific logic.\n\n"
+    "files, organized by module/subsystem rather than as one undifferentiated blob.\n\n"
+    + _GROUNDING_RULES + "\n"
     "Context:\n{context}\n"
 )
 
 _COMPREHENSIVE_COMBINE_PROMPT_TEMPLATE = (
     "You are given several partial overviews, each already summarizing a different subset of the\n"
     "same codebase's files. Merge them into a single, coherent, non-redundant whole-codebase\n"
-    "overview. Preserve distinct details and file-path citations from each partial overview;\n"
-    "do not simply concatenate them -- integrate overlapping points and organize the result as one\n"
-    "unified overview.\n\n"
+    "overview. Preserve distinct details and file-path citations from each partial overview --\n"
+    "do not simply concatenate them, integrate overlapping points -- but do not merge details\n"
+    "from two different files/modules into one claim just because they appeared in the same\n"
+    "partial overview; if two partial overviews disagree or you're unsure which file a detail\n"
+    "belongs to, omit it rather than guessing.\n\n"
     "Partial overviews:\n{context}\n"
 )
 
@@ -107,7 +128,8 @@ _COMPREHENSIVE_ANSWER_SYSTEM_PROMPT_TEMPLATE = (
     "You previously built the comprehensive overview below, covering every file this job\n"
     "extracted (not a sample). Answer the user's question using only this overview as context;\n"
     "if it doesn't contain enough detail to answer confidently, say so explicitly rather than\n"
-    "guessing.\n\n"
+    "guessing. Preserve the overview's own file-path citations for any claim you repeat; do not\n"
+    "introduce a new file attribution that isn't already present in the overview.\n\n"
     "Comprehensive overview:\n{context}\n"
 )
 
@@ -153,12 +175,14 @@ def _get_qa_chat() -> ChatAnthropic | ChatOllama:
                 base_url=settings.OLLAMA_BASE_URL,
                 num_ctx=settings.OLLAMA_NUM_CTX,
                 timeout=REQUEST_TIMEOUT_SECONDS,
+                temperature=0,
             )
         else:
             _qa_chat = ChatAnthropic(
                 model=settings.CLAUDE_MODEL,
                 api_key=settings.ANTHROPIC_API_KEY,
                 timeout=REQUEST_TIMEOUT_SECONDS,
+                temperature=0,
             )
         _qa_chat_generation = settings.settings_generation
         _qa_chat_model_kind = model_kind

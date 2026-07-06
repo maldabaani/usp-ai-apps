@@ -298,6 +298,32 @@ def test_comprehensive_mode_source_files_is_empty(tmp_path, monkeypatch):
     assert result.source_files == []
 
 
+def test_get_qa_chat_builds_ollama_client_with_zero_temperature_for_determinism(monkeypatch):
+    # temperature=0 reduces (not eliminates) small imprecisions like a
+    # misspelled file path in a synthesized answer -- confirmed live this
+    # session (claude_agent.py cited as "claud_agent.py").
+    monkeypatch.setattr(settings, "CODEMIND_QA_MODEL", "ollama")
+    monkeypatch.setattr(qa, "_qa_chat", None)
+    monkeypatch.setattr(qa, "_qa_chat_generation", -1)
+    monkeypatch.setattr(qa, "_qa_chat_model_kind", None)
+
+    chat = qa._get_qa_chat()
+
+    assert chat.temperature == 0
+    assert chat.num_ctx == settings.OLLAMA_NUM_CTX
+
+
+def test_get_qa_chat_builds_claude_client_with_zero_temperature_for_determinism(monkeypatch):
+    monkeypatch.setattr(settings, "CODEMIND_QA_MODEL", "claude")
+    monkeypatch.setattr(qa, "_qa_chat", None)
+    monkeypatch.setattr(qa, "_qa_chat_generation", -1)
+    monkeypatch.setattr(qa, "_qa_chat_model_kind", None)
+
+    chat = qa._get_qa_chat()
+
+    assert chat.temperature == 0
+
+
 def test_build_context_accepts_plain_extraction_results():
     results = [
         ExtractionResult("auth.js", "test-agent", True, False, "Checks password.", None, 1, None, None),
