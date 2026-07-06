@@ -1,14 +1,8 @@
 """Round-robins across every registered LogicExtractionAgent.
 
-Moved verbatim from codemind/agents/selector.py (itself ported from
-com.jslogicextractor.agent.AgentSelector) as part of unifying CodeMind's
-per-file LLM extraction into the ChromaDB ingestion pipeline -- see plan
-file section I. build_agents() replaces bean-registration conditionals with
-a plain factory: Claude registers iff ANTHROPIC_API_KEY is non-blank, Ollama
-iff CODEMIND_OLLAMA_ENABLED is set.
+build_agents() is a plain factory: Claude registers iff ANTHROPIC_API_KEY is
+non-blank, Ollama iff INGEST_OLLAMA_ENABLED is set.
 
-Unlike CodeMind's original per-job extraction (which had no reasonable path
-other than to fail the whole job if zero agents were configured),
 ingestion/enrichment/enrich.py deliberately calls build_agents() directly
 (not get_agent_selector()) so it can check for an empty list and skip the
 LLM-summary enrichment tier gracefully with a logged warning -- ingestion's
@@ -45,7 +39,7 @@ def build_agents() -> list[LogicExtractionAgent]:
     agents: list[LogicExtractionAgent] = []
     if settings.ANTHROPIC_API_KEY.strip():
         agents.append(ClaudeLogicExtractionAgent())
-    if settings.CODEMIND_OLLAMA_ENABLED:
+    if settings.INGEST_OLLAMA_ENABLED:
         agents.append(OllamaLogicExtractionAgent())
     return agents
 
@@ -57,7 +51,7 @@ def get_agent_selector() -> AgentSelector:
     """Process-wide singleton for callers that need at least one agent to
     exist (raises if none are configured) -- enrich.py does NOT use this; it
     calls build_agents() directly so it can skip enrichment gracefully
-    instead. Which agents exist only changes via CODEMIND_OLLAMA_ENABLED/the
+    instead. Which agents exist only changes via INGEST_OLLAMA_ENABLED/the
     ANTHROPIC_API_KEY presence, both restart-required settings already, so
     building this once per process is safe.
     """

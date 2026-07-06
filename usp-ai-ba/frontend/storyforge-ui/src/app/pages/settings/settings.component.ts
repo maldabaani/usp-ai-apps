@@ -38,15 +38,12 @@ export class SettingsComponent implements OnInit {
   notionApiKeyMasked = '';
   notionApiKeyInput = '';
 
-  // CodeMind extraction/QA (served by this same unified settings endpoint)
+  // Anthropic (Claude) + ingestion's optional Ollama LLM-summary tier
   anthropicModel = '';
   anthropicApiKeyMasked = '';
   anthropicApiKeyInput = '';
-  executionMode = 'SYNC';
-  qaModel = 'claude';
-  ollamaEnabled = false;
-  embeddingEnabled = false;
-  codeMindOllamaModel = '';
+  ingestOllamaEnabled = false;
+  ingestOllamaModel = '';
   restartRequiredFields: string[] = [];
 
   constructor(private settingsService: SettingsService) {}
@@ -86,11 +83,8 @@ export class SettingsComponent implements OnInit {
     this.anthropicModel = s.anthropic_model;
     this.anthropicApiKeyMasked = s.anthropic_api_key_masked;
     this.anthropicApiKeyInput = s.anthropic_api_key_masked;
-    this.executionMode = s.codemind_execution_mode;
-    this.qaModel = s.codemind_qa_model;
-    this.ollamaEnabled = s.codemind_ollama_enabled;
-    this.embeddingEnabled = s.codemind_embedding_enabled;
-    this.codeMindOllamaModel = s.codemind_ollama_model;
+    this.ingestOllamaEnabled = s.ingest_ollama_enabled;
+    this.ingestOllamaModel = s.ingest_ollama_model;
     this.restartRequiredFields = s.restart_required_fields;
   }
 
@@ -119,11 +113,8 @@ export class SettingsComponent implements OnInit {
       notion_status_property: this.notionStatusProperty,
       notion_status_value: this.notionStatusValue,
       anthropic_model: this.anthropicModel,
-      codemind_execution_mode: this.executionMode,
-      codemind_qa_model: this.qaModel,
-      codemind_ollama_enabled: this.ollamaEnabled,
-      codemind_ollama_model: this.codeMindOllamaModel,
-      codemind_embedding_enabled: this.embeddingEnabled,
+      ingest_ollama_enabled: this.ingestOllamaEnabled,
+      ingest_ollama_model: this.ingestOllamaModel,
     };
     // Leaving a key input untouched (still showing the mask) means "keep
     // the current secret" -- only send it if the user actually typed something new.

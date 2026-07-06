@@ -1,10 +1,6 @@
 import { Routes } from '@angular/router';
 
 import { authGuard } from './auth.guard';
-import { AskAllComponent } from './pages/codemind/ask-all/ask-all.component';
-import { JobAskComponent } from './pages/codemind/job-ask/job-ask.component';
-import { JobDetailComponent } from './pages/codemind/job-detail/job-detail.component';
-import { JobsListComponent } from './pages/codemind/jobs-list/jobs-list.component';
 import { AskBusinessComponent } from './pages/ask-business/ask-business.component';
 import { AskTechnicalComponent } from './pages/ask-technical/ask-technical.component';
 import { AssessComponent } from './pages/assess/assess.component';
@@ -26,13 +22,6 @@ export const routes: Routes = [
   { path: 'clarify/:jobId', component: ClarifyComponent, canActivate: [authGuard] },
   { path: 'review/:jobId', component: ReviewComponent, canActivate: [authGuard] },
   { path: 'status/:jobId', component: StatusComponent, canActivate: [authGuard] },
-  // 'codemind/ask' must come before 'codemind/:jobId' -- the router matches
-  // routes in array order, and ':jobId' would otherwise greedily swallow the
-  // literal 'ask' segment.
-  { path: 'codemind', component: JobsListComponent, canActivate: [authGuard] },
-  { path: 'codemind/ask', component: AskAllComponent, canActivate: [authGuard] },
-  { path: 'codemind/:jobId', component: JobDetailComponent, canActivate: [authGuard] },
-  { path: 'codemind/:jobId/ask', component: JobAskComponent, canActivate: [authGuard] },
   { path: 'ingestion', component: IngestionComponent, canActivate: [authGuard] },
   { path: 'ask/technical', component: AskTechnicalComponent, canActivate: [authGuard] },
   { path: 'ask/business', component: AskBusinessComponent, canActivate: [authGuard] },

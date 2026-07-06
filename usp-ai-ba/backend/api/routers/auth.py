@@ -1,6 +1,5 @@
-"""Login endpoint: issues the JWT that both StoryForge and CodeMind trust
-(see config.py's JWT_SECRET -- both apps must share the same secret for
-CodeMind's login/SSO to accept a StoryForge-issued token)."""
+"""Login endpoint: issues the JWT every route in this app trusts (see
+config.py's JWT_SECRET)."""
 from __future__ import annotations
 
 import datetime

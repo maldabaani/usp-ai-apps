@@ -99,7 +99,7 @@
     </div>
 
     <div class="sf-card">
-      <h2 class="sf-section-title">CodeMind: LLM / Agent Configuration</h2>
+      <h2 class="sf-section-title">Ingestion: LLM / Agent Configuration</h2>
 
       <div class="sf-field">
         <label for="anthropicApiKey">Anthropic API Key</label>
@@ -113,42 +113,15 @@
 
       <div class="sf-field sf-toggle-field">
         <label class="sf-toggle">
-          <input type="checkbox" [(ngModel)]="ollamaEnabled" />
-          <span>Enable Ollama as a second agent{{ isRestartRequired('codemind_ollama_enabled') ? ' (restart required)' : '' }}</span>
+          <input type="checkbox" [(ngModel)]="ingestOllamaEnabled" />
+          <span>Enable Ollama as a second agent{{ isRestartRequired('ingest_ollama_enabled') ? ' (restart required)' : '' }}</span>
         </label>
       </div>
 
-      <div class="sf-field" *ngIf="ollamaEnabled">
-        <label for="codeMindOllamaModel">Ollama Model{{ isRestartRequired('codemind_ollama_model') ? ' (restart required)' : '' }}</label>
-        <input id="codeMindOllamaModel" class="sf-input" type="text" [(ngModel)]="codeMindOllamaModel" placeholder="qwen2.5:14b" />
-        <p class="sf-hint">Uses the same Ollama Base URL configured above.</p>
-      </div>
-    </div>
-
-    <div class="sf-card">
-      <h2 class="sf-section-title">CodeMind: Execution</h2>
-
-      <div class="sf-field">
-        <label for="executionMode">Execution Mode</label>
-        <select id="executionMode" class="sf-select" [(ngModel)]="executionMode">
-          <option value="SYNC">SYNC</option>
-          <option value="BATCH">BATCH</option>
-        </select>
-      </div>
-
-      <div class="sf-field">
-        <label for="qaModel">Ask Agent Model{{ isRestartRequired('codemind_qa_model') ? ' (restart required)' : '' }}</label>
-        <select id="qaModel" class="sf-select" [(ngModel)]="qaModel">
-          <option value="claude">Claude</option>
-          <option value="ollama">Ollama</option>
-        </select>
-      </div>
-
-      <div class="sf-field sf-toggle-field">
-        <label class="sf-toggle">
-          <input type="checkbox" [(ngModel)]="embeddingEnabled" />
-          <span>Enable vector search for Ask (falls back to keyword search when off)</span>
-        </label>
+      <div class="sf-field" *ngIf="ingestOllamaEnabled">
+        <label for="ingestOllamaModel">Ollama Model{{ isRestartRequired('ingest_ollama_model') ? ' (restart required)' : '' }}</label>
+        <input id="ingestOllamaModel" class="sf-input" type="text" [(ngModel)]="ingestOllamaModel" placeholder="qwen2.5:14b" />
+        <p class="sf-hint">Uses the same Ollama Base URL configured above. Used by ingestion's optional per-file LLM-summary enrichment tier.</p>
       </div>
     </div>
 

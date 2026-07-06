@@ -1,12 +1,9 @@
 """Ollama-backed LogicExtractionAgent.
 
-Moved verbatim from codemind/agents/ollama_agent.py (itself ported from
-com.jslogicextractor.agent.OllamaLogicExtractionAgent) as part of unifying
-CodeMind's per-file LLM extraction into the ChromaDB ingestion pipeline --
-see plan file section I. Single attempt per file, catching all exceptions
-into a failure_result (no internal retry loop -- unlike
-pipeline/nodes/llm_retry.py's multi-attempt seed-bumping retry, which is
-specific to generate.py/clarify.py's story-generation use case).
+Single attempt per file, catching all exceptions into a failure_result (no
+internal retry loop -- unlike pipeline/nodes/llm_retry.py's multi-attempt
+seed-bumping retry, which is specific to generate.py/clarify.py's
+story-generation use case).
 
 Rebuilds its ChatOllama client only when settings.settings_generation has
 advanced and reads num_ctx from settings.OLLAMA_NUM_CTX rather than a value
@@ -38,8 +35,6 @@ logger = logging.getLogger(__name__)
 NAME = "ollama-logic-extractor"
 
 REQUEST_TIMEOUT_SECONDS = 120
-# Matches ANTHROPIC_MAX_TOKENS' default (codemind/batch.py, pre-retirement) --
-# the same per-file "how much extraction output is enough" budget, applied here too.
 MAX_OUTPUT_TOKENS = 4096
 
 
@@ -74,7 +69,7 @@ class OllamaLogicExtractionAgent:
         if self._chat is not None and self._built_at_generation == settings.settings_generation:
             return
         self._chat = ChatOllama(
-            model=settings.CODEMIND_OLLAMA_MODEL,
+            model=settings.INGEST_OLLAMA_MODEL,
             base_url=settings.OLLAMA_BASE_URL,
             num_ctx=settings.OLLAMA_NUM_CTX,
             num_predict=MAX_OUTPUT_TOKENS,

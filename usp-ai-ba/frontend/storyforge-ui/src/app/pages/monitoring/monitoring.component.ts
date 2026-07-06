@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit } from '@angular/core';
 
-import { AppErrorRecord, MonitoringService } from '../../services/monitoring.service';
+import { ErrorRecord, MonitoringService } from '../../services/monitoring.service';
 
 @Component({
   selector: 'app-monitoring',
@@ -13,7 +13,7 @@ import { AppErrorRecord, MonitoringService } from '../../services/monitoring.ser
 export class MonitoringComponent implements OnInit {
   loading = true;
   loadError = '';
-  errors: AppErrorRecord[] = [];
+  errors: ErrorRecord[] = [];
   expandedIndexes: Record<number, boolean> = {};
 
   constructor(private monitoringService: MonitoringService) {}

@@ -2,19 +2,15 @@
 from __future__ import annotations
 
 import logging
-import os
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from api.routers import ado, ask, assess, auth, clarify, codemind_ask, codemind_jobs, export, ingest, monitoring, review
+from api.routers import ado, ask, assess, auth, clarify, export, ingest, monitoring, review
 from api.routers import settings as settings_router
 from api.user_store import ensure_default_admin
-from codemind import job_registry
-from codemind.watch import InputDirectoryWatcher
 from config import settings
 from monitoring.log_capture import install as install_error_capture
 from pipeline.graph import close_graph, get_graph
@@ -23,29 +19,15 @@ logging.basicConfig(level=logging.INFO)
 install_error_capture()
 logger = logging.getLogger(__name__)
 
-_watcher: InputDirectoryWatcher | None = None
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("StoryForge AI backend starting up")
     ensure_default_admin()
-    job_registry.load_persisted_jobs()
     await get_graph()  # open the persistent checkpoint DB now, not on first request
-
-    global _watcher
-    # Off by default (matching Java's jsprocessor.watch.enabled: false);
-    # enabling it activates no other behavior. See codemind/watch.py.
-    if os.getenv("CODEMIND_WATCH_ENABLED", "false").lower() == "true":
-        directory = Path(os.getenv("CODEMIND_WATCH_DIRECTORY", "./watch-input"))
-        quiet_period_seconds = int(os.getenv("CODEMIND_WATCH_QUIET_PERIOD_MILLIS", "500")) / 1000
-        _watcher = InputDirectoryWatcher(directory, quiet_period_seconds)
-        _watcher.start()
 
     yield
 
-    if _watcher is not None:
-        _watcher.stop()
     await close_graph()
     logger.info("StoryForge AI backend shutting down")
 
@@ -71,8 +53,6 @@ def create_app() -> FastAPI:
     app.include_router(export.router, prefix="/api")
     app.include_router(settings_router.router, prefix="/api")
     app.include_router(monitoring.router, prefix="/api")
-    app.include_router(codemind_jobs.router, prefix="/api")
-    app.include_router(codemind_ask.router, prefix="/api")
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception):

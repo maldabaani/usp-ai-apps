@@ -1,18 +1,17 @@
 # USP AI Apps
 
-This repository hosts **StoryForge AI**, a single Python/FastAPI + Angular app that
-covers two AI-powered developer workflows behind one login, one origin:
+This repository hosts **StoryForge AI**, a single Python/FastAPI + Angular app covering
+three AI-powered workflows behind one login, one origin, and one shared knowledge base:
 
-| | CodeMind | AI Business Analyst |
+| | Ask Technical / Ask Business | AI Business Analyst (StoryForge) |
 |---|---|---|
-| Purpose | Reverse-engineers business logic out of an existing codebase | Forward-generates a full Azure DevOps work item hierarchy from a design doc |
-| Model | Claude by default (+ optional local Ollama agent, round-robin) | Local Ollama model (`qwen2.5:14b`, deterministic — `temperature=0` + fixed seed) for analysis/generation and RAG embeddings |
-| Landing page card | "CodeMind" (native Angular pages) | "AI Business Analyst" (native Angular pages) |
+| Purpose | Standing Q&A over an ingested code repo + manuals, for dev and business audiences respectively | Forward-generates a full Azure DevOps work item hierarchy from a design doc |
+| Model | Claude by default (+ optional local Ollama, per `ASK_QA_MODEL`) | Local Ollama model (`qwen2.5:14b`, deterministic — `temperature=0` + fixed seed) for analysis/generation and RAG embeddings |
+| Landing page card | "Ask Technical Questions" / "Ask Business Questions" | "AI Business Analyst" |
 
-Both flows share one FastAPI backend process, one job-persistence layer, one
-settings screen, and one error-monitoring feed — see
-[`usp-ai-ba/backend/codemind/`](usp-ai-ba/backend/codemind/) for CodeMind's
-module layout within that backend.
+All three flows share one FastAPI backend process, one ingestion pipeline (one ChromaDB
+corpus behind Ask and StoryForge's own RAG retrieval), one job-persistence layer, one
+settings screen, and one error-monitoring feed.
 
 ## Quick start (unified platform)
 
@@ -21,8 +20,7 @@ export ANTHROPIC_API_KEY=sk-ant-...
 docker compose up --build
 ```
 
-Open **http://localhost/** — the "AI BA" card is the StoryForge flow, the "CodeMind"
-card is CodeMind's job UI, both served from one origin. See
+Open **http://localhost/** — pick a card from the landing page. See
 [RUNNING.md](RUNNING.md) for standalone run instructions, local-LLM configuration,
 and troubleshooting notes.
 
@@ -31,7 +29,8 @@ and troubleshooting notes.
 ```
                           ┌─────────────────────────────────────────┐
                           │        Angular shell (storyforge-ui)     │
-                          │   landing cards:  [ AI BA ]  [ CodeMind ]│
+                          │  landing cards: [AI BA] [Ingestion]      │
+                          │            [Ask Technical] [Ask Business]│
                           └───────────────────┬───────────────────┘
                                               │
                         nginx gateway (deploy/nginx.conf), one origin
@@ -41,40 +40,35 @@ and troubleshooting notes.
                                               │
                                           `/api/*`
                           StoryForge FastAPI backend (LangGraph pipeline,
-                          ChromaDB, and CodeMind's extraction/Ask endpoints)
+                          ingestion pipeline, ChromaDB, Ask endpoints)
 ```
 
 See [`docker-compose.yml`](docker-compose.yml) and
 [`deploy/nginx.conf`](deploy/nginx.conf) for the exact wiring.
 
-## CodeMind
+## Ingestion + Ask Technical / Ask Business
 
-Scans a repository, sends each source file to Claude (or a local Ollama model) with a
-structured prompt, and stores the extracted rules, summaries, and dependencies as JSON.
-Native Angular pages let you watch jobs run in real time, browse extracted results, and
-ask natural-language questions about the code once extraction is complete.
+A code repository and its user manuals get indexed once into a shared ChromaDB corpus
+(mechanical structural chunking across 16 languages, plus an optional per-file
+LLM-summary enrichment tier). Two standing pages then query that same corpus:
 
-**Highlights**
-- Multi-language extraction — JS/TS, Python, Java, Kotlin, Go, C#, Ruby, Rust, PHP
-- Two execution modes: **SYNC** (per-file, low latency, `asyncio`-bounded concurrency) or
-  **BATCH** (Anthropic Message Batches API, flat 50% token discount, built for large repos)
-- Hybrid agent setup — Claude plus an optional local Ollama model, round-robin load balanced
-- Large-file chunking, incremental re-runs (manifest-tracked), per-file fault isolation
-- Ask Agent (per-job) and Ask All (cross-job) natural-language Q&A over extracted results,
-  with vector search (Ollama embeddings) falling back to keyword search
-- Directory watcher — drop a path into a watched folder and a job starts automatically
-  (off by default)
-- Live progress UI: stepper, stats, real-time file feed, viewer modal, cancel/export
+- **Ask Technical** — for the development team; cites the full relative path of every
+  source file an answer draws from.
+- **Ask Business** — for the business team; plain-language capability/impact framing,
+  no file paths or code identifiers.
 
-**Key REST endpoints:** `POST /api/v1/extraction-jobs`, `GET /api/v1/extraction-jobs/{id}`,
-`POST .../cancel`, `GET .../export`, `POST .../qa/stream`, `POST /api/v1/ask/stream`.
-**UI routes:** `/codemind`, `/codemind/:jobId`, `/codemind/:jobId/ask`, `/codemind/ask`.
+Both stream answers back over SSE, using Claude by default (`ASK_QA_MODEL`).
+
+**Key REST endpoints:** `POST /api/ingest/pdfs`, `POST /api/ingest/code`,
+`GET /api/ingest/status/{job_id}`, `POST /api/ask/technical`, `POST /api/ask/business`,
+`GET /api/ask/status`.
+**UI routes:** `/ingestion`, `/ask/technical`, `/ask/business`.
 
 ## StoryForge AI
 
 Turns a Solution Design Document (SDD) PDF into a fully-detailed, ready-to-create Azure
 DevOps work item hierarchy — **Epic → User Story → Dev Tasks + Unit Test Tasks** — using
-a local Ollama model (`qwen2.5:14b`) for analysis/generation, RAG over your
+a local Ollama model (`qwen2.5:14b`) for analysis/generation, RAG over the same ingested
 codebase/user manuals/JPA entities (ChromaDB + Ollama embeddings), and a human-in-the-loop
 review/clarification workflow before anything is written downstream. Analysis/generation
 run at `temperature=0` with a fixed seed, so the same SDD produces the same output on
@@ -94,7 +88,7 @@ downstream nodes run on incomplete state.
 
 **Key REST endpoints:** `POST /api/assess`, `GET /api/assess/status/{job_id}`,
 `POST /api/clarify/answer/{job_id}`, `POST /api/review/approve/{job_id}`,
-`GET /api/export/document/{job_id}`, `POST /api/ingest/pdfs`, `POST /api/ingest/code`.
+`GET /api/export/document/{job_id}`.
 **Frontend routes:** `/ai-ba` (dashboard), `/assess`, `/clarify/:jobId`, `/review/:jobId`, `/status/:jobId`.
 
 Full details, configuration reference, and the complete API/schema documentation:
@@ -105,10 +99,10 @@ Full details, configuration reference, and the complete API/schema documentation
 ```
 usp-ai-ba/
   backend/
-    codemind/           CodeMind's extraction/QA/orchestration/batch/watch modules
+    ingestion/           Code/PDF chunking + embedding, optional LLM-summary enrichment tier
     pipeline/           StoryForge's LangGraph nodes
-    api/routers/        FastAPI routes for both flows (codemind_jobs.py, codemind_ask.py, assess.py, ...)
-  frontend/storyforge-ui/   Angular SPA (unified shell — both apps' pages live here)
+    api/routers/        FastAPI routes (ask.py, ingest.py, assess.py, ...)
+  frontend/storyforge-ui/   Angular SPA (unified shell)
 deploy/
   nginx.conf           Gateway routing config (/, /api/*)
   gateway.Dockerfile    Builds the Angular app and serves it via nginx
@@ -118,8 +112,8 @@ RUNNING.md              How to run the app standalone, the unified platform, and
 
 ## Notes
 
-- `ANTHROPIC_API_KEY` is required for CodeMind (Claude is the default agent there, and
-  BATCH mode always uses it regardless of any Ollama setting). StoryForge AI's
+- `ANTHROPIC_API_KEY` is required for ingestion's default (Claude) LLM-summary enrichment
+  agent and for Ask Technical/Business's default model. StoryForge AI's
   `clarify_node`/`generate_node` run entirely on a local Ollama model instead;
   `ANTHROPIC_API_KEY`/`CLAUDE_MODEL` are configured in `config.py` but not called
   anywhere in that pipeline. See [RUNNING.md](RUNNING.md) for the full breakdown.

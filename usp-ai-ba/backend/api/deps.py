@@ -2,10 +2,9 @@
 
 require_auth decodes/verifies the JWT from either the Authorization header
 (the normal path, attached by the Angular interceptor) or a ?token= query
-param -- the latter exists because CodeMind's UI is loaded cross-origin in an
-iframe and can't share the Angular shell's localStorage/cookies, so its src
-URL carries the token as a query param instead (see codemind.component.ts).
-require_admin additionally checks the JWT's role claim.
+param (for any request that can't attach a custom header, e.g. an SSE
+EventSource or a direct browser navigation). require_admin additionally
+checks the JWT's role claim.
 """
 from __future__ import annotations
 

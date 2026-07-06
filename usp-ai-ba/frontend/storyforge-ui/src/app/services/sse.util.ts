@@ -1,9 +1,8 @@
 // Shared SSE (Server-Sent Events) client for the "sources" + "chunk" frame
-// contract used by both codemind.service.ts's job-scoped Ask streams and
-// ask.service.ts's standing Ask Technical/Business streams. Raw fetch()
-// rather than HttpClient: reading a streamed response body chunk by chunk
-// needs the Fetch Response's ReadableStream, which HttpClient doesn't
-// expose directly.
+// contract used by ask.service.ts's standing Ask Technical/Business streams.
+// Raw fetch() rather than HttpClient: reading a streamed response body chunk
+// by chunk needs the Fetch Response's ReadableStream, which HttpClient
+// doesn't expose directly.
 
 export interface SseStreamHandlers {
   onSources: (sources: string[]) => void;

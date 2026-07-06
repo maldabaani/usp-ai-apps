@@ -27,10 +27,7 @@ def _split_origins(raw: str) -> list[str]:
 def _default_jwt_secret(jobs_dir: str) -> str:
     """A random secret persisted to disk under JOBS_DIR, so restarts don't
     invalidate every login session -- used only when JWT_SECRET isn't set
-    explicitly in .env. Note: for CodeMind's login (SSO) to work, both apps
-    must share the SAME secret -- this auto-generated one only exists for
-    StoryForge's own convenience; set JWT_SECRET explicitly in both apps'
-    environments to the same value to make cross-app auth work."""
+    explicitly in .env."""
     secret_path = Path(jobs_dir) / ".jwt_secret"
     if secret_path.exists():
         return secret_path.read_text().strip()
@@ -38,9 +35,7 @@ def _default_jwt_secret(jobs_dir: str) -> str:
     secret = secrets.token_hex(32)
     secret_path.write_text(secret)
     logger.warning(
-        "JWT_SECRET not set -- generated and saved one to %s for this install only. "
-        "Set JWT_SECRET explicitly (same value in both apps' environments) for "
-        "CodeMind's login to accept StoryForge-issued tokens.",
+        "JWT_SECRET not set -- generated and saved one to %s for this install only.",
         secret_path,
     )
     return secret
@@ -64,30 +59,20 @@ class Settings:
     # that much KV cache without a heavy slowdown.
     OLLAMA_NUM_CTX: int = int(os.getenv("OLLAMA_NUM_CTX", "32768"))
 
-    # CodeMind's per-file extraction settings. CODEMIND_OLLAMA_MODEL is
-    # deliberately separate from OLLAMA_LLM_MODEL above (StoryForge's own
+    # ingestion/enrichment/'s optional per-file LLM-summary tier. INGEST_OLLAMA_MODEL
+    # is deliberately separate from OLLAMA_LLM_MODEL above (StoryForge's own
     # story-generation model) -- the two could reasonably diverge (a
-    # smaller/faster model for high-volume file-by-file extraction vs. a
+    # smaller/faster model for high-volume file-by-file summarization vs. a
     # stronger one for one-shot story generation) even though their defaults
-    # happen to coincide today. OLLAMA_BASE_URL is shared (both apps hit the
-    # same physical local Ollama server -- two independently-configurable
+    # happen to coincide today. OLLAMA_BASE_URL is shared (every local model
+    # hits the same physical Ollama server -- two independently-configurable
     # URLs for one server would be a bug, not a feature).
-    CODEMIND_OLLAMA_ENABLED: bool = os.getenv("CODEMIND_OLLAMA_ENABLED", "false").lower() == "true"
-    CODEMIND_OLLAMA_MODEL: str = os.getenv("CODEMIND_OLLAMA_MODEL", "qwen2.5:14b")
-    CODEMIND_EXECUTION_MODE: str = os.getenv("CODEMIND_EXECUTION_MODE", "SYNC")
-    CODEMIND_QA_MODEL: str = os.getenv("CODEMIND_QA_MODEL", "claude")
-
-    # codemind/qa.py's vector-search path (ephemeral, per-query -- see that
-    # module's docstring). Off by default, matching Java's
-    # jsprocessor.embedding.enabled=false default; falls back to keyword
-    # overlap either way. Reuses OLLAMA_EMBED_MODEL/OLLAMA_BASE_URL above
-    # (same physical embedding model StoryForge's own RAG already uses).
-    CODEMIND_EMBEDDING_ENABLED: bool = os.getenv("CODEMIND_EMBEDDING_ENABLED", "false").lower() == "true"
+    INGEST_OLLAMA_ENABLED: bool = os.getenv("INGEST_OLLAMA_ENABLED", "false").lower() == "true"
+    INGEST_OLLAMA_MODEL: str = os.getenv("INGEST_OLLAMA_MODEL", "qwen2.5:14b")
 
     # api/routers/ask.py's standing Ask Technical/Business endpoints: "claude"
     # (default) uses ANTHROPIC_API_KEY/CLAUDE_MODEL, "ollama" uses
-    # OLLAMA_BASE_URL/OLLAMA_LLM_MODEL/OLLAMA_NUM_CTX above -- same pattern as
-    # CodeMind's now-retired CODEMIND_QA_MODEL.
+    # OLLAMA_BASE_URL/OLLAMA_LLM_MODEL/OLLAMA_NUM_CTX above.
     ASK_QA_MODEL: str = os.getenv("ASK_QA_MODEL", "claude")
 
     CHROMA_PERSIST_PATH: str = os.getenv("CHROMA_PERSIST_PATH", "./chroma_db")
@@ -97,7 +82,7 @@ class Settings:
     # time, so it's a real knob, not just a hardcoded default. On by default;
     # enrich.py itself degrades gracefully (skips tier 2, logs a warning) rather
     # than failing the whole ingestion run when no agent is configured (no
-    # ANTHROPIC_API_KEY and CODEMIND_OLLAMA_ENABLED off).
+    # ANTHROPIC_API_KEY and INGEST_OLLAMA_ENABLED off).
     INGEST_LLM_SUMMARY_ENABLED: bool = os.getenv("INGEST_LLM_SUMMARY_ENABLED", "true").lower() == "true"
 
     MCP_SERVER_PATH: str = os.getenv("MCP_SERVER_PATH", "")
@@ -134,9 +119,7 @@ class Settings:
     EXPORTS_DIR: str = os.getenv("EXPORTS_DIR", "./exports")
 
     # Signs/verifies login JWTs (api/routers/auth.py). Falls back to a
-    # per-install random secret persisted under JOBS_DIR/.jwt_secret if unset
-    # -- see _default_jwt_secret's docstring for why that alone isn't enough
-    # for CodeMind's SSO to work.
+    # per-install random secret persisted under JOBS_DIR/.jwt_secret if unset.
     JWT_SECRET: str = os.getenv("JWT_SECRET") or _default_jwt_secret(os.getenv("JOBS_DIR", "./jobs"))
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = int(os.getenv("JWT_EXPIRE_MINUTES", "480"))

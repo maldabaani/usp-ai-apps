@@ -20,15 +20,10 @@ export interface AppSettings {
   notion_status_property: string;
   notion_status_value: string;
   notion_api_key_masked: string;
-  // CodeMind fields -- served by this same unified endpoint now that both
-  // apps share one backend process (see codemind/ package).
   anthropic_api_key_masked: string;
   anthropic_model: string;
-  codemind_ollama_enabled: boolean;
-  codemind_ollama_model: string;
-  codemind_execution_mode: string;
-  codemind_qa_model: string;
-  codemind_embedding_enabled: boolean;
+  ingest_ollama_enabled: boolean;
+  ingest_ollama_model: string;
   restart_required_fields: string[];
 }
 

@@ -76,7 +76,7 @@ async def enrich_repository(
     if not agents:
         logger.warning(
             "LLM-summary enrichment is enabled but no agents are configured "
-            "(no ANTHROPIC_API_KEY, CODEMIND_OLLAMA_ENABLED off) -- skipping "
+            "(no ANTHROPIC_API_KEY, INGEST_OLLAMA_ENABLED off) -- skipping "
             "tier 2 for this run; raw chunking (tier 1) is unaffected."
         )
         return {"enabled": False, "files_summarized": 0, "files_skipped_unchanged": 0, "errors": []}

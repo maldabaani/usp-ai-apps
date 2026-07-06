@@ -336,7 +336,7 @@ export class StatusComponent implements OnInit, OnDestroy {
   get documentDownloadUrl(): string {
     // A plain <a href> download isn't routed through HttpClient, so the
     // auth interceptor never sees it -- the token has to ride along as a
-    // query param instead (same convention as the CodeMind iframe).
+    // query param instead.
     const token = this.authService.getToken();
     const url = this.storyForgeService.getDocumentDownloadUrl(this.jobId);
     return token ? `${url}?token=${encodeURIComponent(token)}` : url;

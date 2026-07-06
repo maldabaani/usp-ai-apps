@@ -4,11 +4,9 @@ import { catchError, throwError } from 'rxjs';
 
 import { AuthService } from './services/auth.service';
 
-// Attaches the JWT to every outgoing request (both StoryForge's own API and
-// CodeMind's, when called directly via HttpClient -- same token, same shared
-// secret, that's what makes single sign-on work across the two apps). A 401
-// means the token is missing/expired/invalid, so log out and send the user
-// back to /login rather than leaving the app stuck on a broken screen.
+// Attaches the JWT to every outgoing request. A 401 means the token is
+// missing/expired/invalid, so log out and send the user back to /login
+// rather than leaving the app stuck on a broken screen.
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const authService = inject(AuthService);
   const token = authService.getToken();

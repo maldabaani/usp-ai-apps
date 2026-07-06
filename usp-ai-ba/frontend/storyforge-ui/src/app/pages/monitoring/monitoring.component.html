@@ -17,7 +17,6 @@
         <thead>
           <tr>
             <th>Time</th>
-            <th>App</th>
             <th>Logger</th>
             <th>Message</th>
           </tr>
@@ -26,12 +25,11 @@
           <ng-container *ngFor="let error of errors; let i = index">
             <tr class="sf-monitoring-row" (click)="toggleTraceback(i)">
               <td class="sf-monitoring-time">{{ formatTimestamp(error.timestamp) }}</td>
-              <td><span class="sf-badge sf-badge-{{ error.app === 'StoryForge' ? 'storyforge' : 'codemind' }}">{{ error.app }}</span></td>
               <td class="sf-monitoring-logger">{{ error.logger }}</td>
               <td class="sf-monitoring-message">{{ error.message }}</td>
             </tr>
             <tr class="sf-monitoring-traceback-row" *ngIf="expandedIndexes[i] && error.traceback">
-              <td colspan="4"><pre class="sf-monitoring-traceback">{{ error.traceback }}</pre></td>
+              <td colspan="3"><pre class="sf-monitoring-traceback">{{ error.traceback }}</pre></td>
             </tr>
           </ng-container>
         </tbody>
