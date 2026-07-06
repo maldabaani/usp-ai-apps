@@ -43,10 +43,15 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from api.routers import ask as ask_router
 from codemind import job_registry, qa
 from codemind.agents.selector import get_agent_selector
+from codemind.orchestrator import ExtractionJob, JobPhase
 from codemind.orchestrator import run as run_codemind_job
 from ingestion.ingest_code import ingest_code
 from ingestion.retrieval import retrieve_all_collections
 from prompts.ask_prompts import TECHNICAL_ASK_SYSTEM_PROMPT
+
+_PROGRESS_POLL_SECONDS = 2
+
+_TERMINAL_PHASES = (JobPhase.COMPLETED, JobPhase.FAILED, JobPhase.CANCELLED)
 
 DEFAULT_QUESTIONS = [
     "What does this codebase do at a high level?",
@@ -62,10 +67,39 @@ DEFAULT_QUESTIONS = [
 ]
 
 
+async def _print_codemind_progress(job: ExtractionJob) -> None:
+    last_phase: JobPhase | None = None
+    last_processed = -1
+    while job.phase not in _TERMINAL_PHASES:
+        if job.phase != last_phase:
+            last_phase = job.phase
+            suffix = f" ({job.total_files} files found)" if job.total_files else ""
+            print(f"  [CodeMind] {job.phase.value}{suffix}")
+        if job.total_files and job.processed_files != last_processed:
+            last_processed = job.processed_files
+            print(
+                f"  [CodeMind] {job.processed_files}/{job.total_files} files processed "
+                f"(ok={job.succeeded_files} failed={job.failed_files} skipped={job.skipped_files})"
+            )
+        await asyncio.sleep(_PROGRESS_POLL_SECONDS)
+
+
 async def _run_codemind_extraction(repo_path: Path) -> Path:
     job = job_registry.register(repo_path, None, None, None, False)
-    await run_codemind_job(job, get_agent_selector())
+    monitor = asyncio.create_task(_print_codemind_progress(job))
+    try:
+        await run_codemind_job(job, get_agent_selector())
+    finally:
+        monitor.cancel()
+    print(
+        f"  [CodeMind] done: {job.processed_files}/{job.total_files} files "
+        f"(ok={job.succeeded_files} failed={job.failed_files} skipped={job.skipped_files})"
+    )
     return job.output_directory
+
+
+async def _print_ingest_progress(index: int, total: int) -> None:
+    print(f"  [Ingestion] {index}/{total} files")
 
 
 async def _old_answer(output_directory: Path, question: str) -> str:
@@ -92,7 +126,7 @@ async def _run(repo_path: Path, questions: list[str], output_path: Path) -> None
     print(f"CodeMind extraction complete: {output_directory}")
 
     print(f"Running unified ingestion against {repo_path} ...")
-    await ingest_code(str(repo_path))
+    await ingest_code(str(repo_path), progress_callback=_print_ingest_progress)
     print("Ingestion complete.")
 
     lines = [f"# Ask parity report: {repo_path}\n"]
