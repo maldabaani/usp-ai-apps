@@ -55,3 +55,17 @@ def register_assess_job(
 
 def list_assess_jobs() -> list[dict]:
     return list(reversed(_load()))
+
+
+def delete_assess_job(job_id: str) -> bool:
+    """Removes job_id from the registry (not the LangGraph checkpoint DB or
+    uploaded PDF -- see pipeline/runner.py's delete_job for those). Returns
+    whether a matching entry was actually found and removed."""
+    jobs = _load()
+    remaining = [job for job in jobs if job["job_id"] != job_id]
+    if len(remaining) == len(jobs):
+        return False
+    global _jobs
+    _jobs = remaining
+    _save()
+    return True

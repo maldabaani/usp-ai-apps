@@ -33,6 +33,23 @@
   flex-wrap: wrap;
 }
 
+.sf-bulk-bar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 16px;
+  padding: 10px 14px;
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border);
+  border-radius: 8px;
+}
+
+.sf-bulk-count {
+  font-size: 14px;
+  font-weight: 600;
+  margin-right: auto;
+}
+
 .sf-search-wrap {
   position: relative;
   flex: 1;

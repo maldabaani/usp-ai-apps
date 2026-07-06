@@ -1,7 +1,8 @@
-"""Covers pipeline/runner.py's run_tracked()/cancel_job() -- the "Stop
-Assessment" feature. pipeline.runner.get_graph() is monkeypatched to a fake
-graph exposing only aget_state()/aupdate_state() (the two calls cancel_job
-actually makes), matching this codebase's mocked-ChatClient testing
+"""Covers pipeline/runner.py's run_tracked()/cancel_job()/delete_job() --
+the "Stop Assessment" and "Delete Assessment" features.
+pipeline.runner.get_graph() is monkeypatched to a fake graph exposing only
+aget_state()/aupdate_state()/checkpointer.adelete_thread() (the calls these
+functions actually make), matching this codebase's mocked-ChatClient testing
 convention rather than exercising a real LangGraph/SQLite checkpointer.
 """
 import asyncio
@@ -16,10 +17,19 @@ class _Snapshot:
         self.values = values
 
 
+class _FakeCheckpointer:
+    def __init__(self):
+        self.deleted_thread_ids: list[str] = []
+
+    async def adelete_thread(self, thread_id: str) -> None:
+        self.deleted_thread_ids.append(thread_id)
+
+
 class _FakeGraph:
     def __init__(self, state: dict | None):
         self._state = state
         self.update_calls: list[dict] = []
+        self.checkpointer = _FakeCheckpointer()
 
     async def aget_state(self, config):
         return _Snapshot(dict(self._state) if self._state is not None else None)
@@ -105,6 +115,45 @@ def test_cancel_job_raises_for_already_terminal_job(monkeypatch, status):
 
     with pytest.raises(ValueError, match="already"):
         asyncio.run(runner.cancel_job("job-terminal"))
+
+
+def test_delete_job_cancels_in_flight_task_and_deletes_checkpoint_thread(monkeypatch):
+    fake_graph = _FakeGraph({"status": "generating"})
+    _patch_graph(monkeypatch, fake_graph)
+
+    async def _body():
+        cancelled = False
+
+        async def _long_running():
+            nonlocal cancelled
+            try:
+                await asyncio.sleep(10)
+            except asyncio.CancelledError:
+                cancelled = True
+                raise
+
+        job_id = "job-being-deleted"
+        runner.run_tracked(job_id, _long_running())
+        await asyncio.sleep(0)  # see comment in the cancel_job test above
+
+        await runner.delete_job(job_id)
+
+        assert cancelled
+        assert job_id not in runner._active_tasks
+        assert fake_graph.checkpointer.deleted_thread_ids == [job_id]
+
+    asyncio.run(_body())
+
+
+def test_delete_job_works_on_a_job_with_no_active_task(monkeypatch):
+    # Deleting is allowed regardless of status -- e.g. an already-"done" job,
+    # unlike cancel_job which rejects terminal statuses.
+    fake_graph = _FakeGraph({"status": "done"})
+    _patch_graph(monkeypatch, fake_graph)
+
+    asyncio.run(runner.delete_job("job-already-done"))
+
+    assert fake_graph.checkpointer.deleted_thread_ids == ["job-already-done"]
 
 
 def test_run_tracked_removes_task_from_registry_once_it_finishes_on_its_own():

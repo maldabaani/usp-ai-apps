@@ -276,14 +276,25 @@ async def update_tasks(job_id: str) -> StoryForgeState:
     return await _drive(job_id)
 
 
+async def _cancel_active_task(job_id: str) -> None:
+    """Cancels job_id's tracked asyncio Task, if one is currently in flight,
+    and waits for it to actually unwind. No-op if nothing is tracked (the
+    human-in-the-loop pauses -- clarifying/reviewing with review_mode on --
+    have no task running at all, just a checkpoint waiting for an answer/
+    approval that will now never come)."""
+    task = _active_tasks.get(job_id)
+    if task is not None and not task.done():
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+
 async def cancel_job(job_id: str) -> StoryForgeState:
-    """Stops a running assessment job. Cancels the tracked asyncio Task (if
-    one is currently in flight -- the human-in-the-loop pauses,
-    "clarifying"/"reviewing" with review_mode on, have no task running at
-    all, just a checkpoint waiting for an answer/approval that will now never
-    come) and marks the checkpoint status "cancelled" either way, so
-    GET /assess/status/{job_id} reflects it instead of staying stuck showing
-    whatever status was current the moment cancellation was requested.
+    """Stops a running assessment job. Cancels the in-flight task (see
+    _cancel_active_task) and marks the checkpoint status "cancelled" either
+    way, so GET /assess/status/{job_id} reflects it instead of staying stuck
+    showing whatever status was current the moment cancellation was
+    requested.
 
     Callers must check TERMINAL_STATUSES themselves before calling this (see
     api/routers/assess.py) -- raises ValueError as a last-line defense against
@@ -297,12 +308,22 @@ async def cancel_job(job_id: str) -> StoryForgeState:
     if state.get("status") in TERMINAL_STATUSES:
         raise ValueError(f"Job {job_id} is already {state.get('status')!r}")
 
-    task = _active_tasks.get(job_id)
-    if task is not None and not task.done():
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
+    await _cancel_active_task(job_id)
 
     await graph.aupdate_state(config, {"status": "cancelled"})
     snapshot = await graph.aget_state(config)
     return snapshot.values
+
+
+async def delete_job(job_id: str) -> None:
+    """Permanently removes a job's LangGraph checkpoint data. Cancels any
+    in-flight task first (deleting checkpoint rows out from under a task
+    still writing to them would be a race), regardless of the job's current
+    status -- unlike cancel_job, deleting is allowed on a job in any state,
+    since "get rid of this" shouldn't require first stopping it as a separate
+    step. A job with no checkpoint yet (e.g. failed before its first save) is
+    a silent no-op here; api/routers/assess.py's registry-based existence
+    check is what 404s an unknown job_id."""
+    await _cancel_active_task(job_id)
+    graph = await get_graph()
+    await graph.checkpointer.adelete_thread(job_id)

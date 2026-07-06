@@ -2,6 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
+import { forkJoin } from 'rxjs';
 
 import { JobSummary, StoryForgeService } from '../../services/storyforge.service';
 
@@ -22,6 +23,8 @@ export class DashboardComponent implements OnInit {
   systemFilter = '';
   statusFilter = '';
   selectedIds = new Set<string>();
+  deleting = false;
+  deleteError = '';
 
   constructor(
     private storyForgeService: StoryForgeService,
@@ -83,6 +86,37 @@ export class DashboardComponent implements OnInit {
   toggleSelect(id: string): void {
     if (this.selectedIds.has(id)) this.selectedIds.delete(id);
     else this.selectedIds.add(id);
+  }
+
+  clearSelection(): void {
+    this.selectedIds.clear();
+  }
+
+  deleteSelected(): void {
+    if (!this.selectedIds.size || this.deleting) return;
+    const count = this.selectedIds.size;
+    if (!confirm(`Delete ${count} selected assessment${count > 1 ? 's' : ''}? This cannot be undone.`)) {
+      return;
+    }
+
+    this.deleting = true;
+    this.deleteError = '';
+    const ids = [...this.selectedIds];
+
+    forkJoin(ids.map((id) => this.storyForgeService.deleteAssessment(id))).subscribe({
+      next: () => {
+        this.deleting = false;
+        this.selectedIds.clear();
+        this.loadJobs();
+      },
+      error: (err) => {
+        this.deleting = false;
+        this.deleteError = err?.error?.detail || 'Delete failed. Some assessments may not have been removed.';
+        // Reload regardless -- forkJoin aborts on the first error, so some
+        // deletes in the batch may have already succeeded server-side.
+        this.loadJobs();
+      },
+    });
   }
 
   rerun(jobId: string): void {

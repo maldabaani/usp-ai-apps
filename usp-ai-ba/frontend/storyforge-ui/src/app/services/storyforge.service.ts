@@ -192,6 +192,10 @@ export class StoryForgeService {
     return this.http.post<{ status: string }>(`${API_BASE_URL}/assess/cancel/${jobId}`, {});
   }
 
+  deleteAssessment(jobId: string): Observable<void> {
+    return this.http.delete<void>(`${API_BASE_URL}/assess/${jobId}`);
+  }
+
   listJobs(): Observable<JobSummary[]> {
     return this.http.get<JobSummary[]>(`${API_BASE_URL}/assess/jobs`);
   }

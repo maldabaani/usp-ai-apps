@@ -9,13 +9,14 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from api.deps import require_auth
-from api.job_registry import list_assess_jobs, register_assess_job
+from api.job_registry import delete_assess_job, list_assess_jobs, register_assess_job
 from config import settings
 from pipeline.runner import (
     RECREATABLE_OUTPUT_MODES,
     TERMINAL_STATUSES,
     UPDATABLE_OUTPUT_MODES,
     cancel_job,
+    delete_job,
     get_job_state,
     identify_retryable_failure,
     recreate_tasks,
@@ -218,6 +219,23 @@ async def cancel_assessment(job_id: str, user: dict = Depends(require_auth)):
 
     state = await cancel_job(job_id)
     return {"status": state["status"]}
+
+
+@router.delete("/{job_id}", status_code=204)
+async def delete_assessment(job_id: str, user: dict = Depends(require_auth)) -> None:
+    """Permanently deletes an assessment: cancels it first if still running
+    (deleting checkpoint rows out from under a task still writing to them
+    would be a race -- see pipeline/runner.py's delete_job), then removes its
+    LangGraph checkpoint data, its uploaded PDF, and its entry in the
+    dashboard's job registry -- in that order, so a failure partway through
+    leaves the job still visible/retryable rather than silently vanishing
+    from the list while orphaned data remains on disk."""
+    if not any(job["job_id"] == job_id for job in list_assess_jobs()):
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    await delete_job(job_id)
+    Path(settings.UPLOADS_DIR, f"{job_id}.pdf").unlink(missing_ok=True)
+    delete_assess_job(job_id)
 
 
 @router.get("/jobs")

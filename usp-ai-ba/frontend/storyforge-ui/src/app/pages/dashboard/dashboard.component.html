@@ -36,6 +36,16 @@
     </select>
   </div>
 
+  <!-- Bulk actions -->
+  <div class="sf-bulk-bar" *ngIf="selectedIds.size">
+    <span class="sf-bulk-count">{{ selectedIds.size }} selected</span>
+    <button class="sf-btn sf-btn-secondary" (click)="clearSelection()" [disabled]="deleting">Clear</button>
+    <button class="sf-btn sf-btn-danger" (click)="deleteSelected()" [disabled]="deleting">
+      {{ deleting ? 'Deleting…' : 'Delete selected' }}
+    </button>
+  </div>
+  <p class="sf-error-text" *ngIf="deleteError">{{ deleteError }}</p>
+
   <!-- Table card -->
   <div class="sf-card sf-dash-card" *ngIf="!loading">
 
