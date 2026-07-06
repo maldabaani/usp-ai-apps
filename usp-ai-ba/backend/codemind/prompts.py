@@ -29,15 +29,34 @@ _OUTPUT_INSTRUCTION = (
     "Extract the business logic of the file above and respond with JSON only (no markdown fences, no commentary) using this shape:\n"
     '{"file": "<filePath>", "summary": "one paragraph summary", '
     '"rules": [{"name": "...", "description": "...", "conditions": ["..."], "actions": ["..."]}], '
-    '"dependencies": ["..."]}'
+    '"dependencies": ["..."]}\n\n'
+    'For each entry in "rules", state the underlying decision, not the mechanism that carries it out:\n'
+    '- "conditions" should capture the circumstance(s) that must hold for the rule to apply -- an input value, '
+    "a configuration or permission state, a role, or the outcome of a prior step -- expressed in domain terms, "
+    "not code syntax.\n"
+    '- "actions" should capture the resulting behavior or constraint, likewise in domain terms.\n'
+    '- "description" should read as a single self-contained sentence of the form "if/when <condition>, then '
+    '<outcome>," understandable without knowing which class or function it came from.\n\n'
+    "Before including a rule, check whether it would still be true regardless of implementation. If a rule "
+    'only restates which method, library, or API is invoked (for example, "uses X to call Y"), it describes a '
+    "mechanism, not logic -- omit it, or reframe it around the conditional behavior it encodes. Prioritize "
+    "rules governing authorization and permissions, validation and eligibility, thresholds and limits, state "
+    "transitions, and error or fallback handling, since this is where genuine business logic most often "
+    'resides. If the file contains no such decisions, return an empty "rules" array rather than listing its '
+    "mechanics."
 )
 
 
 def build_system_prompt(lang: Language) -> str:
     hint = _LANGUAGE_HINTS.get(lang, _DEFAULT_HINT)
     return (
-        f"You are a senior {lang.display_name} engineer extracting business logic "
-        f"from source code for documentation and migration purposes.\n\n{hint}"
+        f"You are a senior {lang.display_name} engineer conducting a logic-extraction review of source code "
+        "for technical documentation and system-migration purposes.\n\n"
+        "Your objective is to explain the reasoning behind the code's behavior, not to catalogue what it "
+        "calls or how it is structured. A business rule is a decision the code makes: a condition under which "
+        "something happens, and the outcome that follows. Naming which function, library, or framework "
+        "feature implements that decision is not, by itself, a business rule.\n\n"
+        f"{hint}"
     )
 
 

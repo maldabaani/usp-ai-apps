@@ -1,8 +1,12 @@
 """Ported from com.jslogicextractor.prompt.LogicExtractionPromptTemplatesTest,
-plus a golden-text test comparing this port's output byte-for-byte against
-the real Java app's rendered output (captured via a one-off scratch program
-run against the compiled Java classes -- see fixtures/golden_prompts.json).
-This closes off prompt-drift risk independent of any LLM call.
+plus a golden-text test pinning this module's rendered output byte-for-byte
+(see fixtures/golden_prompts.json). Originally captured from the real Java
+app's output; regenerated to match this module's own intentionally-diverged
+extraction prompt (rewritten to require genuine conditional business logic --
+"if/when X, then Y" -- rather than a description of implementation
+mechanics). Still closes off *unintentional* prompt drift independent of any
+LLM call -- update the fixture deliberately whenever the prompt text changes
+on purpose.
 """
 import json
 from pathlib import Path
