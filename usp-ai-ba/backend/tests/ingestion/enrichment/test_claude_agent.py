@@ -1,4 +1,4 @@
-"""Covers codemind/agents/claude_agent.py, ported from
+"""Covers ingestion/enrichment/agents/claude_agent.py, moved from codemind/agents/claude_agent.py (originally ported from
 com.jslogicextractor.agent.ClaudeLogicExtractionAgent -- verifies the
 settings-screen hot-reload path (settings.settings_generation -> the agent
 rebuilding its ChatAnthropic client) without a real network call, mirroring
@@ -6,7 +6,7 @@ the Java test's reflection-based rebuildIfNeeded() drive (Python needs no
 reflection since the fields aren't private)."""
 from config import settings
 
-from codemind.agents.claude_agent import ClaudeLogicExtractionAgent
+from ingestion.enrichment.agents.claude_agent import ClaudeLogicExtractionAgent
 
 
 def test_rebuilds_chat_client_only_when_settings_generation_changes():

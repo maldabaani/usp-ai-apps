@@ -1,7 +1,7 @@
 """Ported from com.jslogicextractor.scanner.LargeFileChunkerTest."""
 from pathlib import Path
 
-from codemind import chunker
+from ingestion.enrichment import chunker
 
 _ABSOLUTE_PATH = Path("/repo/big.js")
 

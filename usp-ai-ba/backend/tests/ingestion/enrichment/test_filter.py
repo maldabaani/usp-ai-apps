@@ -1,8 +1,8 @@
 """Ported from com.jslogicextractor.filter.NonSubstantiveFileFilterTest."""
 from pathlib import Path
 
-from codemind import filter as nonsubstantive_filter
-from codemind.models import SourceFile
+from ingestion.enrichment import filter as nonsubstantive_filter
+from ingestion.enrichment.models import SourceFile
 
 
 def _file(relative_path: str, content: str) -> SourceFile:

@@ -86,6 +86,14 @@ class Settings:
 
     CHROMA_PERSIST_PATH: str = os.getenv("CHROMA_PERSIST_PATH", "./chroma_db")
 
+    # ingest_code.py's optional LLM-summary enrichment tier (ingestion/enrichment/
+    # enrich.py) -- makes ingestion a per-file LLM-cost operation for the first
+    # time, so it's a real knob, not just a hardcoded default. On by default;
+    # enrich.py itself degrades gracefully (skips tier 2, logs a warning) rather
+    # than failing the whole ingestion run when no agent is configured (no
+    # ANTHROPIC_API_KEY and CODEMIND_OLLAMA_ENABLED off).
+    INGEST_LLM_SUMMARY_ENABLED: bool = os.getenv("INGEST_LLM_SUMMARY_ENABLED", "true").lower() == "true"
+
     MCP_SERVER_PATH: str = os.getenv("MCP_SERVER_PATH", "")
     ADO_ORGANIZATION: str = os.getenv("ADO_ORGANIZATION", "")
     ADO_PROJECT: str = os.getenv("ADO_PROJECT", "")

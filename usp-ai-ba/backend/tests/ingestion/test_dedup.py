@@ -20,6 +20,24 @@ import pytest
 from ingestion import chroma_client, ingest_code, ingest_pdfs
 
 
+def _matches_where(metadata: dict, where: dict) -> bool:
+    """Evaluates the small subset of chromadb's where-filter grammar this
+    codebase's delete_by_source/delete_by_source_and_type/
+    delete_by_source_excluding_type actually use: flat exact-match keys
+    (implicitly ANDed), "$and": [...], and a field value of {"$ne": ...}."""
+    for key, value in where.items():
+        if key == "$and":
+            if not all(_matches_where(metadata, clause) for clause in value):
+                return False
+        elif isinstance(value, dict) and "$ne" in value:
+            if metadata.get(key) == value["$ne"]:
+                return False
+        else:
+            if metadata.get(key) != value:
+                return False
+    return True
+
+
 class _FakeVectorStore:
     def __init__(self):
         self.docs: dict[str, object] = {}  # id -> Document
@@ -36,8 +54,7 @@ class _FakeVectorStore:
     async def adelete(self, ids=None, where=None):
         self.delete_call_count += 1
         if where:
-            key, value = next(iter(where.items()))
-            for id_ in [i for i, doc in self.docs.items() if doc.metadata.get(key) == value]:
+            for id_ in [i for i, doc in self.docs.items() if _matches_where(doc.metadata, where)]:
                 del self.docs[id_]
         elif ids:
             for id_ in ids:
@@ -114,7 +131,10 @@ def _write(repo: object, relative: str, content: str) -> None:
 
 
 async def _ingest(repo_path) -> dict:
-    return await ingest_code.ingest_code(str(repo_path))
+    # Tier 2 (LLM-summary enrichment) is out of scope for this file -- see
+    # tests/ingestion/enrichment/test_enrich.py -- and disabling it here
+    # keeps these tests from making real network calls.
+    return await ingest_code.ingest_code(str(repo_path), enable_llm_summary=False)
 
 
 def test_reingesting_unchanged_repo_does_not_grow_chunk_count(tmp_path, fake_stores):

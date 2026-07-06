@@ -11,8 +11,8 @@ on purpose.
 import json
 from pathlib import Path
 
-from codemind import prompts
-from codemind.models import Language, SourceFile
+from ingestion.enrichment import prompts
+from ingestion.enrichment.models import Language, SourceFile
 
 _FIXTURES_DIR = Path(__file__).parent / "fixtures"
 

@@ -1,4 +1,4 @@
-"""Covers codemind/agents/ollama_agent.py, ported from
+"""Covers ingestion/enrichment/agents/ollama_agent.py, moved from codemind/agents/ollama_agent.py (originally ported from
 com.jslogicextractor.agent.OllamaLogicExtractionAgent. The ChatOllama
 instance itself is real (safe to construct -- no network call happens until
 .ainvoke() is called); ainvoke() is monkeypatched on the class (ChatOllama is
@@ -11,8 +11,8 @@ from types import SimpleNamespace
 
 from langchain_ollama import ChatOllama
 
-from codemind.agents.ollama_agent import MAX_OUTPUT_TOKENS, OllamaLogicExtractionAgent
-from codemind.models import SourceFile
+from ingestion.enrichment.agents.ollama_agent import MAX_OUTPUT_TOKENS, OllamaLogicExtractionAgent
+from ingestion.enrichment.models import SourceFile
 from config import settings
 
 

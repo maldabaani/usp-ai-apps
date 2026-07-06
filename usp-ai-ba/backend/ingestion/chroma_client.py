@@ -106,6 +106,32 @@ async def delete_by_source(collection_key: str, relative_path: str) -> None:
     await vector_store.adelete(where={"source": relative_path})
 
 
+async def delete_by_source_and_type(collection_key: str, relative_path: str, doc_type: str) -> None:
+    """Like delete_by_source, but scoped to one "type" metadata value only --
+    used by ingestion/enrichment/enrich.py to clear just its own prior
+    "llm_summary" document(s) for a file before re-adding, without touching
+    that same file's mechanically-chunked documents (a different "type")
+    that ingest_code.py's raw-chunk tier separately owns via
+    delete_by_source_excluding_type below. The two tiers must never delete
+    each other's documents just because they share the same "source".
+    """
+    vector_store = get_vector_store(collection_key)
+    await vector_store.adelete(where={"$and": [{"source": relative_path}, {"type": doc_type}]})
+
+
+async def delete_by_source_excluding_type(collection_key: str, relative_path: str, exclude_type: str) -> None:
+    """The complementary half of delete_by_source_and_type: clears every
+    document for a file EXCEPT ones of exclude_type. ingest_code.py's raw-
+    chunking tier uses this instead of a blanket delete_by_source once
+    LLM-summary enrichment is enabled, so re-chunking a file's mechanical
+    structure never wipes out its separately-managed llm_summary document
+    (which may not be getting re-written this run at all, if enrichment's
+    own incremental-skip decided the file's content hasn't changed).
+    """
+    vector_store = get_vector_store(collection_key)
+    await vector_store.adelete(where={"$and": [{"source": relative_path}, {"type": {"$ne": exclude_type}}]})
+
+
 async def list_distinct_sources(collection_key: str) -> set[str]:
     """Every distinct "source" metadata value currently stored in a
     collection -- lets a re-ingestion run detect files that existed in a

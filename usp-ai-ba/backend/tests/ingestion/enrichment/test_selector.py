@@ -1,8 +1,8 @@
-"""Covers codemind/agents/selector.py, ported from
-com.jslogicextractor.agent.AgentSelector."""
+"""Covers ingestion/enrichment/agents/selector.py, moved from codemind/agents/selector.py (originally ported from
+com.jslogicextractor.agent.AgentSelector)."""
 import pytest
 
-from codemind.agents.selector import AgentSelector
+from ingestion.enrichment.agents.selector import AgentSelector
 
 
 class _StubAgent:

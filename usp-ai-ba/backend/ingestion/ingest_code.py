@@ -1,4 +1,4 @@
-"""One-time ingestion of the Maven multi-module monorepo codebase into ChromaDB.
+"""One-time ingestion of the codebase into ChromaDB.
 
 Implements the "smart chunking" rules:
 
@@ -7,10 +7,17 @@ Implements the "smart chunking" rules:
 - TypeScript/Angular: chunked by component, service, and module separately.
 - JavaScript/jQuery: chunked by function. Falls back to whole-file chunking
   when no functions are detected.
+- Every other supported language (Python, Kotlin, Go, C#, Ruby, Rust, PHP, plus
+  JS/TS variants like .jsx/.tsx/.mjs/.cjs/.pyw/.kts): whole-file chunking --
+  building bespoke per-symbol chunkers for 13 more languages isn't attempted
+  here; ingestion/enrichment's optional LLM-summary tier (see enrich.py) is
+  what's meant to compensate for the resulting loss of symbol-level precision,
+  by adding an LLM-synthesized per-file summary alongside these raw chunks.
 - HTML: skipped entirely.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import re
@@ -20,7 +27,14 @@ from pathlib import Path
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from ingestion.chroma_client import delete_by_source, get_vector_store, list_distinct_sources
+from ingestion.chroma_client import (
+    delete_by_source,
+    delete_by_source_excluding_type,
+    get_vector_store,
+    list_distinct_sources,
+)
+from ingestion.enrichment import enrich
+from config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -30,10 +44,30 @@ CHARS_PER_TOKEN = 4
 MAX_CHUNK_CHARS = CHUNK_SIZE_TOKENS * CHARS_PER_TOKEN
 OVERLAP_CHARS = CHUNK_OVERLAP_TOKENS * CHARS_PER_TOKEN
 
-SKIP_DIR_NAMES = {"node_modules", "target", "dist", ".git", ".angular", ".cache"}
+# Matches codemind/orchestrator.py's EXCLUDED_DIRECTORY_NAMES -- widened here
+# (from just {node_modules, target, dist, .git, .angular, .cache}) as part of
+# folding CodeMind's broader language coverage into this pipeline, since the
+# 13 newly-added languages have their own common build/cache directories
+# (.venv, __pycache__, vendor, bin, obj, ...) that were never relevant before.
+SKIP_DIR_NAMES = {
+    "node_modules", ".git", "dist", "build", "coverage",
+    "out", ".next", ".turbo", "vendor",
+    "__pycache__", "target", ".venv", "venv",
+    "bin", "obj", ".gradle", ".mypy_cache", ".pytest_cache",
+    ".angular", ".cache",
+}
 JAVA_EXCLUDE_SUFFIXES = ("Test.java", "IT.java")
 TS_EXCLUDE_SUFFIXES = (".spec.ts",)
-SOURCE_EXTENSIONS = {".java", ".ts", ".js"}
+# Matches codemind/orchestrator.py's INCLUDED_EXTENSIONS -- widened here (from
+# just {.java, .ts, .js}) to fold in CodeMind's broader per-file LLM
+# extraction language coverage, per the "fully unify ingestion" decision (see
+# plan file section I). Only .java/.ts/.js get symbol-level chunking below;
+# every other extension falls through to chunk_generic_file's whole-file split.
+SOURCE_EXTENSIONS = {
+    ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx",
+    ".py", ".pyw", ".java", ".kt", ".kts",
+    ".go", ".cs", ".rb", ".rs", ".php",
+}
 
 BATCH_SIZE = 64
 
@@ -325,6 +359,37 @@ def chunk_js_file(text: str, relative_path: Path, module: str) -> ChunkResult:
 
 
 # --------------------------------------------------------------------------
+# Generic whole-file fallback (Python, Kotlin, Go, C#, Ruby, Rust, PHP)
+# --------------------------------------------------------------------------
+
+_GENERIC_LANGUAGE_BY_EXTENSION = {
+    ".py": "python", ".pyw": "python",
+    ".kt": "kotlin", ".kts": "kotlin",
+    ".go": "go",
+    ".cs": "csharp",
+    ".rb": "ruby",
+    ".rs": "rust",
+    ".php": "php",
+}
+
+
+def chunk_generic_file(text: str, relative_path: Path, module: str, suffix: str) -> ChunkResult:
+    """Whole-file chunking for every language without a bespoke symbol-level
+    chunker above -- see this module's docstring for why building 13 more
+    per-language chunkers wasn't attempted here."""
+    language = _GENERIC_LANGUAGE_BY_EXTENSION.get(suffix, suffix.lstrip("."))
+    base_metadata = {
+        "source": str(relative_path),
+        "module": module,
+        "layer": "backend",
+        "language": language,
+        "class_name": relative_path.stem,
+    }
+    documents = _make_documents(text, {**base_metadata, "type": f"{language}_file"})
+    return ChunkResult(documents=documents)
+
+
+# --------------------------------------------------------------------------
 # Dispatch + ingestion entry point
 # --------------------------------------------------------------------------
 
@@ -336,21 +401,31 @@ def chunk_file(path: Path, repo_path: Path) -> ChunkResult:
 
     if path.suffix == ".java":
         return chunk_java_file(text, relative_path, module)
-    if path.suffix == ".ts":
+    if path.suffix in (".ts", ".tsx"):
         return chunk_ts_file(text, relative_path, module)
-    if path.suffix == ".js":
+    if path.suffix in (".js", ".jsx", ".mjs", ".cjs"):
         return chunk_js_file(text, relative_path, module)
-    return ChunkResult(documents=[])
+    return chunk_generic_file(text, relative_path, module, path.suffix)
 
 
 async def ingest_code(
     repo_path: str,
     progress_callback=None,
+    *,
+    enable_llm_summary: bool | None = None,
+    max_concurrency: int = enrich.DEFAULT_MAX_CONCURRENCY,
 ) -> dict:
-    """Walk the monorepo, chunk every eligible source file, and embed into ChromaDB.
+    """Walk the repository, chunk every eligible source file, and embed into
+    ChromaDB (tier 1: mechanical, always runs), then optionally run the
+    LLM-summary enrichment tier (tier 2: see enrich.py) over the same file
+    list.
 
     Java entity classes are written to both ``sf_codebase`` and
     ``sf_jpa_entities``. Everything else goes only to ``sf_codebase``.
+
+    ``enable_llm_summary`` defaults to settings.INGEST_LLM_SUMMARY_ENABLED
+    when not given explicitly (a per-request override, e.g. for a quick
+    raw-only re-index of a huge repo without the LLM-cost tier).
     """
     repo = Path(repo_path)
     if not repo.is_dir():
@@ -396,16 +471,23 @@ async def ingest_code(
         try:
             result = chunk_file(path, repo)
             relative_path = str(path.relative_to(repo))
-            # Clear this file's prior chunk set before adding its fresh one --
-            # deterministic IDs alone only upsert chunks that still exist in
-            # this run; a renamed/removed method or a deleted file would
-            # otherwise leave its old chunks behind as invisible, stale
-            # entries (see chroma_client.delete_by_source's docstring).
-            # Entities is cleared unconditionally too (not just when
-            # result.is_entity), since a class that *stopped* being an
+            # Clear this file's prior raw-chunk set before adding its fresh
+            # one -- deterministic IDs alone only upsert chunks that still
+            # exist in this run; a renamed/removed method or a deleted file
+            # would otherwise leave its old chunks behind as invisible,
+            # stale entries (see chroma_client.delete_by_source's
+            # docstring). Excludes "llm_summary"-typed documents, which
+            # enrich.py separately owns for this same source path -- a
+            # blanket delete here would wipe out a summary from a prior run
+            # that this run's enrichment pass decides to skip re-writing
+            # (unchanged content, per its own manifest).
+            await delete_by_source_excluding_type("codebase", relative_path, "llm_summary")
+            # Entities has no llm_summary documents to protect (enrich.py
+            # only ever writes into "codebase"), so a blanket delete is
+            # fine, and is cleared unconditionally (not just when
+            # result.is_entity) since a class that *stopped* being an
             # @Entity between runs must have its old entity-collection
             # chunks removed even though this run won't re-add any.
-            await delete_by_source("codebase", relative_path)
             await delete_by_source("entities", relative_path)
             codebase_batch.extend(result.documents)
             if result.is_entity:
@@ -422,10 +504,20 @@ async def ingest_code(
 
     await flush(force=True)
 
+    resolved_enable_llm_summary = (
+        settings.INGEST_LLM_SUMMARY_ENABLED if enable_llm_summary is None else enable_llm_summary
+    )
+    enrichment_result = await enrich.enrich_repository(
+        repo, files, enabled=resolved_enable_llm_summary, max_concurrency=max_concurrency
+    )
+
     return {
         "files_processed": files_processed,
         "files_total": total_files,
         "chunks_indexed": chunks_indexed,
         "entity_chunks_indexed": entity_chunks_indexed,
-        "errors": errors,
+        "errors": errors + enrichment_result["errors"],
+        "llm_summary_enabled": enrichment_result["enabled"],
+        "files_summarized": enrichment_result["files_summarized"],
+        "files_skipped_unchanged": enrichment_result["files_skipped_unchanged"],
     }
