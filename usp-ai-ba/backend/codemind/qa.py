@@ -32,7 +32,7 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_ollama import ChatOllama, OllamaEmbeddings
 
-from codemind import extraction_stats, output
+from codemind import output
 from codemind.agents.base import ExtractionResult
 from config import settings
 
@@ -204,10 +204,8 @@ async def ask(output_directory: Path, question: str) -> QaAnswer:
 
 
 async def ask_for_stream(
-    output_directories: list[Path], question: str, mode: Literal["deep", "generic", "comprehensive"] = "deep"
+    output_directories: list[Path], question: str, mode: Literal["deep", "comprehensive"] = "deep"
 ) -> QaStreamResult:
-    if mode == "generic":
-        return _generic_stream_result(output_directories)
     if mode == "comprehensive":
         return await _comprehensive_stream_result(output_directories, question)
 
@@ -227,24 +225,10 @@ async def ask_for_stream(
     return QaStreamResult(source_files, stream)
 
 
-def _generic_stream_result(output_directories: list[Path]) -> QaStreamResult:
-    """The "generic" Ask mode: a deterministic, zero-LLM tally of every result
-    a job wrote (codemind/extraction_stats.py), ignoring the question text
-    entirely -- unlike "deep" mode, this reads every file, not just the top
-    _TOP_K, so it can actually answer aggregate/counting questions ("how many
-    functions do you have") that deep mode structurally cannot. Job Ask only
-    ever passes a single output directory; there is no cross-job "generic"
-    mode for Ask All."""
-    stats = extraction_stats.compute_stats(output_directories[0])
-    if stats.total_files == 0:
-        return QaStreamResult([], _single_chunk_stream(_NO_RESULTS_MESSAGE_MULTI))
-    return QaStreamResult([], _single_chunk_stream(extraction_stats.format_report(stats)))
-
-
 async def _comprehensive_stream_result(output_directories: list[Path], question: str) -> QaStreamResult:
-    """The "comprehensive" Ask mode: unlike "deep" (top-K sample) and
-    "generic" (counts only), this can answer synthesis questions spanning the
-    whole job ("explain this codebase," "what security patterns exist here")
+    """The "comprehensive" Ask mode: unlike "deep" mode's top-K sample, this
+    can answer synthesis questions spanning the whole job ("explain this
+    codebase," "what security patterns exist here")
     by reducing every extracted file's already-written summary into one
     overview -- built lazily on the first comprehensive-mode question for a
     job, then cached (codemind/output.py's write_comprehensive_summary) and

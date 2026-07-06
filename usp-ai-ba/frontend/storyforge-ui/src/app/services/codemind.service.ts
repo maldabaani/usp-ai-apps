@@ -123,7 +123,7 @@ export class CodeMindService {
   askStream(
     jobId: string,
     question: string,
-    mode: 'deep' | 'generic' | 'comprehensive',
+    mode: 'deep' | 'comprehensive',
     handlers: QaStreamHandlers
   ): Promise<void> {
     return this.streamSse(`${API_BASE_URL}/extraction-jobs/${jobId}/qa/stream`, { question, mode }, handlers);

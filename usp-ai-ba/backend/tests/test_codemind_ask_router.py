@@ -109,25 +109,6 @@ def test_ask_all_stream_only_includes_completed_jobs(tmp_path, monkeypatch):
     assert 'event: chunk\ndata: "answer"' in resp.text
 
 
-def test_ask_stream_passes_generic_mode_through_to_qa(tmp_path, monkeypatch):
-    job = job_registry.register(tmp_path, tmp_path / "out", None, None)
-
-    async def fake_ask_for_stream(output_directories, question, mode="deep"):
-        assert mode == "generic"
-        return QaStreamResult([], _chunks("Total extracted rules across all files: 0"))
-
-    monkeypatch.setattr(qa, "ask_for_stream", fake_ask_for_stream)
-
-    resp = client.post(
-        f"/api/v1/extraction-jobs/{job.id}/qa/stream",
-        json={"question": "how many functions?", "mode": "generic"},
-        headers=_auth_headers(),
-    )
-
-    assert resp.status_code == 200
-    assert "Total extracted rules across all files: 0" in resp.text
-
-
 def test_ask_stream_passes_comprehensive_mode_through_to_qa(tmp_path, monkeypatch):
     job = job_registry.register(tmp_path, tmp_path / "out", None, None)
 
@@ -159,7 +140,7 @@ def test_ask_all_stream_ignores_mode_field_and_stays_deep(tmp_path, monkeypatch)
 
     resp = client.post(
         "/api/v1/ask/stream",
-        json={"question": "anything?", "mode": "generic"},
+        json={"question": "anything?", "mode": "comprehensive"},
         headers=_auth_headers(),
     )
 

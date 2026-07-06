@@ -32,14 +32,13 @@ router = APIRouter(prefix="/v1", tags=["codemind-ask"])
 
 class QaRequest(BaseModel):
     question: str
-    # "generic" and "comprehensive" (Job Ask only -- see ask_stream below) skip
-    # the top-K retrieval+LLM path: "generic" returns a deterministic whole-job
-    # stats report (no LLM call); "comprehensive" reduces every extracted
-    # file's summary into one cached, question-agnostic overview (built lazily
-    # on first use, then reused) and answers from that instead of a 6-20 file
-    # sample. Ask All supports neither; ask_all_stream below never passes mode
-    # through, so it's harmlessly accepted-but-ignored on that route.
-    mode: Literal["deep", "generic", "comprehensive"] = "deep"
+    # "comprehensive" (Job Ask only -- see ask_stream below) skips the top-K
+    # retrieval+LLM path: it reduces every extracted file's summary into one
+    # cached, question-agnostic overview (built lazily on first use, then
+    # reused) and answers from that instead of a 6-file sample. Ask All
+    # doesn't support it; ask_all_stream below never passes mode through, so
+    # it's harmlessly accepted-but-ignored on that route.
+    mode: Literal["deep", "comprehensive"] = "deep"
 
     @field_validator("question")
     @classmethod
@@ -80,6 +79,6 @@ async def ask_all_stream(request: QaRequest, user: dict = Depends(require_auth))
         job.output_directory for job in job_registry.find_all() if job.phase == JobPhase.COMPLETED
     ]
     # Deliberately not passing request.mode through -- Ask All has no
-    # "generic" mode (see QaRequest.mode's docstring above), it's always deep.
+    # "comprehensive" mode (see QaRequest.mode's docstring above), it's always deep.
     stream_result = await qa.ask_for_stream(completed_output_directories, request.question)
     return StreamingResponse(_sse_body(stream_result), media_type="text/event-stream")
