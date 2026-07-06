@@ -53,6 +53,10 @@ def _message_batch(batch_id: str, processing_status: str = "ended") -> SimpleNam
     return SimpleNamespace(id=batch_id, processing_status=processing_status)
 
 
+def _canceled_result() -> SimpleNamespace:
+    return SimpleNamespace(type="canceled")
+
+
 class _FakeBatchesApi:
     def __init__(self, create_returns=None, create_error=None, retrieve_sequence=None, results_by_batch=None):
         self._create_returns = list(create_returns or [])
@@ -60,6 +64,8 @@ class _FakeBatchesApi:
         self._retrieve_sequence = list(retrieve_sequence or [])
         self._results_by_batch = results_by_batch or {}
         self.create_call_count = 0
+        self.cancel_call_count = 0
+        self.cancelled_batch_ids: list[str] = []
 
     async def create(self, **kwargs):
         self.create_call_count += 1
@@ -71,6 +77,11 @@ class _FakeBatchesApi:
         if self._retrieve_sequence:
             return self._retrieve_sequence.pop(0)
         return _message_batch(batch_id, "ended")
+
+    async def cancel(self, batch_id):
+        self.cancel_call_count += 1
+        self.cancelled_batch_ids.append(batch_id)
+        return _message_batch(batch_id, "canceling")
 
     async def results(self, batch_id):
         items = self._results_by_batch.get(batch_id, [])
@@ -154,6 +165,59 @@ def test_splits_files_across_multiple_chunks_when_request_cap_is_exceeded(tmp_pa
     assert job.succeeded_files == 2
     assert output.read_output_file(job.output_directory, "a.js.json") is not None
     assert output.read_output_file(job.output_directory, "b.js.json") is not None
+
+
+def test_cancels_the_anthropic_batch_when_job_cancel_requested_mid_poll(tmp_path, monkeypatch):
+    # Regression test: request_cancel() has no in-flight asyncio task to
+    # cancel here (unlike SYNC mode) since the work runs server-side on
+    # Anthropic's Batches API -- without this, "Stop Job" was a silent no-op
+    # for BATCH-mode jobs, and the poll loop would keep waiting up to
+    # POLL_TIMEOUT_SECONDS (26 hours) for the batch to finish on its own.
+    monkeypatch.setattr(batch, "POLL_INTERVAL_SECONDS", 0.005)
+    stuck_file = _file("a.js", "const a = 1;")
+    job = _job(tmp_path)
+
+    class _CancelsJobOnFirstRetrieve(_FakeBatchesApi):
+        # Flips the job's own cancel flag as a side effect of the first poll
+        # tick, simulating "Stop Job" arriving mid-poll (after submission,
+        # not before) rather than the simpler-but-unrealistic "already
+        # cancelled before the batch was even submitted" case the sibling
+        # outer-loop test below covers.
+        async def retrieve(self, batch_id):
+            job.cancel_requested = True
+            return await super().retrieve(batch_id)
+
+    batches_api = _CancelsJobOnFirstRetrieve(
+        create_returns=[_message_batch("batch_1", "in_progress")],
+        retrieve_sequence=[_message_batch("batch_1", "in_progress"), _message_batch("batch_1", "ended")],
+        results_by_batch={"batch_1": [_individual("f0", _canceled_result())]},
+    )
+
+    asyncio.run(batch.run_batch(job, [stuck_file], client=_fake_client(batches_api)))
+
+    assert batches_api.cancel_call_count == 1
+    assert batches_api.cancelled_batch_ids == ["batch_1"]
+    assert job.failed_files == 1
+    raw = output.read_output_file(job.output_directory, "a.js.json")
+    assert raw is not None
+    assert "canceled" in raw.lower()
+
+
+def test_skips_submitting_further_chunks_once_job_cancel_requested(tmp_path, monkeypatch):
+    # The per-chunk cancel above only reaches a batch already submitted --
+    # this covers the outer loop guard that stops *new* chunk submissions
+    # (each spends real Anthropic budget) once cancellation is requested.
+    monkeypatch.setattr(batch, "MAX_REQUESTS_PER_BATCH", 1)
+    file_a = _file("a.js", "const a = 1;")
+    file_b = _file("b.js", "const b = 2;")
+    job = _job(tmp_path)
+    job.cancel_requested = True
+
+    batches_api = _FakeBatchesApi()
+
+    asyncio.run(batch.run_batch(job, [file_a, file_b], client=_fake_client(batches_api)))
+
+    assert batches_api.create_call_count == 0
 
 
 def test_fails_files_when_batch_never_reaches_ended_before_timeout(tmp_path, monkeypatch):

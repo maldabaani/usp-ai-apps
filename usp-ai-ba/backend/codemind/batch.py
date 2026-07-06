@@ -84,6 +84,12 @@ async def run_batch(job: "ExtractionJob", files: list[SourceFile], *, client: Op
             }
         ]
         for chunk in _chunk_files(lang_files, system_skeleton):
+            # Checked before every *new* batch submission (not just inside
+            # _run_chunk's own poll loop) so a cancel requested between
+            # chunks stops further Anthropic spend instead of submitting one
+            # more batch of up to MAX_REQUESTS_PER_BATCH requests regardless.
+            if job.cancel_requested:
+                return
             await _run_chunk(client, job, chunk, system_blocks)
 
 
@@ -110,6 +116,7 @@ async def _run_chunk(
 
     seen_custom_ids: set[str] = set()
     unresolved_reason = "No batch result returned"
+    cancel_sent = False
     try:
         batch = await client.messages.batches.create(requests=requests)
         batch_id = batch.id
@@ -122,6 +129,17 @@ async def _run_chunk(
                 )
                 _fail_remaining(job, files_by_custom_id, seen_custom_ids, "Batch processing timed out")
                 return
+            # "Stop Job" only sets a local flag -- request_cancel() has no
+            # in-flight asyncio task to cancel here (unlike SYNC mode), since
+            # the actual work is running server-side on Anthropic's Batches
+            # API. Without this, the poll loop would keep waiting for the
+            # batch to finish on its own (up to POLL_TIMEOUT_SECONDS), making
+            # the button a no-op for BATCH-mode jobs. Cancel the batch itself
+            # so already-completed requests are kept and unstarted ones stop.
+            if job.cancel_requested and not cancel_sent:
+                logger.info("Job %s: cancel requested, cancelling batch %s", job.id, batch_id)
+                await client.messages.batches.cancel(batch_id)
+                cancel_sent = True
             await asyncio.sleep(POLL_INTERVAL_SECONDS)
             batch = await client.messages.batches.retrieve(batch_id)
 

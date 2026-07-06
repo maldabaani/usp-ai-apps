@@ -107,6 +107,41 @@ def test_start_job_rejects_invalid_execution_mode(tmp_path):
     assert "executionMode" in resp.json()["detail"]
 
 
+def test_start_job_rejects_batch_mode_without_anthropic_key(tmp_path, monkeypatch):
+    # Regression test: BATCH mode bypasses get_agent_selector() entirely (it
+    # talks to Anthropic's raw Batches API directly), so unlike SYNC mode it
+    # previously had no upfront check -- a job would be accepted, then fail
+    # deep inside the batch poll loop with the Anthropic SDK's raw auth error
+    # instead of a clear one at submission time.
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "")
+
+    resp = client.post(
+        "/api/v1/extraction-jobs",
+        json={"repositoryPath": str(tmp_path), "executionMode": "BATCH"},
+        headers=_auth_headers(),
+    )
+
+    assert resp.status_code == 400
+    assert "ANTHROPIC_API_KEY" in resp.json()["detail"]
+
+
+def test_start_job_rejects_default_batch_mode_without_anthropic_key(tmp_path, monkeypatch):
+    # Same guard, but via the live CODEMIND_EXECUTION_MODE default rather
+    # than an explicit request field -- an admin-configured BATCH default
+    # must not bypass the check just because the request omitted the field.
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "")
+    monkeypatch.setattr(settings, "CODEMIND_EXECUTION_MODE", "BATCH")
+
+    resp = client.post(
+        "/api/v1/extraction-jobs",
+        json={"repositoryPath": str(tmp_path)},
+        headers=_auth_headers(),
+    )
+
+    assert resp.status_code == 400
+    assert "ANTHROPIC_API_KEY" in resp.json()["detail"]
+
+
 def test_get_job_returns_not_found_for_unknown_id():
     resp = client.get(f"/api/v1/extraction-jobs/{uuid.uuid4()}", headers=_auth_headers())
 

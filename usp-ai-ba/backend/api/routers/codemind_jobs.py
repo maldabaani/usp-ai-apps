@@ -25,6 +25,7 @@ from api.deps import require_auth
 from codemind import extraction_stats, job_registry, manifest, output, qa
 from codemind.agents.selector import get_agent_selector
 from codemind.orchestrator import DEFAULT_OUTPUT_DIRECTORY, ExecutionMode, ExtractionJob, run as run_job
+from config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -144,6 +145,25 @@ async def start_job(
         raise HTTPException(status_code=400, detail=f"repositoryPath is not a directory: {repository_root}")
 
     execution_mode = _parse_execution_mode(request.executionMode)
+    # BATCH bypasses agent_selector entirely (codemind/batch.py talks to the
+    # raw Anthropic Batches API directly, unlike SYNC mode which only reaches
+    # Claude through an agent that get_agent_selector() already refuses to
+    # register without a key) -- so unlike SYNC, nothing stops a BATCH job
+    # from being submitted with no ANTHROPIC_API_KEY configured (e.g. an
+    # Ollama-only setup). Left unchecked, it fails deep inside the batch
+    # poll loop with the Anthropic SDK's raw, unhelpful auth error instead of
+    # a clear one at submission time. Resolves the same live-settings
+    # fallback register() itself would apply, since an unset request field
+    # can still land on BATCH via the admin's configured default.
+    effective_execution_mode = execution_mode or ExecutionMode(settings.CODEMIND_EXECUTION_MODE)
+    if effective_execution_mode == ExecutionMode.BATCH and not settings.ANTHROPIC_API_KEY.strip():
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "BATCH execution mode requires ANTHROPIC_API_KEY to be configured, since it uses "
+                "Anthropic's Batches API directly -- set it in Settings or select SYNC mode instead."
+            ),
+        )
 
     incremental = False
     if request.outputDirectory and request.outputDirectory.strip():
