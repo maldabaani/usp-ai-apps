@@ -1,4 +1,5 @@
-"""Ingestion endpoints: one-time PDF and codebase indexing into ChromaDB."""
+"""Ingestion endpoints: one-time document (PDF/Word/Markdown/Confluence
+export) and codebase indexing into ChromaDB."""
 from __future__ import annotations
 
 import uuid
@@ -7,16 +8,15 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from api.deps import require_auth
-from api.ingest_jobs import fail_job, finish_job, get_ingest_job, is_terminal, register_job, update_progress
+from api.ingest_jobs import get_ingest_job, is_terminal, register_job
 from ingestion import ingest_job_registry, runner
 from ingestion.enrichment.enrich import DEFAULT_MAX_CONCURRENCY
-from ingestion.ingest_code import ingest_code
-from ingestion.ingest_pdfs import ingest_pdfs
+from ingestion.runner_jobs import run_code_ingestion, run_document_ingestion
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
 
 
-class IngestPdfsRequest(BaseModel):
+class IngestDocumentsRequest(BaseModel):
     folder_path: str
 
 
@@ -28,44 +28,11 @@ class IngestCodeRequest(BaseModel):
     max_concurrency: int | None = None
 
 
-async def _run_pdf_ingestion(job_id: str, folder_path: str) -> None:
-    async def on_progress(done: int, total: int) -> None:
-        update_progress(job_id, done, total)
-
-    try:
-        result = await ingest_pdfs(folder_path, progress_callback=on_progress)
-        finish_job(job_id, result)
-        ingest_job_registry.record_completed_job(job_id, "pdfs", "done", result, result.get("errors", []))
-    except Exception as exc:  # noqa: BLE001 - surfaced via the job status endpoint
-        fail_job(job_id, str(exc))
-        ingest_job_registry.record_completed_job(job_id, "pdfs", "error", None, [str(exc)])
-
-
-async def _run_code_ingestion(
-    job_id: str, repo_path: str, enable_llm_summary: bool | None, max_concurrency: int
-) -> None:
-    async def on_progress(done: int, total: int) -> None:
-        update_progress(job_id, done, total)
-
-    try:
-        result = await ingest_code(
-            repo_path,
-            progress_callback=on_progress,
-            enable_llm_summary=enable_llm_summary,
-            max_concurrency=max_concurrency,
-        )
-        finish_job(job_id, result)
-        ingest_job_registry.record_completed_job(job_id, "code", "done", result, result.get("errors", []))
-    except Exception as exc:  # noqa: BLE001 - surfaced via the job status endpoint
-        fail_job(job_id, str(exc))
-        ingest_job_registry.record_completed_job(job_id, "code", "error", None, [str(exc)])
-
-
-@router.post("/pdfs")
-async def ingest_pdfs_endpoint(request: IngestPdfsRequest, user: dict = Depends(require_auth)):
+@router.post("/documents")
+async def ingest_documents_endpoint(request: IngestDocumentsRequest, user: dict = Depends(require_auth)):
     job_id = str(uuid.uuid4())
-    register_job(job_id, kind="pdfs")
-    runner.run_tracked(job_id, _run_pdf_ingestion(job_id, request.folder_path))
+    register_job(job_id, kind="documents")
+    runner.run_tracked(job_id, run_document_ingestion(job_id, request.folder_path))
     return {"job_id": job_id, "status": "pending"}
 
 
@@ -75,7 +42,7 @@ async def ingest_code_endpoint(request: IngestCodeRequest, user: dict = Depends(
     register_job(job_id, kind="code")
     runner.run_tracked(
         job_id,
-        _run_code_ingestion(
+        run_code_ingestion(
             job_id,
             request.repo_path,
             request.enable_llm_summary,

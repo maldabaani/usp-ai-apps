@@ -148,8 +148,8 @@ const API_BASE_URL = environment.apiBaseUrl;
 export class StoryForgeService {
   constructor(private http: HttpClient) {}
 
-  ingestPdfs(folderPath: string): Observable<{ job_id: string; status: string }> {
-    return this.http.post<{ job_id: string; status: string }>(`${API_BASE_URL}/ingest/pdfs`, {
+  ingestDocuments(folderPath: string): Observable<{ job_id: string; status: string }> {
+    return this.http.post<{ job_id: string; status: string }>(`${API_BASE_URL}/ingest/documents`, {
       folder_path: folderPath,
     });
   }

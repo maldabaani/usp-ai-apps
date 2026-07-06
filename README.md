@@ -59,7 +59,7 @@ LLM-summary enrichment tier). Two standing pages then query that same corpus:
 
 Both stream answers back over SSE, using Claude by default (`ASK_QA_MODEL`).
 
-**Key REST endpoints:** `POST /api/ingest/pdfs`, `POST /api/ingest/code`,
+**Key REST endpoints:** `POST /api/ingest/documents`, `POST /api/ingest/code`,
 `GET /api/ingest/status/{job_id}`, `POST /api/ask/technical`, `POST /api/ask/business`,
 `GET /api/ask/status`.
 **UI routes:** `/ingestion`, `/ask/technical`, `/ask/business`.

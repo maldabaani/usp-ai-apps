@@ -16,9 +16,8 @@ from fastapi.testclient import TestClient
 
 from api import ingest_jobs
 from api.main import app
-from api.routers import ingest as ingest_router
 from config import settings
-from ingestion import ingest_job_registry, runner
+from ingestion import ingest_job_registry, runner, runner_jobs
 
 client = TestClient(app, raise_server_exceptions=False)
 
@@ -75,7 +74,7 @@ def test_cancel_job_cancels_in_flight_task_and_marks_status():
 
 
 def test_cancel_job_works_with_no_active_task():
-    ingest_jobs.register_job("job-2", kind="pdfs")
+    ingest_jobs.register_job("job-2", kind="documents")
 
     asyncio.run(runner.cancel_job("job-2"))
 
@@ -122,7 +121,7 @@ def test_cancel_endpoint_stops_a_running_job_and_records_history(monkeypatch, tm
     async def _never_finishes(repo_path, progress_callback=None, **kwargs):
         await asyncio.sleep(10)
 
-    monkeypatch.setattr(ingest_router, "ingest_code", _never_finishes)
+    monkeypatch.setattr(runner_jobs, "ingest_code", _never_finishes)
 
     start_resp = client.post(
         "/api/ingest/code", json={"repo_path": str(tmp_path)}, headers=_auth_headers()
@@ -139,7 +138,7 @@ def test_cancel_endpoint_stops_a_running_job_and_records_history(monkeypatch, tm
 
 
 def test_history_endpoint_returns_recorded_entries():
-    ingest_job_registry.record_completed_job("job-6", "pdfs", "done", {"files_processed": 2}, [])
+    ingest_job_registry.record_completed_job("job-6", "documents", "done", {"files_processed": 2}, [])
 
     resp = client.get("/api/ingest/history", headers=_auth_headers())
 

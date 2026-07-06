@@ -26,6 +26,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import time
 from pathlib import Path
 
 from langchain_core.documents import Document
@@ -132,6 +133,7 @@ async def enrich_repository(
                         "type": DOC_TYPE,
                         "module": _module(relative_path),
                         "language": Language.from_path(relative_path).code_fence,
+                        "ingested_at": time.time(),
                     },
                 )
                 await chroma_client.delete_by_source_and_type("codebase", relative_path, DOC_TYPE)

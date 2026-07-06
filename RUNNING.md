@@ -82,7 +82,7 @@ Open **http://localhost:4200**. The landing page has four cards:
 ### 3. One-time ingestion (before first assessment)
 
 ```bash
-curl -X POST http://localhost:8000/api/ingest/pdfs -H "Content-Type: application/json" \
+curl -X POST http://localhost:8000/api/ingest/documents -H "Content-Type: application/json" \
   -d '{"folder_path": "/path/to/user-manuals"}'
 
 curl -X POST http://localhost:8000/api/ingest/code -H "Content-Type: application/json" \

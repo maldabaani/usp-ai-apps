@@ -21,6 +21,7 @@ import asyncio
 import hashlib
 import logging
 import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -149,9 +150,11 @@ def _make_documents(
     base_metadata: dict,
 ) -> list[Document]:
     pieces = _split_overflow(text)
+    ingested_at = time.time()
     docs = []
     for index, piece in enumerate(pieces):
         metadata = dict(base_metadata)
+        metadata["ingested_at"] = ingested_at
         if len(pieces) > 1:
             metadata["chunk_part"] = index
         docs.append(Document(page_content=piece, metadata=metadata))

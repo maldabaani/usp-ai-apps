@@ -1,8 +1,8 @@
-"""Covers the dedup/staleness fix in ingest_code.py/ingest_pdfs.py: previously,
-re-ingesting duplicated every chunk on every run (no ids= passed to
-aadd_documents at all). Deterministic per-chunk IDs make an unchanged chunk's
-re-add a no-op upsert; delete_by_source (called per file before its fresh
-chunks are added) plus a whole-collection diff against current files
+"""Covers the dedup/staleness fix in ingest_code.py/ingest_documents.py:
+previously, re-ingesting duplicated every chunk on every run (no ids= passed
+to aadd_documents at all). Deterministic per-chunk IDs make an unchanged
+chunk's re-add a no-op upsert; delete_by_source (called per file before its
+fresh chunks are added) plus a whole-collection diff against current files
 (list_distinct_sources) together clean up chunks whose method/file was
 renamed, removed, or deleted from disk since the last run.
 
@@ -17,7 +17,7 @@ import uuid
 
 import pytest
 
-from ingestion import chroma_client, ingest_code, ingest_pdfs
+from ingestion import chroma_client, ingest_code, ingest_documents
 
 
 def _matches_where(metadata: dict, where: dict) -> bool:
@@ -73,12 +73,12 @@ def fake_stores(monkeypatch):
 
     # Two separate name bindings need patching: chroma_client's own module
     # global (which delete_by_source/list_distinct_sources resolve against
-    # internally) and ingest_code.py's/ingest_pdfs.py's already-imported
+    # internally) and ingest_code.py's/ingest_documents.py's already-imported
     # reference (a `from ... import get_vector_store` copies the name at
     # import time, so patching chroma_client's copy alone wouldn't affect it).
     monkeypatch.setattr(chroma_client, "get_vector_store", fake_get_vector_store)
     monkeypatch.setattr(ingest_code, "get_vector_store", fake_get_vector_store)
-    monkeypatch.setattr(ingest_pdfs, "get_vector_store", fake_get_vector_store)
+    monkeypatch.setattr(ingest_documents, "get_vector_store", fake_get_vector_store)
     return stores
 
 
@@ -232,20 +232,20 @@ def test_pdf_reingesting_unchanged_folder_does_not_grow_chunk_count(tmp_path, fa
 
     from langchain_core.documents import Document
 
-    def fake_chunk_pdf(pdf_path, folder_path):
-        relative_source = str(pdf_path.relative_to(folder_path))
+    def fake_chunk_document(doc_path, folder_path):
+        relative_source = str(doc_path.relative_to(folder_path))
         return [
             Document(page_content="hello world", metadata={"source": relative_source, "chunk_index": 0}),
             Document(page_content="second chunk", metadata={"source": relative_source, "chunk_index": 1}),
         ]
 
-    monkeypatch.setattr(ingest_pdfs, "_chunk_pdf", fake_chunk_pdf)
+    monkeypatch.setattr(ingest_documents, "_chunk_document", fake_chunk_document)
     (tmp_path / "manual.pdf").write_bytes(b"%PDF-1.4 fake")
 
-    asyncio.run(ingest_pdfs.ingest_pdfs(str(tmp_path)))
+    asyncio.run(ingest_documents.ingest_documents(str(tmp_path)))
     first_count = len(fake_stores["manuals"].docs)
 
-    asyncio.run(ingest_pdfs.ingest_pdfs(str(tmp_path)))
+    asyncio.run(ingest_documents.ingest_documents(str(tmp_path)))
     second_count = len(fake_stores["manuals"].docs)
 
     assert first_count == 2
@@ -257,19 +257,41 @@ def test_pdf_deleted_from_folder_purges_its_chunks(tmp_path, fake_stores, monkey
 
     from langchain_core.documents import Document
 
-    def fake_chunk_pdf(pdf_path, folder_path):
-        relative_source = str(pdf_path.relative_to(folder_path))
+    def fake_chunk_document(doc_path, folder_path):
+        relative_source = str(doc_path.relative_to(folder_path))
         return [Document(page_content="content", metadata={"source": relative_source, "chunk_index": 0})]
 
-    monkeypatch.setattr(ingest_pdfs, "_chunk_pdf", fake_chunk_pdf)
+    monkeypatch.setattr(ingest_documents, "_chunk_document", fake_chunk_document)
     (tmp_path / "a.pdf").write_bytes(b"%PDF-1.4 fake a")
     (tmp_path / "b.pdf").write_bytes(b"%PDF-1.4 fake b")
 
-    asyncio.run(ingest_pdfs.ingest_pdfs(str(tmp_path)))
+    asyncio.run(ingest_documents.ingest_documents(str(tmp_path)))
     assert len(fake_stores["manuals"].docs) == 2
 
     (tmp_path / "b.pdf").unlink()
-    asyncio.run(ingest_pdfs.ingest_pdfs(str(tmp_path)))
+    asyncio.run(ingest_documents.ingest_documents(str(tmp_path)))
 
     remaining_sources = {doc.metadata.get("source") for doc in fake_stores["manuals"].docs.values()}
     assert remaining_sources == {"a.pdf"}
+
+
+def test_mixed_format_folder_reingesting_does_not_grow_chunk_count(tmp_path, fake_stores):
+    import asyncio
+
+    _write(tmp_path, "manual.md", "# Title\n\nSome markdown content.\n")
+    _write(
+        tmp_path,
+        "page.html",
+        "<html><body><h1>Title</h1><p>Some html content.</p></body></html>",
+    )
+
+    asyncio.run(ingest_documents.ingest_documents(str(tmp_path)))
+    first_count = len(fake_stores["manuals"].docs)
+    sources = {doc.metadata.get("source") for doc in fake_stores["manuals"].docs.values()}
+
+    asyncio.run(ingest_documents.ingest_documents(str(tmp_path)))
+    second_count = len(fake_stores["manuals"].docs)
+
+    assert first_count > 0
+    assert second_count == first_count
+    assert sources == {"manual.md", "page.html"}

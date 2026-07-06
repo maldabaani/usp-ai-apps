@@ -3,8 +3,9 @@
 
   <h1>Ingestion</h1>
   <p class="ing-muted">
-    Index a code repository and/or a folder of user manual PDFs into the shared knowledge base used by
-    the Ask Technical/Business Questions pages and by StoryForge's SDD assessment.
+    Index a code repository and/or a folder of documents (PDF, Word, Markdown, Confluence page
+    exports) into the shared knowledge base used by the Ask Technical/Business Questions pages and
+    by StoryForge's SDD assessment.
   </p>
 
   <div class="ing-forms">
@@ -49,23 +50,24 @@
     </div>
 
     <div class="sf-card">
-      <h2>Ingest User Manuals (PDFs)</h2>
-      <p class="sf-error-text" *ngIf="pdfsError">{{ pdfsError }}</p>
-      <form (ngSubmit)="startPdfIngestion()">
+      <h2>Ingest Documents</h2>
+      <p class="ing-muted">PDF, Word (.docx), Markdown, and Confluence page exports (.html)</p>
+      <p class="sf-error-text" *ngIf="documentsError">{{ documentsError }}</p>
+      <form (ngSubmit)="startDocumentIngestion()">
         <div class="sf-field">
-          <label for="folderPath">PDF folder path</label>
+          <label for="folderPath">Documents folder path</label>
           <input
             id="folderPath"
             class="sf-input"
             type="text"
             [(ngModel)]="folderPath"
             name="folderPath"
-            placeholder="/path/to/manuals"
+            placeholder="/path/to/documents"
             required
           />
         </div>
-        <button type="submit" class="sf-btn" [disabled]="startingPdfs">
-          {{ startingPdfs ? 'Starting…' : 'Start PDF Ingestion' }}
+        <button type="submit" class="sf-btn" [disabled]="startingDocuments">
+          {{ startingDocuments ? 'Starting…' : 'Start Document Ingestion' }}
         </button>
       </form>
     </div>

@@ -96,7 +96,7 @@ async def delete_by_source(collection_key: str, relative_path: str) -> None:
     """Deletes every existing chunk for one source file/document (matched by
     its "source" metadata field) from a collection, before that file's fresh
     chunks are re-added on a re-ingestion run. Deterministic per-chunk IDs
-    (see ingest_code.py/ingest_pdfs.py) make an *unchanged* chunk's re-add a
+    (see ingest_code.py/ingest_documents.py) make an *unchanged* chunk's re-add a
     no-op upsert, but they can't clean up a chunk whose symbol/method was
     removed entirely (its old ID simply never appears in the new run) --
     this clears the file's whole prior chunk set first so removed methods/

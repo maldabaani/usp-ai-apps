@@ -26,8 +26,8 @@ export class IngestionComponent implements OnInit, OnDestroy {
   codeError = '';
 
   folderPath = '';
-  startingPdfs = false;
-  pdfsError = '';
+  startingDocuments = false;
+  documentsError = '';
 
   activeJobId = '';
   activeStatus: IngestStatus | null = null;
@@ -81,19 +81,19 @@ export class IngestionComponent implements OnInit, OnDestroy {
       });
   }
 
-  startPdfIngestion(): void {
-    if (!this.folderPath.trim() || this.startingPdfs) return;
-    this.startingPdfs = true;
-    this.pdfsError = '';
+  startDocumentIngestion(): void {
+    if (!this.folderPath.trim() || this.startingDocuments) return;
+    this.startingDocuments = true;
+    this.documentsError = '';
 
-    this.storyForgeService.ingestPdfs(this.folderPath.trim()).subscribe({
+    this.storyForgeService.ingestDocuments(this.folderPath.trim()).subscribe({
       next: ({ job_id }) => {
-        this.startingPdfs = false;
+        this.startingDocuments = false;
         this.trackJob(job_id);
       },
       error: (err) => {
-        this.startingPdfs = false;
-        this.pdfsError = err?.error?.detail || 'Failed to start PDF ingestion.';
+        this.startingDocuments = false;
+        this.documentsError = err?.error?.detail || 'Failed to start document ingestion.';
       },
     });
   }
