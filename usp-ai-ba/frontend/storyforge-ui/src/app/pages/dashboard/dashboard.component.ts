@@ -45,7 +45,7 @@ export class DashboardComponent implements OnInit {
   }
 
   get inProgressCount(): number {
-    return this.jobs.filter(j => !['done', 'error'].includes(j.status)).length;
+    return this.jobs.filter(j => !['done', 'error', 'cancelled'].includes(j.status)).length;
   }
 
   get filteredJobs(): JobSummary[] {
@@ -62,15 +62,17 @@ export class DashboardComponent implements OnInit {
     });
   }
 
-  statusGroup(status: string): 'done' | 'running' | 'failed' {
+  statusGroup(status: string): 'done' | 'running' | 'failed' | 'cancelled' {
     if (status === 'done') return 'done';
     if (status === 'error') return 'failed';
+    if (status === 'cancelled') return 'cancelled';
     return 'running';
   }
 
   displayStatus(status: string): string {
     if (status === 'done') return 'Done';
     if (status === 'error') return 'Failed';
+    if (status === 'cancelled') return 'Cancelled';
     return 'Running';
   }
 
