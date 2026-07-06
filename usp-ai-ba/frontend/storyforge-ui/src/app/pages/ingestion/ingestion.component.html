@@ -1,0 +1,121 @@
+<div class="sf-page">
+  <a routerLink="/" class="sf-back-link">&larr; Home</a>
+
+  <h1>Ingestion</h1>
+  <p class="ing-muted">
+    Index a code repository and/or a folder of user manual PDFs into the shared knowledge base used by
+    the Ask Technical/Business Questions pages and by StoryForge's SDD assessment.
+  </p>
+
+  <div class="ing-forms">
+    <div class="sf-card">
+      <h2>Ingest Code Repository</h2>
+      <p class="sf-error-text" *ngIf="codeError">{{ codeError }}</p>
+      <form (ngSubmit)="startCodeIngestion()">
+        <div class="sf-field">
+          <label for="repoPath">Repository path</label>
+          <input
+            id="repoPath"
+            class="sf-input"
+            type="text"
+            [(ngModel)]="repoPath"
+            name="repoPath"
+            placeholder="/path/to/repo"
+            required
+          />
+        </div>
+        <div class="sf-field ing-checkbox-field">
+          <label>
+            <input type="checkbox" [(ngModel)]="enableLlmSummary" name="enableLlmSummary" />
+            Build LLM-synthesized per-file summaries (slower, uses your configured LLM)
+          </label>
+        </div>
+        <div class="sf-field">
+          <label for="maxConcurrency">Max concurrency (optional)</label>
+          <input
+            id="maxConcurrency"
+            class="sf-input"
+            type="number"
+            min="1"
+            [(ngModel)]="maxConcurrency"
+            name="maxConcurrency"
+            placeholder="defaults to 8"
+          />
+        </div>
+        <button type="submit" class="sf-btn" [disabled]="startingCode">
+          {{ startingCode ? 'Starting…' : 'Start Code Ingestion' }}
+        </button>
+      </form>
+    </div>
+
+    <div class="sf-card">
+      <h2>Ingest User Manuals (PDFs)</h2>
+      <p class="sf-error-text" *ngIf="pdfsError">{{ pdfsError }}</p>
+      <form (ngSubmit)="startPdfIngestion()">
+        <div class="sf-field">
+          <label for="folderPath">PDF folder path</label>
+          <input
+            id="folderPath"
+            class="sf-input"
+            type="text"
+            [(ngModel)]="folderPath"
+            name="folderPath"
+            placeholder="/path/to/manuals"
+            required
+          />
+        </div>
+        <button type="submit" class="sf-btn" [disabled]="startingPdfs">
+          {{ startingPdfs ? 'Starting…' : 'Start PDF Ingestion' }}
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <div class="sf-card" *ngIf="activeStatus">
+    <div class="ing-active-header">
+      <h2>Active Job</h2>
+      <span class="sf-badge sf-badge-{{ activeStatus.status }}">{{ activeStatus.status }}</span>
+    </div>
+    <p class="ing-mono">{{ activeJobId }}</p>
+
+    <div class="ing-progress-bar" *ngIf="activeStatus.progress.total">
+      <div class="ing-progress-fill" [style.width.%]="progressPercent(activeStatus)"></div>
+    </div>
+    <p class="ing-muted" *ngIf="activeStatus.progress.total">
+      {{ activeStatus.progress.done }} / {{ activeStatus.progress.total }} files
+    </p>
+
+    <button *ngIf="canCancel" class="sf-btn sf-btn-danger" [disabled]="cancelling" (click)="cancelActiveJob()">
+      {{ cancelling ? 'Stopping…' : 'Stop Job' }}
+    </button>
+    <p class="sf-error-text" *ngIf="cancelError">{{ cancelError }}</p>
+
+    <ul class="ing-error-list" *ngIf="activeStatus.errors?.length">
+      <li *ngFor="let error of activeStatus.errors">{{ error }}</li>
+    </ul>
+
+    <pre class="ing-result" *ngIf="activeStatus.result">{{ activeStatus.result | json }}</pre>
+  </div>
+
+  <div class="sf-card">
+    <h2>History</h2>
+    <p *ngIf="historyLoading">Loading…</p>
+    <p *ngIf="!historyLoading && !history.length" class="ing-muted">No ingestion runs yet.</p>
+    <table class="sf-table" *ngIf="!historyLoading && history.length">
+      <thead>
+        <tr>
+          <th>Kind</th>
+          <th>Status</th>
+          <th>Finished</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let entry of history">
+          <td>{{ entry.kind }}</td>
+          <td><span class="sf-badge sf-badge-{{ entry.status }}">{{ entry.status }}</span></td>
+          <td>{{ relativeTime(entry.finished_at) }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>

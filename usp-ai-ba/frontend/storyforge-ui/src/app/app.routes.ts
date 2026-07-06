@@ -8,6 +8,7 @@ import { JobsListComponent } from './pages/codemind/jobs-list/jobs-list.componen
 import { AssessComponent } from './pages/assess/assess.component';
 import { ClarifyComponent } from './pages/clarify/clarify.component';
 import { DashboardComponent } from './pages/dashboard/dashboard.component';
+import { IngestionComponent } from './pages/ingestion/ingestion.component';
 import { LandingComponent } from './pages/landing/landing.component';
 import { LoginComponent } from './pages/login/login.component';
 import { MonitoringComponent } from './pages/monitoring/monitoring.component';
@@ -30,6 +31,7 @@ export const routes: Routes = [
   { path: 'codemind/ask', component: AskAllComponent, canActivate: [authGuard] },
   { path: 'codemind/:jobId', component: JobDetailComponent, canActivate: [authGuard] },
   { path: 'codemind/:jobId/ask', component: JobAskComponent, canActivate: [authGuard] },
+  { path: 'ingestion', component: IngestionComponent, canActivate: [authGuard] },
   { path: 'settings', component: SettingsComponent, canActivate: [authGuard] },
   { path: 'monitoring', component: MonitoringComponent, canActivate: [authGuard] },
   { path: '**', redirectTo: '' },

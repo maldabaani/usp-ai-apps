@@ -130,6 +130,16 @@ export interface IngestStatus {
   status: string;
   progress: { done: number; total: number };
   errors: string[];
+  result: Record<string, unknown> | null;
+}
+
+export interface IngestHistoryEntry {
+  job_id: string;
+  kind: string;
+  status: string;
+  result: Record<string, unknown> | null;
+  errors: string[];
+  finished_at: number;
 }
 
 const API_BASE_URL = environment.apiBaseUrl;
@@ -144,14 +154,28 @@ export class StoryForgeService {
     });
   }
 
-  ingestCode(repoPath: string): Observable<{ job_id: string; status: string }> {
+  ingestCode(
+    repoPath: string,
+    enableLlmSummary?: boolean,
+    maxConcurrency?: number
+  ): Observable<{ job_id: string; status: string }> {
     return this.http.post<{ job_id: string; status: string }>(`${API_BASE_URL}/ingest/code`, {
       repo_path: repoPath,
+      enable_llm_summary: enableLlmSummary ?? null,
+      max_concurrency: maxConcurrency ?? null,
     });
   }
 
   getIngestStatus(jobId: string): Observable<IngestStatus> {
     return this.http.get<IngestStatus>(`${API_BASE_URL}/ingest/status/${jobId}`);
+  }
+
+  cancelIngestJob(jobId: string): Observable<{ status: string }> {
+    return this.http.post<{ status: string }>(`${API_BASE_URL}/ingest/${jobId}/cancel`, {});
+  }
+
+  getIngestHistory(): Observable<IngestHistoryEntry[]> {
+    return this.http.get<IngestHistoryEntry[]>(`${API_BASE_URL}/ingest/history`);
   }
 
   submitAssessment(
