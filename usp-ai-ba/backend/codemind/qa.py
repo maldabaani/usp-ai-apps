@@ -47,7 +47,7 @@ _STOPWORDS = {
 _TOP_K = 6
 _MAX_CONTENT_CHARS_PER_FILE = 3000
 
-# Shared across all four prompt templates below. Targets two failure modes
+# Shared across all four prompt templates below. Targets three failure modes
 # observed live: (1) a file from one subsystem (e.g. a separate RAG-ingestion
 # module) getting its functionality misattributed to a different, unrelated
 # subsystem just because both happened to be retrieved together -- files in
@@ -55,13 +55,20 @@ _MAX_CONTENT_CHARS_PER_FILE = 3000
 # nothing in a flat list of retrieved summaries tells the model that on its
 # own; (2) confidently blending two similarly-named files' details together
 # (e.g. a job-persistence file and a job-registry file) instead of admitting
-# uncertainty about which file a specific claim belongs to.
+# uncertainty about which file a specific claim belongs to; (3) two files that
+# share the same base name in different directories (e.g. two separate
+# job_registry.py modules, one per subsystem) getting collapsed into one
+# description, since a bare file name alone doesn't disambiguate them.
 _GROUNDING_RULES = (
     "Ground every claim strictly in the context provided below; do not use outside knowledge.\n"
     "Each summary is labeled with its source file path. Files in different top-level\n"
     "directories/modules are usually different subsystems -- do not attribute one file's\n"
     "functionality to a different file or module just because both were retrieved together;\n"
     "keep each file's role distinct unless the context itself shows them interacting.\n"
+    "Some files share the same base name but live in different directories (e.g. two separate\n"
+    "job_registry.py modules) -- these are distinct components with potentially different\n"
+    "designs; always refer to and attribute claims by full file path, never by base name alone,\n"
+    "and never merge two same-named files' behavior into one description.\n"
     "Attribute each specific claim to the file path it came from. If you cannot confidently tie\n"
     "a detail to a specific file, omit that detail rather than guessing or attributing it to the\n"
     "wrong one. If the context doesn't contain enough detail to answer confidently, say so\n"
@@ -109,6 +116,12 @@ _COMPREHENSIVE_SYSTEM_PROMPT_TEMPLATE = (
     "question -- cover the overall architecture, key modules/components, notable business rules,\n"
     "and cross-cutting patterns (e.g. error handling, auth, data flow) that appear across multiple\n"
     "files, organized by module/subsystem rather than as one undifferentiated blob.\n\n"
+    "Beyond per-file summaries, explicitly call out system-level capabilities that only become\n"
+    "visible once several files' behavior is combined -- for example an authentication/login flow,\n"
+    "a configuration or settings reload mechanism, a human-approval or review gate in a pipeline, a\n"
+    "mode switch that changes downstream behavior, or a caching layer spanning multiple modules.\n"
+    "List each such capability as its own item, citing every file that contributes to it, even\n"
+    "though no single file's summary states the capability outright.\n\n"
     + _GROUNDING_RULES + "\n"
     "Context:\n{context}\n"
 )
@@ -120,7 +133,11 @@ _COMPREHENSIVE_COMBINE_PROMPT_TEMPLATE = (
     "do not simply concatenate them, integrate overlapping points -- but do not merge details\n"
     "from two different files/modules into one claim just because they appeared in the same\n"
     "partial overview; if two partial overviews disagree or you're unsure which file a detail\n"
-    "belongs to, omit it rather than guessing.\n\n"
+    "belongs to, omit it rather than guessing.\n"
+    "If a system-level capability (e.g. an auth flow, a settings-reload mechanism, a review gate)\n"
+    "is described piecemeal across multiple partial overviews, merge those pieces into one\n"
+    "complete item citing every contributing file, rather than listing it multiple times or\n"
+    "only keeping the most complete-looking fragment.\n\n"
     "Partial overviews:\n{context}\n"
 )
 
