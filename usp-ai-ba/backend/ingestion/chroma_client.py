@@ -147,6 +147,13 @@ async def list_distinct_sources(collection_key: str) -> set[str]:
     return {m["source"] for m in result.get("metadatas") or [] if m and m.get("source")}
 
 
+def collection_counts() -> dict[str, int]:
+    """Document count per collection key -- lets api/routers/ask.py's
+    GET /status report an empty-corpus state (no ingestion has run yet)
+    without needing a full retrieval call."""
+    return {key: get_vector_store(key)._collection.count() for key in COLLECTIONS}
+
+
 def reset_collection(collection_key: str) -> None:
     """Delete and recreate a collection, used before a fresh one-time ingestion run."""
     if collection_key not in COLLECTIONS:

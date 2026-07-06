@@ -5,6 +5,8 @@ import { AskAllComponent } from './pages/codemind/ask-all/ask-all.component';
 import { JobAskComponent } from './pages/codemind/job-ask/job-ask.component';
 import { JobDetailComponent } from './pages/codemind/job-detail/job-detail.component';
 import { JobsListComponent } from './pages/codemind/jobs-list/jobs-list.component';
+import { AskBusinessComponent } from './pages/ask-business/ask-business.component';
+import { AskTechnicalComponent } from './pages/ask-technical/ask-technical.component';
 import { AssessComponent } from './pages/assess/assess.component';
 import { ClarifyComponent } from './pages/clarify/clarify.component';
 import { DashboardComponent } from './pages/dashboard/dashboard.component';
@@ -32,6 +34,8 @@ export const routes: Routes = [
   { path: 'codemind/:jobId', component: JobDetailComponent, canActivate: [authGuard] },
   { path: 'codemind/:jobId/ask', component: JobAskComponent, canActivate: [authGuard] },
   { path: 'ingestion', component: IngestionComponent, canActivate: [authGuard] },
+  { path: 'ask/technical', component: AskTechnicalComponent, canActivate: [authGuard] },
+  { path: 'ask/business', component: AskBusinessComponent, canActivate: [authGuard] },
   { path: 'settings', component: SettingsComponent, canActivate: [authGuard] },
   { path: 'monitoring', component: MonitoringComponent, canActivate: [authGuard] },
   { path: '**', redirectTo: '' },

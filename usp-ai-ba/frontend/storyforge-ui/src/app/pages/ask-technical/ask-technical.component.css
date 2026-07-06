@@ -1,0 +1,87 @@
+.ask-muted {
+  color: var(--sf-muted);
+  margin-top: 0;
+}
+
+.ask-back-link {
+  display: inline-block;
+  margin-bottom: 12px;
+  color: var(--sf-muted);
+  text-decoration: none;
+  font-size: 13px;
+}
+
+.ask-back-link:hover {
+  color: var(--sf-primary);
+}
+
+.ask-empty {
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  background: var(--sf-bg);
+  border: 1px solid var(--sf-border);
+  border-radius: 6px;
+  color: var(--sf-muted);
+  font-size: 13px;
+}
+
+.ask-chat-log {
+  height: 420px;
+  overflow-y: auto;
+  border: 1px solid var(--sf-border);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+  background: var(--sf-bg);
+}
+
+.ask-bubble {
+  max-width: 80%;
+  padding: 10px 14px;
+  border-radius: 10px;
+  margin-bottom: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 14px;
+}
+
+.ask-bubble-user {
+  background: var(--sf-primary);
+  color: #fff;
+  margin-left: auto;
+}
+
+.ask-bubble-assistant {
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border);
+}
+
+.ask-bubble-pending {
+  color: var(--sf-muted);
+  font-style: italic;
+}
+
+.ask-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.ask-source-chip {
+  background: var(--sf-bg);
+  border: 1px solid var(--sf-border);
+  border-radius: 12px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.ask-form {
+  display: flex;
+  gap: 8px;
+}
+
+.ask-form input {
+  flex: 1;
+}

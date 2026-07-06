@@ -10,7 +10,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from api.routers import ado, assess, auth, clarify, codemind_ask, codemind_jobs, export, ingest, monitoring, review
+from api.routers import ado, ask, assess, auth, clarify, codemind_ask, codemind_jobs, export, ingest, monitoring, review
 from api.routers import settings as settings_router
 from api.user_store import ensure_default_admin
 from codemind import job_registry
@@ -62,6 +62,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(auth.router, prefix="/api")
+    app.include_router(ask.router, prefix="/api")
     app.include_router(ingest.router, prefix="/api")
     app.include_router(assess.router, prefix="/api")
     app.include_router(clarify.router, prefix="/api")

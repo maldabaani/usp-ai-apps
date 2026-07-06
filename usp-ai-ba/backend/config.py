@@ -84,6 +84,12 @@ class Settings:
     # (same physical embedding model StoryForge's own RAG already uses).
     CODEMIND_EMBEDDING_ENABLED: bool = os.getenv("CODEMIND_EMBEDDING_ENABLED", "false").lower() == "true"
 
+    # api/routers/ask.py's standing Ask Technical/Business endpoints: "claude"
+    # (default) uses ANTHROPIC_API_KEY/CLAUDE_MODEL, "ollama" uses
+    # OLLAMA_BASE_URL/OLLAMA_LLM_MODEL/OLLAMA_NUM_CTX above -- same pattern as
+    # CodeMind's now-retired CODEMIND_QA_MODEL.
+    ASK_QA_MODEL: str = os.getenv("ASK_QA_MODEL", "claude")
+
     CHROMA_PERSIST_PATH: str = os.getenv("CHROMA_PERSIST_PATH", "./chroma_db")
 
     # ingest_code.py's optional LLM-summary enrichment tier (ingestion/enrichment/
