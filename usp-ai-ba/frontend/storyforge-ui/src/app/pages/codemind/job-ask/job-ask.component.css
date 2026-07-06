@@ -3,6 +3,22 @@
   margin-top: 0;
 }
 
+.sf-select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--sf-border);
+  border-radius: 6px;
+  font-size: 14px;
+  background: var(--sf-surface);
+  color: var(--sf-text);
+  cursor: pointer;
+  outline: none;
+}
+
+.sf-select:focus {
+  border-color: var(--sf-primary);
+}
+
 .cm-tabs {
   display: flex;
   gap: 4px;

@@ -22,6 +22,7 @@ interface ChatMessage {
 export class JobAskComponent implements OnInit {
   jobId = '';
   question = '';
+  mode: 'deep' | 'generic' = 'deep';
   asking = false;
   messages: ChatMessage[] = [];
 
@@ -52,7 +53,7 @@ export class JobAskComponent implements OnInit {
 
     let fullText = '';
 
-    await this.codeMindService.askStream(this.jobId, question, {
+    await this.codeMindService.askStream(this.jobId, question, this.mode, {
       onSources: (sources) => (assistantMessage.sources = sources),
       onChunk: (chunk) => {
         if (assistantMessage.pending) {

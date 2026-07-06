@@ -120,12 +120,18 @@ export class CodeMindService {
     return this.http.post<QaAnswer>(`${API_BASE_URL}/extraction-jobs/${jobId}/qa`, { question });
   }
 
-  askStream(jobId: string, question: string, handlers: QaStreamHandlers): Promise<void> {
-    return this.streamSse(`${API_BASE_URL}/extraction-jobs/${jobId}/qa/stream`, question, handlers);
+  askStream(
+    jobId: string,
+    question: string,
+    mode: 'deep' | 'generic',
+    handlers: QaStreamHandlers
+  ): Promise<void> {
+    return this.streamSse(`${API_BASE_URL}/extraction-jobs/${jobId}/qa/stream`, { question, mode }, handlers);
   }
 
   askAllStream(question: string, handlers: QaStreamHandlers): Promise<void> {
-    return this.streamSse(`${API_BASE_URL}/ask/stream`, question, handlers);
+    // No generic/stats mode for cross-job Ask All -- always the deep LLM path.
+    return this.streamSse(`${API_BASE_URL}/ask/stream`, { question }, handlers);
   }
 
   // Raw fetch() rather than HttpClient: reading a streamed response body
@@ -133,7 +139,11 @@ export class CodeMindService {
   // HttpClient doesn't expose directly. The Authorization header is
   // attached manually here (HttpClient requests get it for free from
   // auth.interceptor.ts) since this bypasses HttpClient entirely.
-  private async streamSse(url: string, question: string, handlers: QaStreamHandlers): Promise<void> {
+  private async streamSse(
+    url: string,
+    body: Record<string, unknown>,
+    handlers: QaStreamHandlers
+  ): Promise<void> {
     const token = this.authService.getToken();
     try {
       const response = await fetch(url, {
@@ -142,7 +152,7 @@ export class CodeMindService {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ question }),
+        body: JSON.stringify(body),
       });
 
       if (!response.ok || !response.body) {

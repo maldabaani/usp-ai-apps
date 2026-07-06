@@ -7,10 +7,20 @@
   <div class="sf-card">
     <h2>Ask About This Codebase's Logic</h2>
     <p class="cm-muted">
-      Questions are answered by retrieving the extracted-logic summaries that best match your
-      question (vector search when available, falling back to keyword overlap) and asking an LLM
-      to answer using only that context.
+      "Deep LLM answer" retrieves the extracted-logic summaries that best match your question
+      (vector search when available, falling back to keyword overlap) and asks an LLM to answer
+      using only that context -- it never sees the whole job, so it can't answer aggregate
+      questions like "how many functions do you have." "Quick stats" skips the LLM entirely and
+      reports an exact, deterministic tally read directly from every file the job extracted.
     </p>
+
+    <div class="sf-field">
+      <label for="askMode">Answer type</label>
+      <select id="askMode" class="sf-select" [(ngModel)]="mode" name="mode" [disabled]="asking">
+        <option value="deep">Deep LLM answer</option>
+        <option value="generic">Quick stats (no LLM)</option>
+      </select>
+    </div>
 
     <div class="cm-chat-log" #chatLog>
       <div
