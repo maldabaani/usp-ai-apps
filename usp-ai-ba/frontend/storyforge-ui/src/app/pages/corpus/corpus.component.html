@@ -1,0 +1,73 @@
+<div class="sf-page">
+  <a routerLink="/" class="sf-back-link">&larr; Home</a>
+
+  <h1>Corpus Browser</h1>
+  <p class="ing-muted">
+    Every source file currently indexed into the shared knowledge base, with its chunk count and
+    whether an LLM-synthesized summary exists for it.
+  </p>
+
+  <p *ngIf="loading">Loading…</p>
+  <p *ngIf="loadError" class="sf-error-text">{{ loadError }}</p>
+
+  <ng-container *ngIf="!loading && !loadError">
+    <div class="sf-card">
+      <div class="corpus-section-header">
+        <h2 class="sf-section-title">Manuals ({{ manuals.length }})</h2>
+        <button class="sf-btn sf-btn-secondary" (click)="load()">Refresh</button>
+      </div>
+      <p *ngIf="!manuals.length" class="ing-muted">No manuals ingested yet.</p>
+      <table class="sf-table" *ngIf="manuals.length">
+        <thead>
+          <tr>
+            <th>Source</th>
+            <th>Chunks</th>
+            <th>LLM Summary</th>
+            <th>Format</th>
+            <th>Ingested At</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let row of manuals">
+            <td class="corpus-source-cell">{{ row.source }}</td>
+            <td>{{ row.chunk_count }}</td>
+            <td>
+              <span class="sf-badge" [class.sf-badge-done]="row.has_llm_summary">{{ row.has_llm_summary ? 'Yes' : 'No' }}</span>
+            </td>
+            <td>{{ row.format || 'unknown' }}</td>
+            <td>{{ formatIngestedAt(row.ingested_at) }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="sf-card">
+      <div class="corpus-section-header">
+        <h2 class="sf-section-title">Codebase ({{ codebase.length }})</h2>
+      </div>
+      <p *ngIf="!codebase.length" class="ing-muted">No code ingested yet.</p>
+      <table class="sf-table" *ngIf="codebase.length">
+        <thead>
+          <tr>
+            <th>Source</th>
+            <th>Chunks</th>
+            <th>LLM Summary</th>
+            <th>Format</th>
+            <th>Ingested At</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let row of codebase">
+            <td class="corpus-source-cell">{{ row.source }}</td>
+            <td>{{ row.chunk_count }}</td>
+            <td>
+              <span class="sf-badge" [class.sf-badge-done]="row.has_llm_summary">{{ row.has_llm_summary ? 'Yes' : 'No' }}</span>
+            </td>
+            <td>{{ row.format || 'unknown' }}</td>
+            <td>{{ formatIngestedAt(row.ingested_at) }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </ng-container>
+</div>

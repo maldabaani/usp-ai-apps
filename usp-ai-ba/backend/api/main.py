@@ -8,7 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from api.routers import ado, ask, assess, auth, clarify, export, ingest, monitoring, review
+from api.routers import ado, ask, assess, auth, clarify, corpus, export, ingest, monitoring, review
 from api.routers import settings as settings_router
 from api.user_store import ensure_default_admin
 from config import settings
@@ -53,6 +53,7 @@ def create_app() -> FastAPI:
     app.include_router(export.router, prefix="/api")
     app.include_router(settings_router.router, prefix="/api")
     app.include_router(monitoring.router, prefix="/api")
+    app.include_router(corpus.router, prefix="/api")
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception):

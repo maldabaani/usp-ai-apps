@@ -103,6 +103,7 @@ backend/
       ask.py                    POST /api/ask/technical, POST /api/ask/business, GET /api/ask/status (see Ask Technical / Ask Business below)
       settings.py              GET/PUT /api/settings
       monitoring.py             GET /api/monitoring/errors -- captures ERROR+ logs from every module in this process
+      corpus.py                 GET /api/corpus/sources -- per-source chunk-count/LLM-summary/format metadata for the corpus browser
   scripts/
     setup_notion_database.py  One-off script: creates the Notion "StoryForge Epics" database, prints NOTION_DATABASE_ID
   pipeline/
@@ -325,6 +326,7 @@ All endpoints are served under the FastAPI app created in `backend/api/main.py`,
 | `GET` | `/api/settings` | Current configuration, read from `backend/.env`. Secrets (`notion_api_key`, `anthropic_api_key`) are masked (last 4 chars only, e.g. `"…q5t9"`) — never returned in plaintext. Also returns `restart_required_fields`, the subset of fields that need a process restart to take effect |
 | `PUT` | `/api/settings` | Body: any subset of the fields returned by `GET /api/settings`, plus optionally `notion_api_key`/`anthropic_api_key` (a real new value — omitting it, or sending back the mask unchanged, leaves the current secret untouched). Writes changed fields to `backend/.env` and applies them to the running backend immediately for the fields that support hot-reload — see [`config.py`](backend/config.py)'s `Settings.apply_updates` and [`config_store.py`](backend/config_store.py). Returns the refreshed (masked) settings |
 | `GET` | `/api/monitoring/errors` | Every `ERROR`+-level log record captured from this process since startup (see [`monitoring/log_capture.py`](backend/monitoring/log_capture.py)), ring-buffered to the most recent N. Backs the `/monitoring` page's error feed |
+| `GET` | `/api/corpus/sources` | → `{"manuals": [...], "codebase": [...]}`, one row per distinct source file in each collection: `{"source", "chunk_count", "has_llm_summary", "format", "ingested_at"}`. Backs the `/corpus` corpus-browser page (file list + metadata only, no chunk-content drill-down); `entities` is intentionally excluded since it's a derived re-indexing of `@Entity` files already counted under `codebase` |
 
 Ask Technical/Business's endpoints (`/api/ask/technical`, `/api/ask/business`, `/api/ask/status`)
 are documented in the [Ask Technical / Ask Business](#ask-technical--ask-business) section

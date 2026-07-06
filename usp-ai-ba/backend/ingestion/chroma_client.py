@@ -147,6 +147,44 @@ async def list_distinct_sources(collection_key: str) -> set[str]:
     return {m["source"] for m in result.get("metadatas") or [] if m and m.get("source")}
 
 
+async def source_metadata(collection_key: str) -> list[dict]:
+    """Per-source summary rows for the corpus browser -- one entry per
+    distinct "source" metadata value in the collection, reusing the same
+    vector_store.get(include=["metadatas"]) call list_distinct_sources
+    already makes rather than pulling the whole collection a second time.
+
+    Each row: {"source", "chunk_count", "has_llm_summary", "format",
+    "ingested_at"}. "chunk_count" excludes llm_summary rows (those are a
+    derived enrichment artifact, not a mechanical chunk). "format"/
+    "ingested_at" are None when every row for that source predates Phase
+    L-A's metadata additions -- must not crash on a missing key.
+    """
+    vector_store = get_vector_store(collection_key)
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, lambda: vector_store.get(include=["metadatas"]))
+
+    by_source: dict[str, dict] = {}
+    for metadata in result.get("metadatas") or []:
+        source = (metadata or {}).get("source")
+        if not source:
+            continue
+        row = by_source.setdefault(
+            source,
+            {"source": source, "chunk_count": 0, "has_llm_summary": False, "format": None, "ingested_at": None},
+        )
+        if metadata.get("type") == "llm_summary":
+            row["has_llm_summary"] = True
+        else:
+            row["chunk_count"] += 1
+        if metadata.get("format") is not None:
+            row["format"] = metadata["format"]
+        ingested_at = metadata.get("ingested_at")
+        if ingested_at is not None and (row["ingested_at"] is None or ingested_at > row["ingested_at"]):
+            row["ingested_at"] = ingested_at
+
+    return sorted(by_source.values(), key=lambda row: row["source"])
+
+
 def collection_counts() -> dict[str, int]:
     """Document count per collection key -- lets api/routers/ask.py's
     GET /status report an empty-corpus state (no ingestion has run yet)

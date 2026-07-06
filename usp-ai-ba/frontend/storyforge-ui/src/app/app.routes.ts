@@ -5,6 +5,7 @@ import { AskBusinessComponent } from './pages/ask-business/ask-business.componen
 import { AskTechnicalComponent } from './pages/ask-technical/ask-technical.component';
 import { AssessComponent } from './pages/assess/assess.component';
 import { ClarifyComponent } from './pages/clarify/clarify.component';
+import { CorpusComponent } from './pages/corpus/corpus.component';
 import { DashboardComponent } from './pages/dashboard/dashboard.component';
 import { IngestionComponent } from './pages/ingestion/ingestion.component';
 import { LandingComponent } from './pages/landing/landing.component';
@@ -23,6 +24,7 @@ export const routes: Routes = [
   { path: 'review/:jobId', component: ReviewComponent, canActivate: [authGuard] },
   { path: 'status/:jobId', component: StatusComponent, canActivate: [authGuard] },
   { path: 'ingestion', component: IngestionComponent, canActivate: [authGuard] },
+  { path: 'corpus', component: CorpusComponent, canActivate: [authGuard] },
   { path: 'ask/technical', component: AskTechnicalComponent, canActivate: [authGuard] },
   { path: 'ask/business', component: AskBusinessComponent, canActivate: [authGuard] },
   { path: 'settings', component: SettingsComponent, canActivate: [authGuard] },
