@@ -257,14 +257,25 @@ async def _comprehensive_stream_result(output_directories: list[Path], question:
     output directory is deleted/recreated.
     """
     output_directory = output_directories[0]
+    return QaStreamResult([], _comprehensive_stream(output_directory, question))
+
+
+async def _comprehensive_stream(output_directory: Path, question: str) -> AsyncIterator[str]:
     cached = output.read_comprehensive_summary(output_directory)
     synthesis = cached.get("summary") if cached else None
 
     if not synthesis or not isinstance(synthesis, str) or not synthesis.strip():
         results = _load_results(output_directory)
         if not results:
-            return QaStreamResult([], _single_chunk_stream(_NO_RESULTS_MESSAGE_MULTI))
-        synthesis = await _build_comprehensive_synthesis(results)
+            yield _NO_RESULTS_MESSAGE_MULTI
+            return
+
+        synthesis = ""
+        async for is_final, text in _build_comprehensive_synthesis(results):
+            if is_final:
+                synthesis = text
+            else:
+                yield text
         output.write_comprehensive_summary(
             output_directory,
             {
@@ -274,20 +285,32 @@ async def _comprehensive_stream_result(output_directories: list[Path], question:
             },
         )
 
-    stream = _stream_chat(question, synthesis, template=_COMPREHENSIVE_ANSWER_SYSTEM_PROMPT_TEMPLATE)
-    return QaStreamResult([], stream)
+    async for chunk in _stream_chat(question, synthesis, template=_COMPREHENSIVE_ANSWER_SYSTEM_PROMPT_TEMPLATE):
+        yield chunk
 
 
-async def _build_comprehensive_synthesis(results: list[ExtractionResult]) -> str:
+async def _build_comprehensive_synthesis(results: list[ExtractionResult]) -> AsyncIterator[tuple[bool, str]]:
+    """Yields (is_final, text) pairs: progress-update lines (is_final=False)
+    as each batch/combine call completes, so the SSE connection stays alive
+    and the user sees real progress -- this whole build can otherwise take
+    tens of minutes on slow local hardware with zero visible feedback
+    (confirmed live: ~2.5 minutes per batch), easily mistaken for a hang. The
+    final yield (is_final=True) carries the completed synthesis text itself,
+    which the caller writes to the cache."""
     if len(results) <= _COMPREHENSIVE_BATCH_SIZE:
-        return await _call_chat(
+        yield False, "Building whole-codebase overview...\n"
+        synthesis = await _call_chat(
             _COMPREHENSIVE_SYNTHESIS_INSTRUCTION,
             _build_context(results),
             template=_COMPREHENSIVE_SYSTEM_PROMPT_TEMPLATE,
         )
+        yield True, synthesis
+        return
 
+    total_batches = math.ceil(len(results) / _COMPREHENSIVE_BATCH_SIZE)
     partials = []
-    for i in range(0, len(results), _COMPREHENSIVE_BATCH_SIZE):
+    for batch_number, i in enumerate(range(0, len(results), _COMPREHENSIVE_BATCH_SIZE), start=1):
+        yield False, f"Building whole-codebase overview... (batch {batch_number} of {total_batches})\n"
         batch = results[i : i + _COMPREHENSIVE_BATCH_SIZE]
         partial = await _call_chat(
             _COMPREHENSIVE_SYNTHESIS_INSTRUCTION,
@@ -296,15 +319,17 @@ async def _build_comprehensive_synthesis(results: list[ExtractionResult]) -> str
         )
         partials.append(partial)
 
+    yield False, "Combining partial overviews...\n"
     combined_context = "\n\n---\n\n".join(partials)
     if len(combined_context) > _COMPREHENSIVE_COMBINE_CHARS_LIMIT:
         combined_context = combined_context[:_COMPREHENSIVE_COMBINE_CHARS_LIMIT] + "... [truncated]"
 
-    return await _call_chat(
+    synthesis = await _call_chat(
         _COMPREHENSIVE_COMBINE_INSTRUCTION,
         combined_context,
         template=_COMPREHENSIVE_COMBINE_PROMPT_TEMPLATE,
     )
+    yield True, synthesis
 
 
 def _no_match_message(result_count: int) -> str:

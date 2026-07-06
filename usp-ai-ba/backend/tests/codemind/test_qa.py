@@ -251,7 +251,11 @@ def test_comprehensive_mode_cache_miss_single_shot_builds_and_caches(tmp_path, m
 
     result = asyncio.run(qa.ask_for_stream([tmp_path], "explain this codebase", mode="comprehensive"))
 
-    assert _collect(result.text_stream) == "Final answer."
+    collected = _collect(result.text_stream)
+    # A progress line streams first (so the connection doesn't sit silent
+    # during a potentially multi-minute build), then the real answer.
+    assert "Building whole-codebase overview...\n" in collected
+    assert collected.endswith("Final answer.")
     assert fake.ainvoke_call_count == 1  # one synthesis call, no batching needed
 
     cached = output.read_comprehensive_summary(tmp_path)
@@ -273,7 +277,11 @@ def test_comprehensive_mode_cache_miss_batched_reduce_when_over_batch_size(tmp_p
 
     result = asyncio.run(qa.ask_for_stream([tmp_path], "explain this codebase", mode="comprehensive"))
 
-    assert _collect(result.text_stream) == "Answer."
+    collected = _collect(result.text_stream)
+    assert "(batch 1 of 2)" in collected
+    assert "(batch 2 of 2)" in collected
+    assert "Combining partial overviews...\n" in collected
+    assert collected.endswith("Answer.")
     assert fake.ainvoke_call_count == 3  # 2 batch calls + 1 final combine call
 
     cached = output.read_comprehensive_summary(tmp_path)
