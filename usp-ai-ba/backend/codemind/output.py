@@ -20,6 +20,16 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 _SUMMARY_FILE_NAME = "_summary.json"
+_COMPREHENSIVE_SUMMARY_FILE_NAME = "_comprehensive_summary.json"
+
+
+def is_generated_metadata_file(name: str) -> bool:
+    """True for any sidecar file this module writes into a job's output
+    directory that isn't itself an extraction result -- centralized here (not
+    just the filename strings) so every directory-walking function in this
+    module, plus qa.py's own walk, agree on what to exclude without their
+    exclusion sets silently drifting apart as more sidecar files are added."""
+    return name in (_SUMMARY_FILE_NAME, _COMPREHENSIVE_SUMMARY_FILE_NAME)
 
 
 def result_exists(output_directory: Path, relative_path: str) -> bool:
@@ -44,6 +54,28 @@ def write_summary(output_directory: Path, summary: dict) -> None:
         logger.error("Failed to write job summary: %s", e)
 
 
+def write_comprehensive_summary(output_directory: Path, data: dict) -> None:
+    """Caches qa.py's "comprehensive" Ask mode synthesis -- built once (lazily,
+    on first comprehensive-mode question for a job) and reused for every later
+    question against that job rather than rebuilt per question."""
+    summary_file = output_directory / _COMPREHENSIVE_SUMMARY_FILE_NAME
+    try:
+        output_directory.mkdir(parents=True, exist_ok=True)
+        summary_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    except OSError as e:
+        logger.error("Failed to write comprehensive summary: %s", e)
+
+
+def read_comprehensive_summary(output_directory: Path) -> dict | None:
+    """Returns None (never raises) if the cache doesn't exist yet or is
+    unparseable -- either case just means qa.py should (re)build it."""
+    summary_file = output_directory / _COMPREHENSIVE_SUMMARY_FILE_NAME
+    try:
+        return json.loads(summary_file.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
 @dataclass
 class OutputFile:
     relative_path: str
@@ -65,7 +97,7 @@ def recent_files(output_directory: Path, limit: int) -> list[OutputFile]:
         return []
     results: list[OutputFile] = []
     for path in output_directory.rglob("*.json"):
-        if not path.is_file() or path.name == _SUMMARY_FILE_NAME:
+        if not path.is_file() or is_generated_metadata_file(path.name):
             continue
         out = _to_output_file(output_directory, path)
         if out is not None:
@@ -92,7 +124,7 @@ def list_failed_files(output_directory: Path) -> list[FailedFile]:
         return []
     results: list[FailedFile] = []
     for path in output_directory.rglob("*.json"):
-        if not path.is_file() or path.name == _SUMMARY_FILE_NAME:
+        if not path.is_file() or is_generated_metadata_file(path.name):
             continue
         failed = _try_read_failed_file(output_directory, path)
         if failed is not None:

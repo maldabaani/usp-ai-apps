@@ -12,6 +12,10 @@
       using only that context -- it never sees the whole job, so it can't answer aggregate
       questions like "how many functions do you have." "Quick stats" skips the LLM entirely and
       reports an exact, deterministic tally read directly from every file the job extracted.
+      "Comprehensive" reduces every extracted file into one whole-codebase overview and answers
+      from that -- the first question per job builds and caches it (slower); every question after,
+      even reworded ones, reuses the cache (fast). Note: if you re-run this job later, the cached
+      overview won't reflect the changes yet.
     </p>
 
     <div class="sf-field">
@@ -19,6 +23,7 @@
       <select id="askMode" class="sf-select" [(ngModel)]="mode" name="mode" [disabled]="asking">
         <option value="deep">Deep LLM answer</option>
         <option value="generic">Quick stats (no LLM)</option>
+        <option value="comprehensive">Comprehensive (whole codebase)</option>
       </select>
     </div>
 

@@ -32,12 +32,14 @@ router = APIRouter(prefix="/v1", tags=["codemind-ask"])
 
 class QaRequest(BaseModel):
     question: str
-    # "generic" (Job Ask only -- see ask_stream below) skips the LLM entirely
-    # and returns a deterministic whole-job stats report instead of a
-    # retrieval-grounded answer. Ask All doesn't support it; ask_all_stream
-    # below never passes it through, so it's harmlessly accepted-but-ignored
-    # on that route.
-    mode: Literal["deep", "generic"] = "deep"
+    # "generic" and "comprehensive" (Job Ask only -- see ask_stream below) skip
+    # the top-K retrieval+LLM path: "generic" returns a deterministic whole-job
+    # stats report (no LLM call); "comprehensive" reduces every extracted
+    # file's summary into one cached, question-agnostic overview (built lazily
+    # on first use, then reused) and answers from that instead of a 6-20 file
+    # sample. Ask All supports neither; ask_all_stream below never passes mode
+    # through, so it's harmlessly accepted-but-ignored on that route.
+    mode: Literal["deep", "generic", "comprehensive"] = "deep"
 
     @field_validator("question")
     @classmethod

@@ -22,7 +22,7 @@ interface ChatMessage {
 export class JobAskComponent implements OnInit {
   jobId = '';
   question = '';
-  mode: 'deep' | 'generic' = 'deep';
+  mode: 'deep' | 'generic' | 'comprehensive' = 'deep';
   asking = false;
   messages: ChatMessage[] = [];
 

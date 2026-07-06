@@ -128,3 +128,12 @@ def test_format_report_includes_unparseable_section_only_when_present():
 
     assert "Files excluded (content wasn't valid JSON):" in report
     assert "weird.js" in report
+
+
+def test_compute_stats_ignores_comprehensive_summary_file(tmp_path):
+    _write(tmp_path, "auth.js", ExtractionResult("auth.js", "test-agent", True, False, '{"rules": []}', None, 1, None, None))
+    output.write_comprehensive_summary(tmp_path, {"summary": "overview text"})
+
+    stats = compute_stats(tmp_path)
+
+    assert stats.total_files == 1

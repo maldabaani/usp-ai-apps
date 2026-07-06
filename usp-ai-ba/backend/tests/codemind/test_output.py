@@ -26,6 +26,28 @@ def test_write_summary_creates_summary_file(tmp_path):
     assert json.loads(summary_file.read_text()) == {"jobId": "abc", "phase": "COMPLETED"}
 
 
+def test_write_and_read_comprehensive_summary_round_trip(tmp_path):
+    output.write_comprehensive_summary(tmp_path, {"summary": "overview text", "fileCount": 3})
+
+    assert output.read_comprehensive_summary(tmp_path) == {"summary": "overview text", "fileCount": 3}
+
+
+def test_read_comprehensive_summary_returns_none_when_missing(tmp_path):
+    assert output.read_comprehensive_summary(tmp_path) is None
+
+
+def test_read_comprehensive_summary_returns_none_for_unparseable_json(tmp_path):
+    (tmp_path / "_comprehensive_summary.json").write_text("not valid json", encoding="utf-8")
+
+    assert output.read_comprehensive_summary(tmp_path) is None
+
+
+def test_is_generated_metadata_file():
+    assert output.is_generated_metadata_file("_summary.json") is True
+    assert output.is_generated_metadata_file("_comprehensive_summary.json") is True
+    assert output.is_generated_metadata_file("auth.js.json") is False
+
+
 def test_read_output_file_rejects_path_traversal(tmp_path):
     (tmp_path / "secret.json").write_text('{"leaked": true}')
 
@@ -44,6 +66,7 @@ def test_recent_files_excludes_summary_and_sorts_newest_first(tmp_path):
     output.write_result(tmp_path, "a", {"success": True})
     output.write_result(tmp_path, "b", {"success": True})
     output.write_summary(tmp_path, {"jobId": "x"})
+    output.write_comprehensive_summary(tmp_path, {"summary": "overview"})
 
     files = output.recent_files(tmp_path, limit=50)
 
@@ -85,3 +108,12 @@ def test_list_failed_files_defaults_error_message_when_missing(tmp_path):
 
     assert failed[0].error_message == "Unknown error"
     assert failed[0].duration_millis == 0
+
+
+def test_list_failed_files_excludes_comprehensive_summary(tmp_path):
+    # A body shaped to look like a failure (success=False) if the by-name
+    # exclusion didn't work -- proves the exclusion itself, not just that the
+    # real cache schema happens to be harmless.
+    output.write_comprehensive_summary(tmp_path, {"summary": "overview", "success": False})
+
+    assert output.list_failed_files(tmp_path) == []

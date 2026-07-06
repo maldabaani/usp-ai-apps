@@ -24,6 +24,7 @@ import logging
 import math
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import AsyncIterator, Literal
 
@@ -31,13 +32,11 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_ollama import ChatOllama, OllamaEmbeddings
 
-from codemind import extraction_stats
+from codemind import extraction_stats, output
 from codemind.agents.base import ExtractionResult
 from config import settings
 
 logger = logging.getLogger(__name__)
-
-_SUMMARY_FILE_NAME = "_summary.json"
 
 _WORD_PATTERN = re.compile(r"[A-Za-z0-9_]+")
 _STOPWORDS = {
@@ -66,6 +65,51 @@ _NO_RESULTS_MESSAGE_MULTI = (
 )
 
 REQUEST_TIMEOUT_SECONDS = 120
+
+# "comprehensive" mode: files per reduce call. Derived from settings.OLLAMA_NUM_CTX's
+# default (32768 tokens) * the one chars-per-token precedent in this codebase
+# (ingestion/ingest_code.py's CHARS_PER_TOKEN = 4) =~ 131k raw chars; a
+# conservative 60k-char working budget (headroom for prompt boilerplate +
+# completion tokens) / _MAX_CONTENT_CHARS_PER_FILE = 20 files. Since every
+# file's content is already hard-capped at _MAX_CONTENT_CHARS_PER_FILE before
+# entering any context string, a file count is enough of a budget -- no
+# token-estimation pass needed. Also safe under Claude's much larger window.
+_COMPREHENSIVE_BATCH_SIZE = 20
+# Ceiling for the joined partial-syntheses text fed into the final combine
+# call, so a pathological number of batches degrades gracefully (drops the
+# tail) instead of erroring, the same way _build_context already truncates
+# individual files.
+_COMPREHENSIVE_COMBINE_CHARS_LIMIT = _COMPREHENSIVE_BATCH_SIZE * _MAX_CONTENT_CHARS_PER_FILE
+
+_COMPREHENSIVE_SYNTHESIS_INSTRUCTION = "Produce the comprehensive codebase overview now."
+_COMPREHENSIVE_COMBINE_INSTRUCTION = "Combine the partial overviews into one now."
+
+_COMPREHENSIVE_SYSTEM_PROMPT_TEMPLATE = (
+    "You are building a comprehensive, question-agnostic overview of an entire codebase from the\n"
+    "extracted logic summaries provided below. This overview will be cached and reused to answer\n"
+    "many different future questions about this codebase, so do not tailor it to any single\n"
+    "question -- cover the overall architecture, key modules/components, notable business rules,\n"
+    "and cross-cutting patterns (e.g. error handling, auth, data flow) that appear across multiple\n"
+    "files. Cite the relevant file path(s) inline when you reference specific logic.\n\n"
+    "Context:\n{context}\n"
+)
+
+_COMPREHENSIVE_COMBINE_PROMPT_TEMPLATE = (
+    "You are given several partial overviews, each already summarizing a different subset of the\n"
+    "same codebase's files. Merge them into a single, coherent, non-redundant whole-codebase\n"
+    "overview. Preserve distinct details and file-path citations from each partial overview;\n"
+    "do not simply concatenate them -- integrate overlapping points and organize the result as one\n"
+    "unified overview.\n\n"
+    "Partial overviews:\n{context}\n"
+)
+
+_COMPREHENSIVE_ANSWER_SYSTEM_PROMPT_TEMPLATE = (
+    "You previously built the comprehensive overview below, covering every file this job\n"
+    "extracted (not a sample). Answer the user's question using only this overview as context;\n"
+    "if it doesn't contain enough detail to answer confidently, say so explicitly rather than\n"
+    "guessing.\n\n"
+    "Comprehensive overview:\n{context}\n"
+)
 
 
 @dataclass(frozen=True)
@@ -107,7 +151,7 @@ def _get_qa_chat() -> ChatAnthropic | ChatOllama:
             _qa_chat = ChatOllama(
                 model=settings.CODEMIND_OLLAMA_MODEL,
                 base_url=settings.OLLAMA_BASE_URL,
-                num_ctx=8192,
+                num_ctx=settings.OLLAMA_NUM_CTX,
                 timeout=REQUEST_TIMEOUT_SECONDS,
             )
         else:
@@ -130,16 +174,18 @@ async def ask(output_directory: Path, question: str) -> QaAnswer:
     if not ranked:
         return QaAnswer(_no_match_message(len(results)), [])
 
-    answer = await _call_chat(question, _build_context(ranked))
+    answer = await _call_chat(question, _build_context([s.result for s in ranked]))
     source_files = [scored.result.relative_path for scored in ranked]
     return QaAnswer(_scope_note(len(ranked), len(results)) + answer, source_files)
 
 
 async def ask_for_stream(
-    output_directories: list[Path], question: str, mode: Literal["deep", "generic"] = "deep"
+    output_directories: list[Path], question: str, mode: Literal["deep", "generic", "comprehensive"] = "deep"
 ) -> QaStreamResult:
     if mode == "generic":
         return _generic_stream_result(output_directories)
+    if mode == "comprehensive":
+        return await _comprehensive_stream_result(output_directories, question)
 
     results = [result for directory in output_directories for result in _load_results(directory)]
     if not results:
@@ -150,7 +196,7 @@ async def ask_for_stream(
         return QaStreamResult([], _single_chunk_stream(_no_match_message(len(results))))
 
     source_files = [scored.result.relative_path for scored in ranked]
-    stream = _stream_chat(question, _build_context(ranked))
+    stream = _stream_chat(question, _build_context([s.result for s in ranked]))
     note = _scope_note(len(ranked), len(results))
     if note:
         stream = _prefixed_stream(note, stream)
@@ -169,6 +215,72 @@ def _generic_stream_result(output_directories: list[Path]) -> QaStreamResult:
     if stats.total_files == 0:
         return QaStreamResult([], _single_chunk_stream(_NO_RESULTS_MESSAGE_MULTI))
     return QaStreamResult([], _single_chunk_stream(extraction_stats.format_report(stats)))
+
+
+async def _comprehensive_stream_result(output_directories: list[Path], question: str) -> QaStreamResult:
+    """The "comprehensive" Ask mode: unlike "deep" (top-K sample) and
+    "generic" (counts only), this can answer synthesis questions spanning the
+    whole job ("explain this codebase," "what security patterns exist here")
+    by reducing every extracted file's already-written summary into one
+    overview -- built lazily on the first comprehensive-mode question for a
+    job, then cached (codemind/output.py's write_comprehensive_summary) and
+    reused for every later question, even reworded ones, instead of rebuilt
+    per question. Job Ask only ever passes a single output directory; there
+    is no cross-job "comprehensive" mode for Ask All.
+
+    Known v1 limitation: no cache invalidation -- if an incremental job is
+    re-run later and results change, the cached overview goes stale until the
+    output directory is deleted/recreated.
+    """
+    output_directory = output_directories[0]
+    cached = output.read_comprehensive_summary(output_directory)
+    synthesis = cached.get("summary") if cached else None
+
+    if not synthesis or not isinstance(synthesis, str) or not synthesis.strip():
+        results = _load_results(output_directory)
+        if not results:
+            return QaStreamResult([], _single_chunk_stream(_NO_RESULTS_MESSAGE_MULTI))
+        synthesis = await _build_comprehensive_synthesis(results)
+        output.write_comprehensive_summary(
+            output_directory,
+            {
+                "summary": synthesis,
+                "generatedAt": datetime.now(timezone.utc).isoformat(),
+                "fileCount": len(results),
+            },
+        )
+
+    stream = _stream_chat(question, synthesis, template=_COMPREHENSIVE_ANSWER_SYSTEM_PROMPT_TEMPLATE)
+    return QaStreamResult([], stream)
+
+
+async def _build_comprehensive_synthesis(results: list[ExtractionResult]) -> str:
+    if len(results) <= _COMPREHENSIVE_BATCH_SIZE:
+        return await _call_chat(
+            _COMPREHENSIVE_SYNTHESIS_INSTRUCTION,
+            _build_context(results),
+            template=_COMPREHENSIVE_SYSTEM_PROMPT_TEMPLATE,
+        )
+
+    partials = []
+    for i in range(0, len(results), _COMPREHENSIVE_BATCH_SIZE):
+        batch = results[i : i + _COMPREHENSIVE_BATCH_SIZE]
+        partial = await _call_chat(
+            _COMPREHENSIVE_SYNTHESIS_INSTRUCTION,
+            _build_context(batch),
+            template=_COMPREHENSIVE_SYSTEM_PROMPT_TEMPLATE,
+        )
+        partials.append(partial)
+
+    combined_context = "\n\n---\n\n".join(partials)
+    if len(combined_context) > _COMPREHENSIVE_COMBINE_CHARS_LIMIT:
+        combined_context = combined_context[:_COMPREHENSIVE_COMBINE_CHARS_LIMIT] + "... [truncated]"
+
+    return await _call_chat(
+        _COMPREHENSIVE_COMBINE_INSTRUCTION,
+        combined_context,
+        template=_COMPREHENSIVE_COMBINE_PROMPT_TEMPLATE,
+    )
 
 
 def _no_match_message(result_count: int) -> str:
@@ -271,26 +383,26 @@ def _truncate(content: str) -> str:
     return content[:_MAX_CONTENT_CHARS_PER_FILE]
 
 
-def _build_context(ranked: list[_ScoredResult]) -> str:
+def _build_context(results: list[ExtractionResult]) -> str:
     parts = []
-    for scored in ranked:
-        content = scored.result.content
+    for result in results:
+        content = result.content
         if len(content) > _MAX_CONTENT_CHARS_PER_FILE:
             content = content[:_MAX_CONTENT_CHARS_PER_FILE] + "... [truncated]"
-        parts.append(f"File: {scored.result.relative_path}\n{content}\n\n---\n\n")
+        parts.append(f"File: {result.relative_path}\n{content}\n\n---\n\n")
     return "".join(parts)
 
 
-async def _call_chat(question: str, context: str) -> str:
+async def _call_chat(question: str, context: str, template: str = _SYSTEM_PROMPT_TEMPLATE) -> str:
     chat = _get_qa_chat()
-    system_prompt = _SYSTEM_PROMPT_TEMPLATE.format(context=context)
+    system_prompt = template.format(context=context)
     response = await chat.ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=question)])
     return response.content
 
 
-async def _stream_chat(question: str, context: str) -> AsyncIterator[str]:
+async def _stream_chat(question: str, context: str, template: str = _SYSTEM_PROMPT_TEMPLATE) -> AsyncIterator[str]:
     chat = _get_qa_chat()
-    system_prompt = _SYSTEM_PROMPT_TEMPLATE.format(context=context)
+    system_prompt = template.format(context=context)
     async for chunk in chat.astream([SystemMessage(content=system_prompt), HumanMessage(content=question)]):
         if chunk.content:
             yield chunk.content
@@ -301,7 +413,7 @@ def _load_results(output_directory: Path) -> list[ExtractionResult]:
         return []
     results: list[ExtractionResult] = []
     for path in output_directory.rglob("*.json"):
-        if not path.is_file() or path.name == _SUMMARY_FILE_NAME:
+        if not path.is_file() or output.is_generated_metadata_file(path.name):
             continue
         result = _read_result(path)
         if result is not None and _has_usable_content(result):
