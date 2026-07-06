@@ -23,9 +23,10 @@ from langchain_ollama import ChatOllama
 from pydantic import BaseModel, field_validator
 
 import prompt_store
-from api import conversation_store
+from api import ask_cache, conversation_store
 from api.deps import require_auth
 from config import settings
+from ingestion import ingestion_generation
 from ingestion.chroma_client import collection_counts
 from ingestion.retrieval import retrieve_all_collections
 from prompts.ask_prompts import BUSINESS_ASK_SYSTEM_PROMPT, TECHNICAL_ASK_SYSTEM_PROMPT
@@ -159,6 +160,14 @@ def _build_conversation_context(messages: list[dict], budget_chars: int) -> list
     ]
 
 
+def _conversation_context_text(prior_messages: list[BaseMessage]) -> str:
+    """Canonical text form of the trimmed conversation history, folded into
+    api/ask_cache.py's cache key -- without this, a cached answer generated
+    inside one conversation could leak into an unrelated conversation (or a
+    fresh no-conversation ask) asking the exact same question text."""
+    return "\n".join(f"{m.type}:{m.content}" for m in prior_messages)
+
+
 async def _stream_answer(
     question: str, context: str, template: str, prior_messages: list[BaseMessage]
 ) -> AsyncIterator[str]:
@@ -187,6 +196,19 @@ async def _recording_stream(
         conversation_store.append_message(owner, conversation_id, "assistant", buffer, sources)
 
 
+async def _caching_stream(cache_key: str, sources: list[str], text_stream: AsyncIterator[str]) -> AsyncIterator[str]:
+    """Wraps a text stream so the full answer is cached only once streaming
+    completes without error -- unlike _recording_stream's finally (which
+    must persist even a partial answer to conversation history), caching a
+    truncated/failed answer would be actively harmful: a later identical
+    question would replay a broken answer instead of retrying for real."""
+    buffer = ""
+    async for chunk in text_stream:
+        buffer += chunk
+        yield chunk
+    ask_cache.put(cache_key, buffer, sources)
+
+
 async def _sse_body(source_files: list[str], text_stream: AsyncIterator[str]) -> AsyncIterator[str]:
     yield f"event: sources\ndata: {json.dumps(source_files)}\n\n"
     try:
@@ -206,8 +228,28 @@ async def _ask(question: str, template: str, kind: str, owner: str, conversation
 
     prior_messages = _build_conversation_context(conversation["messages"], settings.CONVERSATION_HISTORY_CHAR_BUDGET)
 
+    # Cache check happens before retrieval so a hit can skip retrieve_all_collections()
+    # and the chat call entirely -- a hit is only possible for a question that
+    # previously found real content under the current ingestion generation, so
+    # there's no need to re-verify the corpus isn't empty.
+    cache_key = ask_cache.build_key(
+        kind, ingestion_generation.current(), template, _conversation_context_text(prior_messages), question
+    )
+    cached = ask_cache.get(cache_key)
+    if cached is not None:
+        stream = _recording_stream(
+            owner, conversation["id"], question, cached["sources"], _single_chunk_stream(cached["answer"])
+        )
+        response = StreamingResponse(_sse_body(cached["sources"], stream), media_type="text/event-stream")
+        response.headers["X-Conversation-Id"] = conversation["id"]
+        return response
+
     retrieved = await retrieve_all_collections(question)
     if not any(retrieved.values()):
+        # Empty-corpus fallback is never cached -- caching it would mean a
+        # later real ingestion's answer gets shadowed by this placeholder
+        # forever (the cache key doesn't change just because the corpus
+        # went from empty to non-empty within the same generation bump).
         stream = _recording_stream(
             owner, conversation["id"], question, [], _single_chunk_stream(_NO_RESULTS_MESSAGE)
         )
@@ -218,7 +260,8 @@ async def _ask(question: str, template: str, kind: str, owner: str, conversation
     source_files = _source_files(retrieved)
     context = _build_context(retrieved)
     text_stream = _stream_answer(question, context, template, prior_messages)
-    recorded_stream = _recording_stream(owner, conversation["id"], question, source_files, text_stream)
+    caching_stream = _caching_stream(cache_key, source_files, text_stream)
+    recorded_stream = _recording_stream(owner, conversation["id"], question, source_files, caching_stream)
     response = StreamingResponse(_sse_body(source_files, recorded_stream), media_type="text/event-stream")
     response.headers["X-Conversation-Id"] = conversation["id"]
     return response

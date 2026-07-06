@@ -108,6 +108,7 @@ backend/
       prompts.py                 GET /api/prompts/ask, PUT /api/prompts/ask/{kind} -- Ask Technical/Business prompt customization
       conversations.py           GET/POST /api/conversations, GET/DELETE /api/conversations/{id} -- per-user conversation memory CRUD
     conversation_store.py       File-per-conversation persistence (<JOBS_DIR>/conversations/<owner>/<id>.json), scoped per-user by directory nesting
+    ask_cache.py                In-memory exact-question-match answer cache for Ask Technical/Business, keyed by kind+ingestion-generation+prompt+conversation-context+question
   scripts/
     setup_notion_database.py  One-off script: creates the Notion "StoryForge Epics" database, prints NOTION_DATABASE_ID
   pipeline/
@@ -132,6 +133,7 @@ backend/
     runner_jobs.py             Shared run_document_ingestion/run_code_ingestion wrappers used by both api/routers/ingest.py and the watcher
     watch_registry.py          Persisted watched-path targets ({id, path, kind, enabled}), same _load()/_save() idiom as api/job_registry.py
     watcher.py                 WatcherManager: one watchdog Observer per enabled target, per-target debounce, auto re-triggers ingestion on create/modify/delete
+    ingestion_generation.py     In-memory-only counter bumped on every successful ingestion run, used by api/ask_cache.py to invalidate cached answers
   ado_mcp/
     ado_client.py              MultiServerMCPClient wrapper for the ADO MCP server
   notion_export/
@@ -460,6 +462,15 @@ that same id as `AskRequest.conversation_id`; prior turns (trimmed to
 `CONVERSATION_HISTORY_CHAR_BUDGET` characters, oldest first) are threaded into the actual
 LangChain message list sent to the model — never string-concatenated into the `{context}`
 RAG placeholder, keeping conversation memory orthogonal to prompt customization above.
+
+**Answer caching**: an in-memory, exact-question-text cache (`api/ask_cache.py`, no TTL, no
+size cap — resets on restart, a deliberate v1 tradeoff) skips retrieval and the chat call
+entirely on a hit. The cache key folds in `kind`, `ingestion/ingestion_generation.py`'s counter
+(bumped on every successful ingestion run — a repeat question after re-ingesting is always a
+miss), the effective prompt template (a Settings-page prompt edit is never served stale), and
+the trimmed conversation-context text (so a cached answer can never leak across unrelated
+conversations asking the same question). The empty-corpus "run ingestion first" fallback is
+never cached.
 
 ## Testing
 

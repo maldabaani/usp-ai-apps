@@ -8,10 +8,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 import prompt_store
-from api import conversation_store
+from api import ask_cache, conversation_store
 from api.main import app
 from api.routers import ask
 from config import settings
+from ingestion import ingestion_generation
 from prompts.ask_prompts import BUSINESS_ASK_SYSTEM_PROMPT, TECHNICAL_ASK_SYSTEM_PROMPT, _GROUNDING_RULES
 
 client = TestClient(app, raise_server_exceptions=False)
@@ -62,11 +63,15 @@ def _reset_ask_chat_cache(tmp_path, monkeypatch):
     ask._ask_chat_model_kind = None
     monkeypatch.setattr(settings, "JOBS_DIR", str(tmp_path / "jobs"))
     prompt_store._cache = None
+    ask_cache._cache.clear()
+    ingestion_generation._generation = 0
     yield
     ask._ask_chat = None
     ask._ask_chat_generation = -1
     ask._ask_chat_model_kind = None
     prompt_store._cache = None
+    ask_cache._cache.clear()
+    ingestion_generation._generation = 0
 
 
 def test_ask_technical_returns_sse_sources_and_chunks(monkeypatch):
