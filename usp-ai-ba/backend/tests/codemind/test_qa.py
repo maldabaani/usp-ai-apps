@@ -74,7 +74,10 @@ def test_answers_using_top_scoring_files_as_context_via_keyword_fallback(tmp_pat
 
     answer = asyncio.run(qa.ask(tmp_path, "how does login check the password and session work?"))
 
-    assert answer.answer == "It checks the password and creates a session."
+    # Only 1 of the 2 real (non-_summary.json) results scored high enough to
+    # be shown -- the answer must disclose that rather than read as complete.
+    assert answer.answer == "(Showing the 1 of 2 extracted files most relevant to this question -- " \
+        "not an exhaustive count or full listing.)\n\nIt checks the password and creates a session."
     assert answer.source_files == ["auth.js"]
 
 
@@ -88,8 +91,34 @@ def test_answers_using_vector_search_when_embedding_model_is_present(tmp_path, m
 
     answer = asyncio.run(qa.ask(tmp_path, "how does login work?"))
 
+    # Vector search's ranked list covers all loaded results here (2 files,
+    # both under _TOP_K) -- no scope note needed since nothing was left out.
     assert answer.answer == "Vector-grounded answer."
     assert answer.source_files[0] == "auth.js"
+
+
+def test_no_scope_note_when_every_result_is_shown(tmp_path, monkeypatch):
+    _write_result(tmp_path, "auth.js.json", "auth.js", "Checks password and creates session.")
+
+    monkeypatch.setattr(qa, "_get_qa_chat", lambda: _FakeChat(content="It checks the password."))
+
+    answer = asyncio.run(qa.ask(tmp_path, "how does login check the password?"))
+
+    assert answer.answer == "It checks the password."
+
+
+def test_scope_note_prefixes_the_stream_when_not_every_result_is_shown(tmp_path, monkeypatch):
+    _write_result(tmp_path, "auth.js.json", "auth.js", "Checks password and creates session for login users.")
+    _write_result(tmp_path, "payments.js.json", "payments.js", "Charges a credit card via the Stripe API.")
+
+    monkeypatch.setattr(qa, "_get_qa_chat", lambda: _FakeChat(chunks=["It ", "checks ", "the ", "password."]))
+
+    result = asyncio.run(qa.ask_for_stream([tmp_path], "how does login check the password and session work?"))
+
+    assert _collect(result.text_stream) == (
+        "(Showing the 1 of 2 extracted files most relevant to this question -- "
+        "not an exhaustive count or full listing.)\n\nIt checks the password."
+    )
 
 
 def test_falls_back_to_keyword_search_when_embedding_call_fails(tmp_path, monkeypatch):
@@ -102,7 +131,8 @@ def test_falls_back_to_keyword_search_when_embedding_call_fails(tmp_path, monkey
 
     answer = asyncio.run(qa.ask(tmp_path, "how does login check the password and session work?"))
 
-    assert answer.answer == "It checks the password and creates a session."
+    assert answer.answer == "(Showing the 1 of 2 extracted files most relevant to this question -- " \
+        "not an exhaustive count or full listing.)\n\nIt checks the password and creates a session."
     assert answer.source_files == ["auth.js"]
 
 

@@ -29,7 +29,7 @@ CHARS_PER_TOKEN = 4
 MAX_CHUNK_CHARS = CHUNK_SIZE_TOKENS * CHARS_PER_TOKEN
 OVERLAP_CHARS = CHUNK_OVERLAP_TOKENS * CHARS_PER_TOKEN
 
-SKIP_DIR_NAMES = {"node_modules", "target", "dist", ".git"}
+SKIP_DIR_NAMES = {"node_modules", "target", "dist", ".git", ".angular", ".cache"}
 JAVA_EXCLUDE_SUFFIXES = ("Test.java", "IT.java")
 TS_EXCLUDE_SUFFIXES = (".spec.ts",)
 SOURCE_EXTENSIONS = {".java", ".ts", ".js"}

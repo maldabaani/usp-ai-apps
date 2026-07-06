@@ -131,7 +131,7 @@ async def ask(output_directory: Path, question: str) -> QaAnswer:
 
     answer = await _call_chat(question, _build_context(ranked))
     source_files = [scored.result.relative_path for scored in ranked]
-    return QaAnswer(answer, source_files)
+    return QaAnswer(_scope_note(len(ranked), len(results)) + answer, source_files)
 
 
 async def ask_for_stream(output_directories: list[Path], question: str) -> QaStreamResult:
@@ -144,7 +144,11 @@ async def ask_for_stream(output_directories: list[Path], question: str) -> QaStr
         return QaStreamResult([], _single_chunk_stream(_no_match_message(len(results))))
 
     source_files = [scored.result.relative_path for scored in ranked]
-    return QaStreamResult(source_files, _stream_chat(question, _build_context(ranked)))
+    stream = _stream_chat(question, _build_context(ranked))
+    note = _scope_note(len(ranked), len(results))
+    if note:
+        stream = _prefixed_stream(note, stream)
+    return QaStreamResult(source_files, stream)
 
 
 def _no_match_message(result_count: int) -> str:
@@ -154,8 +158,29 @@ def _no_match_message(result_count: int) -> str:
     )
 
 
+def _scope_note(shown: int, total: int) -> str:
+    """Ask never reasons over the whole codebase -- only the top _TOP_K
+    highest-scoring files per question -- so an aggregate/counting question
+    ("how many functions...") would otherwise read as a complete answer when
+    it's really a partial sample. Prepended deterministically rather than
+    left to the model's own judgment, since a prompt instruction to disclose
+    this is not reliably followed."""
+    if shown >= total:
+        return ""
+    return (
+        f"(Showing the {shown} of {total} extracted files most relevant to this question -- "
+        "not an exhaustive count or full listing.)\n\n"
+    )
+
+
 async def _single_chunk_stream(text: str) -> AsyncIterator[str]:
     yield text
+
+
+async def _prefixed_stream(prefix: str, stream: AsyncIterator[str]) -> AsyncIterator[str]:
+    yield prefix
+    async for chunk in stream:
+        yield chunk
 
 
 async def _retrieve(question: str, results: list[ExtractionResult]) -> list[_ScoredResult]:

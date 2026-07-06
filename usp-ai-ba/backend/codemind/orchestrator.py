@@ -50,6 +50,13 @@ EXCLUDED_DIRECTORY_NAMES = {
     "out", ".next", ".turbo", "vendor",
     "__pycache__", "target", ".venv", "venv",
     "bin", "obj", ".gradle", ".mypy_cache", ".pytest_cache",
+    # Local dev-server build caches -- Angular CLI's .angular/cache holds
+    # Vite's pre-bundled copies of third-party deps (confirmed live: a
+    # bundled rxjs.js and an anonymous vendor chunk got scanned and
+    # "extracted" as if they were application code, accounting for ~40% of
+    # one job's reported rule count). .cache is the same category of thing
+    # for several other JS toolchains (webpack, parcel, babel).
+    ".angular", ".cache",
 }
 MAX_FILE_SIZE_BYTES = 300_000
 DEFAULT_MAX_CONCURRENT_REQUESTS = 8

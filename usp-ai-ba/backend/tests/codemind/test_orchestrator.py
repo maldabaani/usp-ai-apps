@@ -88,6 +88,33 @@ def test_processes_all_files_with_bounded_concurrency_and_isolates_failures(tmp_
     assert max_observed_concurrency <= concurrency_limit
 
 
+def test_skips_angular_and_generic_build_cache_directories(tmp_path, monkeypatch):
+    """.angular/cache holds Angular CLI/Vite's pre-bundled copies of
+    third-party deps (confirmed live: a bundled rxjs.js and vendor chunk got
+    extracted as if they were application code, ~40% of one real job's
+    reported rule count) -- these must never reach an agent."""
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src/app.ts").write_text("export const x = 1;")
+    (tmp_path / ".angular/cache/17.3.17/vite/deps/rxjs.js").parent.mkdir(parents=True)
+    (tmp_path / ".angular/cache/17.3.17/vite/deps/rxjs.js").write_text("export function map() {}")
+    (tmp_path / ".cache/some-tool/vendor.js").parent.mkdir(parents=True)
+    (tmp_path / ".cache/some-tool/vendor.js").write_text("module.exports = {};")
+    monkeypatch.setattr(orchestrator, "SKIP_EXISTING_RESULTS", False)
+
+    extracted_paths = []
+
+    async def extract_fn(file: SourceFile) -> ExtractionResult:
+        extracted_paths.append(file.relative_path)
+        return success_result(file, "test-agent", "{}", 1, None, None)
+
+    selector = AgentSelector([_StubAgent(extract_fn)])
+    job = _job(tmp_path)
+
+    asyncio.run(orchestrator.run(job, selector))
+
+    assert extracted_paths == ["src/app.ts"]
+
+
 def test_skips_files_with_existing_results_when_enabled(tmp_path):
     (tmp_path / "a.js").write_text("const a = 1;")
     (tmp_path / "b.js").write_text("const b = 2;")
