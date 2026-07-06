@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from typing import AsyncIterator
+from typing import AsyncIterator, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -32,6 +32,12 @@ router = APIRouter(prefix="/v1", tags=["codemind-ask"])
 
 class QaRequest(BaseModel):
     question: str
+    # "generic" (Job Ask only -- see ask_stream below) skips the LLM entirely
+    # and returns a deterministic whole-job stats report instead of a
+    # retrieval-grounded answer. Ask All doesn't support it; ask_all_stream
+    # below never passes it through, so it's harmlessly accepted-but-ignored
+    # on that route.
+    mode: Literal["deep", "generic"] = "deep"
 
     @field_validator("question")
     @classmethod
@@ -62,7 +68,7 @@ async def ask_stream(
     job_id: uuid.UUID, request: QaRequest, user: dict = Depends(require_auth)
 ) -> StreamingResponse:
     job = _require_job(job_id)
-    stream_result = await qa.ask_for_stream([job.output_directory], request.question)
+    stream_result = await qa.ask_for_stream([job.output_directory], request.question, mode=request.mode)
     return StreamingResponse(_sse_body(stream_result), media_type="text/event-stream")
 
 
@@ -71,5 +77,7 @@ async def ask_all_stream(request: QaRequest, user: dict = Depends(require_auth))
     completed_output_directories = [
         job.output_directory for job in job_registry.find_all() if job.phase == JobPhase.COMPLETED
     ]
+    # Deliberately not passing request.mode through -- Ask All has no
+    # "generic" mode (see QaRequest.mode's docstring above), it's always deep.
     stream_result = await qa.ask_for_stream(completed_output_directories, request.question)
     return StreamingResponse(_sse_body(stream_result), media_type="text/event-stream")

@@ -25,12 +25,13 @@ import math
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import AsyncIterator
+from typing import AsyncIterator, Literal
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_ollama import ChatOllama, OllamaEmbeddings
 
+from codemind import extraction_stats
 from codemind.agents.base import ExtractionResult
 from config import settings
 
@@ -134,7 +135,12 @@ async def ask(output_directory: Path, question: str) -> QaAnswer:
     return QaAnswer(_scope_note(len(ranked), len(results)) + answer, source_files)
 
 
-async def ask_for_stream(output_directories: list[Path], question: str) -> QaStreamResult:
+async def ask_for_stream(
+    output_directories: list[Path], question: str, mode: Literal["deep", "generic"] = "deep"
+) -> QaStreamResult:
+    if mode == "generic":
+        return _generic_stream_result(output_directories)
+
     results = [result for directory in output_directories for result in _load_results(directory)]
     if not results:
         return QaStreamResult([], _single_chunk_stream(_NO_RESULTS_MESSAGE_MULTI))
@@ -149,6 +155,20 @@ async def ask_for_stream(output_directories: list[Path], question: str) -> QaStr
     if note:
         stream = _prefixed_stream(note, stream)
     return QaStreamResult(source_files, stream)
+
+
+def _generic_stream_result(output_directories: list[Path]) -> QaStreamResult:
+    """The "generic" Ask mode: a deterministic, zero-LLM tally of every result
+    a job wrote (codemind/extraction_stats.py), ignoring the question text
+    entirely -- unlike "deep" mode, this reads every file, not just the top
+    _TOP_K, so it can actually answer aggregate/counting questions ("how many
+    functions do you have") that deep mode structurally cannot. Job Ask only
+    ever passes a single output directory; there is no cross-job "generic"
+    mode for Ask All."""
+    stats = extraction_stats.compute_stats(output_directories[0])
+    if stats.total_files == 0:
+        return QaStreamResult([], _single_chunk_stream(_NO_RESULTS_MESSAGE_MULTI))
+    return QaStreamResult([], _single_chunk_stream(extraction_stats.format_report(stats)))
 
 
 def _no_match_message(result_count: int) -> str:

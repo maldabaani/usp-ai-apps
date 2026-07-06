@@ -22,12 +22,10 @@ gone but the output files remain):
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 
 from codemind import job_store
-
-_SUMMARY_FILE_NAME = "_summary.json"
+from codemind.extraction_stats import compute_stats, format_report
 
 
 def _resolve_output_directory(args: argparse.Namespace) -> Path:
@@ -50,52 +48,9 @@ def main() -> None:
     if not output_directory.is_dir():
         raise SystemExit(f"Output directory does not exist: {output_directory}")
 
-    total_rules = 0
-    per_file: list[tuple[str, int]] = []
-    unparseable: list[str] = []
-    skipped_or_failed = 0
-
-    for path in sorted(output_directory.rglob("*.json")):
-        if path.name == _SUMMARY_FILE_NAME:
-            continue
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            unparseable.append(str(path.relative_to(output_directory)))
-            continue
-
-        if not data.get("success") or data.get("skipped"):
-            skipped_or_failed += 1
-            continue
-
-        raw_content = data.get("content") or ""
-        cleaned = raw_content.strip()
-        cleaned = cleaned.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-        try:
-            parsed = json.loads(cleaned)
-        except ValueError:
-            unparseable.append(data.get("relativePath", str(path)))
-            continue
-
-        rules = parsed.get("rules") or []
-        count = len(rules)
-        total_rules += count
-        per_file.append((data.get("relativePath", str(path)), count))
-
+    stats = compute_stats(output_directory)
     print(f"Output directory: {output_directory}")
-    print(f"Files with usable extraction results: {len(per_file)}")
-    print(f"Files skipped/failed (no logic extracted): {skipped_or_failed}")
-    print(f"Files whose content wasn't valid JSON (excluded from the count): {len(unparseable)}")
-    print(f"Total extracted rules across all files: {total_rules}")
-    print()
-    print("Per-file rule counts:")
-    for relative_path, count in sorted(per_file, key=lambda pair: pair[1], reverse=True):
-        print(f"  {count:>4}  {relative_path}")
-    if unparseable:
-        print()
-        print("Files excluded (content wasn't valid JSON):")
-        for relative_path in unparseable:
-            print(f"  {relative_path}")
+    print(format_report(stats))
 
 
 if __name__ == "__main__":

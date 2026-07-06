@@ -12,7 +12,7 @@ from types import SimpleNamespace
 
 from config import settings
 
-from codemind import qa
+from codemind import extraction_stats, qa
 from codemind.agents.base import ExtractionResult
 
 
@@ -165,6 +165,41 @@ def test_ask_for_stream_returns_source_files_and_text_stream_via_keyword_fallbac
 
 def test_ask_for_stream_returns_fallback_stream_when_no_results_exist(tmp_path):
     result = asyncio.run(qa.ask_for_stream([tmp_path / "missing"], "anything?"))
+
+    assert result.source_files == []
+    assert "No extraction results" in _collect(result.text_stream)
+
+
+def test_generic_mode_returns_deterministic_report_without_any_llm_or_embedding_call(tmp_path, monkeypatch):
+    _write_result(tmp_path, "auth.js.json", "auth.js", '{"rules": [{"name": "a"}, {"name": "b"}]}')
+    _write_result(tmp_path, "payments.js.json", "payments.js", '{"rules": [{"name": "c"}]}')
+
+    def _fail_if_called(*args, **kwargs):
+        raise AssertionError("generic mode must never call the chat model")
+
+    monkeypatch.setattr(qa, "_get_qa_chat", _fail_if_called)
+    monkeypatch.setattr(qa, "OllamaEmbeddings", _fail_if_called)
+
+    result = asyncio.run(qa.ask_for_stream([tmp_path], "how many functions do you have?", mode="generic"))
+
+    assert result.source_files == []
+    expected = extraction_stats.format_report(extraction_stats.compute_stats(tmp_path))
+    assert _collect(result.text_stream) == expected
+    assert "Total extracted rules across all files: 3" in expected
+
+
+def test_generic_mode_ignores_question_text(tmp_path, monkeypatch):
+    _write_result(tmp_path, "auth.js.json", "auth.js", '{"rules": [{"name": "a"}]}')
+    monkeypatch.setattr(qa, "_get_qa_chat", lambda: _FakeChat(content="should never be reached"))
+
+    first = asyncio.run(qa.ask_for_stream([tmp_path], "how many functions?", mode="generic"))
+    second = asyncio.run(qa.ask_for_stream([tmp_path], "something totally different", mode="generic"))
+
+    assert _collect(first.text_stream) == _collect(second.text_stream)
+
+
+def test_generic_mode_returns_no_results_placeholder_when_job_has_nothing(tmp_path):
+    result = asyncio.run(qa.ask_for_stream([tmp_path / "missing"], "anything?", mode="generic"))
 
     assert result.source_files == []
     assert "No extraction results" in _collect(result.text_stream)
