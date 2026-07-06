@@ -1,7 +1,15 @@
 # macOS
 .DS_Store
 
-# dev-up.sh (log output)
+# Retired Java app (deleted from the repo entirely -- see git history).
+# Anything reappearing under this path on disk is stray runtime output from
+# accidentally running the backend with this as its working directory
+# (its relative ./output, ./jobs defaults then land here instead of
+# usp-ai-ba/backend/), never real project content.
+code-mind-app/
+
+# dev-up.sh (shared JWT secret + log output)
+.dev-jwt-secret
 .dev-logs/
 
 # usp-ai-ba backend (Python)
