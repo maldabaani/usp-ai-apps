@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectorRef, Component, OnDestroy, OnInit } from '@angular/core';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 
 import { AuthService } from '../../services/auth.service';
 import {
@@ -39,7 +39,7 @@ export type StepState = 'pending' | 'active' | 'done' | 'error';
 @Component({
   selector: 'app-status',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, RouterLink],
   templateUrl: './status.component.html',
   styleUrl: './status.component.css',
 })
