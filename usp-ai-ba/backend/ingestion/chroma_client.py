@@ -6,6 +6,8 @@
 """
 from __future__ import annotations
 
+import asyncio
+
 import chromadb
 from chromadb.config import Settings as ChromaSettings
 from langchain_chroma import Chroma
@@ -88,6 +90,35 @@ def get_vector_store(collection_key: str) -> Chroma:
 def get_all_vector_stores() -> dict[str, Chroma]:
     """Return all three vector stores keyed by "manuals", "codebase", "entities"."""
     return {key: get_vector_store(key) for key in COLLECTIONS}
+
+
+async def delete_by_source(collection_key: str, relative_path: str) -> None:
+    """Deletes every existing chunk for one source file/document (matched by
+    its "source" metadata field) from a collection, before that file's fresh
+    chunks are re-added on a re-ingestion run. Deterministic per-chunk IDs
+    (see ingest_code.py/ingest_pdfs.py) make an *unchanged* chunk's re-add a
+    no-op upsert, but they can't clean up a chunk whose symbol/method was
+    removed entirely (its old ID simply never appears in the new run) --
+    this clears the file's whole prior chunk set first so removed methods/
+    files don't leave stale, undiscoverable chunks behind forever.
+    """
+    vector_store = get_vector_store(collection_key)
+    await vector_store.adelete(where={"source": relative_path})
+
+
+async def list_distinct_sources(collection_key: str) -> set[str]:
+    """Every distinct "source" metadata value currently stored in a
+    collection -- lets a re-ingestion run detect files that existed in a
+    prior run but no longer exist on disk (Chroma itself acts as the
+    manifest here; no separate persisted state needed) so their stale
+    chunks can be purged via delete_by_source too, not just chunks
+    belonging to files the current run actually visits. Chroma's own
+    .get() has no async variant, so this runs it off the event loop
+    thread."""
+    vector_store = get_vector_store(collection_key)
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, lambda: vector_store.get(include=["metadatas"]))
+    return {m["source"] for m in result.get("metadatas") or [] if m and m.get("source")}
 
 
 def reset_collection(collection_key: str) -> None:

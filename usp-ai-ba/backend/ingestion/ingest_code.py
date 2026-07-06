@@ -11,6 +11,7 @@ Implements the "smart chunking" rules:
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 from dataclasses import dataclass
@@ -19,7 +20,7 @@ from pathlib import Path
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from ingestion.chroma_client import get_vector_store
+from ingestion.chroma_client import delete_by_source, get_vector_store, list_distinct_sources
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +84,30 @@ def _split_overflow(text: str) -> list[str]:
     if len(text) <= MAX_CHUNK_CHARS:
         return [text]
     return _overflow_splitter.split_text(text)
+
+
+def _document_id(metadata: dict) -> str:
+    """Deterministic per-chunk ID so re-ingesting an unchanged file/method
+    upserts the same Chroma entry instead of adding a duplicate (see
+    chroma_client.delete_by_source for the complementary fix -- a symbol
+    that's been renamed/removed changes this ID and would otherwise leave
+    the old one behind as an orphan, which delete_by_source clears first).
+    Includes every symbol-name field a chunk type might set (class/method/
+    function) rather than "whichever is present first", since e.g. two
+    methods in the same class share class_name but must still get distinct
+    IDs.
+    """
+    key = "::".join(
+        [
+            metadata.get("source", ""),
+            metadata.get("type", ""),
+            metadata.get("class_name", ""),
+            metadata.get("method_name", ""),
+            metadata.get("function_name", ""),
+            str(metadata.get("chunk_part", 0)),
+        ]
+    )
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()[:40]
 
 
 def _make_documents(
@@ -337,6 +362,16 @@ async def ingest_code(
     files = sorted(iter_source_files(repo))
     total_files = len(files)
 
+    # Files present in a prior ingestion of this repo but deleted from disk
+    # since are never visited by the loop below, so their stale chunks would
+    # otherwise never get cleared -- diff against what Chroma already has
+    # (acting as its own manifest) and purge those up front.
+    current_sources = {str(path.relative_to(repo)) for path in files}
+    previously_seen = await list_distinct_sources("codebase")
+    for removed_source in previously_seen - current_sources:
+        await delete_by_source("codebase", removed_source)
+        await delete_by_source("entities", removed_source)
+
     codebase_batch: list[Document] = []
     entities_batch: list[Document] = []
     files_processed = 0
@@ -347,17 +382,31 @@ async def ingest_code(
     async def flush(force: bool = False):
         nonlocal codebase_batch, entities_batch, chunks_indexed, entity_chunks_indexed
         if codebase_batch and (force or len(codebase_batch) >= BATCH_SIZE):
-            await codebase_store.aadd_documents(codebase_batch)
+            ids = [_document_id(doc.metadata) for doc in codebase_batch]
+            await codebase_store.aadd_documents(codebase_batch, ids=ids)
             chunks_indexed += len(codebase_batch)
             codebase_batch = []
         if entities_batch and (force or len(entities_batch) >= BATCH_SIZE):
-            await entities_store.aadd_documents(entities_batch)
+            ids = [_document_id(doc.metadata) for doc in entities_batch]
+            await entities_store.aadd_documents(entities_batch, ids=ids)
             entity_chunks_indexed += len(entities_batch)
             entities_batch = []
 
     for index, path in enumerate(files, start=1):
         try:
             result = chunk_file(path, repo)
+            relative_path = str(path.relative_to(repo))
+            # Clear this file's prior chunk set before adding its fresh one --
+            # deterministic IDs alone only upsert chunks that still exist in
+            # this run; a renamed/removed method or a deleted file would
+            # otherwise leave its old chunks behind as invisible, stale
+            # entries (see chroma_client.delete_by_source's docstring).
+            # Entities is cleared unconditionally too (not just when
+            # result.is_entity), since a class that *stopped* being an
+            # @Entity between runs must have its old entity-collection
+            # chunks removed even though this run won't re-add any.
+            await delete_by_source("codebase", relative_path)
+            await delete_by_source("entities", relative_path)
             codebase_batch.extend(result.documents)
             if result.is_entity:
                 entities_batch.extend(result.documents)
