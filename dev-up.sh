@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Starts StoryForge's backend (which now also serves CodeMind's endpoints,
-# see usp-ai-ba/backend/codemind/) and the Angular shell for local dev.
+# Starts StoryForge's backend and the Angular shell for local dev.
 #
 # JWT_SECRET isn't set here -- config.py's _default_jwt_secret() already
 # auto-generates one and persists it under usp-ai-ba/backend/jobs/.jwt_secret
