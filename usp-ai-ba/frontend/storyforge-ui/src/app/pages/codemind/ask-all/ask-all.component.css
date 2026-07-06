@@ -4,6 +4,18 @@
   margin-top: 0;
 }
 
+.cm-back-link {
+  display: inline-block;
+  margin-bottom: 12px;
+  color: var(--sf-muted);
+  text-decoration: none;
+  font-size: 13px;
+}
+
+.cm-back-link:hover {
+  color: var(--sf-primary);
+}
+
 .cm-jobs-context {
   margin-bottom: 16px;
 }
