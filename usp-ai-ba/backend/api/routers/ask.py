@@ -22,11 +22,22 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_ollama import ChatOllama
 from pydantic import BaseModel, field_validator
 
+import prompt_store
 from api.deps import require_auth
 from config import settings
 from ingestion.chroma_client import collection_counts
 from ingestion.retrieval import retrieve_all_collections
 from prompts.ask_prompts import BUSINESS_ASK_SYSTEM_PROMPT, TECHNICAL_ASK_SYSTEM_PROMPT
+
+_DEFAULT_PROMPTS = {"technical": TECHNICAL_ASK_SYSTEM_PROMPT, "business": BUSINESS_ASK_SYSTEM_PROMPT}
+
+
+def _effective_prompt(kind: str) -> str:
+    """A Settings-page prompt edit takes effect on the very next request --
+    prompt_store.get_custom_prompt() re-reads the persisted override fresh
+    every call, so unlike _get_ask_chat()'s cached client there's no
+    generation counter to check here."""
+    return prompt_store.get_custom_prompt(kind) or _DEFAULT_PROMPTS[kind]
 
 logger = logging.getLogger(__name__)
 
@@ -152,12 +163,12 @@ async def _ask(question: str, template: str) -> StreamingResponse:
 
 @router.post("/technical")
 async def ask_technical(request: AskRequest, user: dict = Depends(require_auth)) -> StreamingResponse:
-    return await _ask(request.question, TECHNICAL_ASK_SYSTEM_PROMPT)
+    return await _ask(request.question, _effective_prompt("technical"))
 
 
 @router.post("/business")
 async def ask_business(request: AskRequest, user: dict = Depends(require_auth)) -> StreamingResponse:
-    return await _ask(request.question, BUSINESS_ASK_SYSTEM_PROMPT)
+    return await _ask(request.question, _effective_prompt("business"))
 
 
 @router.get("/status")

@@ -132,5 +132,64 @@
       {{ saving ? 'Saving...' : 'Save Settings' }}
     </button>
 
+    <div class="sf-card" *ngIf="!askPromptsLoading">
+      <h2 class="sf-section-title">Ask Prompts</h2>
+      <p class="sf-hint">
+        Customize the system prompt used by Ask Technical/Business. Curly braces other than
+        <code>&#123;context&#125;</code> are not allowed -- the retrieved corpus is substituted there at
+        request time.
+      </p>
+
+      <div class="sf-field">
+        <label for="technicalPromptTemplate">Ask Technical{{ technicalPromptHasCustom ? ' (customized)' : '' }}</label>
+        <textarea
+          id="technicalPromptTemplate"
+          class="sf-textarea"
+          rows="10"
+          [(ngModel)]="technicalPromptTemplate"
+          name="technicalPromptTemplate"
+        ></textarea>
+        <p *ngIf="technicalPromptError" class="sf-error-text">{{ technicalPromptError }}</p>
+        <div class="sf-prompt-actions">
+          <button class="sf-btn" [disabled]="technicalPromptSaving" (click)="saveAskPrompt('technical')">
+            {{ technicalPromptSaving ? 'Saving...' : 'Save' }}
+          </button>
+          <button
+            class="sf-btn sf-btn-secondary"
+            type="button"
+            [disabled]="technicalPromptSaving || !technicalPromptHasCustom"
+            (click)="resetAskPrompt('technical')"
+          >
+            Reset to default
+          </button>
+        </div>
+      </div>
+
+      <div class="sf-field">
+        <label for="businessPromptTemplate">Ask Business{{ businessPromptHasCustom ? ' (customized)' : '' }}</label>
+        <textarea
+          id="businessPromptTemplate"
+          class="sf-textarea"
+          rows="10"
+          [(ngModel)]="businessPromptTemplate"
+          name="businessPromptTemplate"
+        ></textarea>
+        <p *ngIf="businessPromptError" class="sf-error-text">{{ businessPromptError }}</p>
+        <div class="sf-prompt-actions">
+          <button class="sf-btn" [disabled]="businessPromptSaving" (click)="saveAskPrompt('business')">
+            {{ businessPromptSaving ? 'Saving...' : 'Save' }}
+          </button>
+          <button
+            class="sf-btn sf-btn-secondary"
+            type="button"
+            [disabled]="businessPromptSaving || !businessPromptHasCustom"
+            (click)="resetAskPrompt('business')"
+          >
+            Reset to default
+          </button>
+        </div>
+      </div>
+    </div>
+
   </ng-container>
 </div>

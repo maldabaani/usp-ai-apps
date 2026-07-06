@@ -105,6 +105,7 @@ backend/
       monitoring.py             GET /api/monitoring/errors -- captures ERROR+ logs from every module in this process
       corpus.py                 GET /api/corpus/sources -- per-source chunk-count/LLM-summary/format metadata for the corpus browser
       watch.py                  GET/POST /api/watch/targets, PATCH/DELETE /api/watch/targets/{id} -- watched-path CRUD for auto re-ingestion
+      prompts.py                 GET /api/prompts/ask, PUT /api/prompts/ask/{kind} -- Ask Technical/Business prompt customization
   scripts/
     setup_notion_database.py  One-off script: creates the Notion "StoryForge Epics" database, prints NOTION_DATABASE_ID
   pipeline/
@@ -135,7 +136,8 @@ backend/
     client.py                  notion-client AsyncClient wrapper: page/block creation, 100-block batching, rich_text chunking
   prompts/
     system_prompt.py           Full generate_node system prompt + JSON output schema
-    ask_prompts.py              Ask Technical/Business system prompt templates
+    ask_prompts.py              Ask Technical/Business system prompt templates (defaults)
+  prompt_store.py              Persisted per-kind overrides of the Ask Technical/Business templates above, editable from /settings
   config.py                   Settings loaded from environment / .env
   requirements.txt
   .env.example
@@ -336,6 +338,8 @@ All endpoints are served under the FastAPI app created in `backend/api/main.py`,
 | `POST` | `/api/watch/targets` | Admin only. Body: `{"path", "kind": "documents"\|"code"}`. 400 if `path` isn't a directory. Starts watching immediately (no restart needed) |
 | `PATCH` | `/api/watch/targets/{id}` | Admin only. Body: `{"enabled": bool}`. Starts/stops the live watch immediately. 404 if unknown |
 | `DELETE` | `/api/watch/targets/{id}` | Admin only. Stops watching and removes the target. 404 if unknown |
+| `GET` | `/api/prompts/ask` | → `{"technical": {"custom", "default", "effective"}, "business": {...}}` for the Ask Technical/Business system prompt templates |
+| `PUT` | `/api/prompts/ask/{kind}` | Admin only. `{kind}` is `technical` or `business`. Body: `{"template": str \| null}` (`null` resets to the built-in default). 400 if the template is missing `{context}` or contains any other placeholder — takes effect on the very next `/api/ask/{kind}` request, no restart needed |
 
 Ask Technical/Business's endpoints (`/api/ask/technical`, `/api/ask/business`, `/api/ask/status`)
 are documented in the [Ask Technical / Ask Business](#ask-technical--ask-business) section

@@ -2,6 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
+import { AskPrompts, PromptsService } from '../../services/prompts.service';
 import { AppSettings, AppSettingsUpdate, SettingsService } from '../../services/settings.service';
 
 @Component({
@@ -46,7 +47,23 @@ export class SettingsComponent implements OnInit {
   ingestOllamaModel = '';
   restartRequiredFields: string[] = [];
 
-  constructor(private settingsService: SettingsService) {}
+  // Ask Technical/Business prompt customization
+  askPromptsLoading = true;
+  technicalPromptTemplate = '';
+  technicalPromptDefault = '';
+  technicalPromptHasCustom = false;
+  technicalPromptSaving = false;
+  technicalPromptError = '';
+  businessPromptTemplate = '';
+  businessPromptDefault = '';
+  businessPromptHasCustom = false;
+  businessPromptSaving = false;
+  businessPromptError = '';
+
+  constructor(
+    private settingsService: SettingsService,
+    private promptsService: PromptsService
+  ) {}
 
   ngOnInit(): void {
     this.settingsService.getSettings().subscribe({
@@ -57,6 +74,94 @@ export class SettingsComponent implements OnInit {
       error: () => {
         this.loadError = 'Unable to load settings.';
         this.loading = false;
+      },
+    });
+
+    this.promptsService.getAskPrompts().subscribe({
+      next: (prompts) => {
+        this.applyAskPrompts(prompts);
+        this.askPromptsLoading = false;
+      },
+      error: () => {
+        this.askPromptsLoading = false;
+      },
+    });
+  }
+
+  private applyAskPrompts(prompts: AskPrompts): void {
+    this.technicalPromptTemplate = prompts.technical.effective;
+    this.technicalPromptDefault = prompts.technical.default;
+    this.technicalPromptHasCustom = prompts.technical.custom !== null;
+    this.businessPromptTemplate = prompts.business.effective;
+    this.businessPromptDefault = prompts.business.default;
+    this.businessPromptHasCustom = prompts.business.custom !== null;
+  }
+
+  saveAskPrompt(kind: 'technical' | 'business'): void {
+    const template = kind === 'technical' ? this.technicalPromptTemplate : this.businessPromptTemplate;
+    if (kind === 'technical') {
+      this.technicalPromptSaving = true;
+      this.technicalPromptError = '';
+    } else {
+      this.businessPromptSaving = true;
+      this.businessPromptError = '';
+    }
+
+    this.promptsService.updateAskPrompt(kind, template).subscribe({
+      next: (info) => {
+        if (kind === 'technical') {
+          this.technicalPromptTemplate = info.effective;
+          this.technicalPromptHasCustom = info.custom !== null;
+          this.technicalPromptSaving = false;
+        } else {
+          this.businessPromptTemplate = info.effective;
+          this.businessPromptHasCustom = info.custom !== null;
+          this.businessPromptSaving = false;
+        }
+      },
+      error: (err) => {
+        const message = err?.error?.detail || 'Failed to save prompt.';
+        if (kind === 'technical') {
+          this.technicalPromptSaving = false;
+          this.technicalPromptError = message;
+        } else {
+          this.businessPromptSaving = false;
+          this.businessPromptError = message;
+        }
+      },
+    });
+  }
+
+  resetAskPrompt(kind: 'technical' | 'business'): void {
+    if (kind === 'technical') {
+      this.technicalPromptSaving = true;
+      this.technicalPromptError = '';
+    } else {
+      this.businessPromptSaving = true;
+      this.businessPromptError = '';
+    }
+
+    this.promptsService.updateAskPrompt(kind, null).subscribe({
+      next: (info) => {
+        if (kind === 'technical') {
+          this.technicalPromptTemplate = info.effective;
+          this.technicalPromptHasCustom = false;
+          this.technicalPromptSaving = false;
+        } else {
+          this.businessPromptTemplate = info.effective;
+          this.businessPromptHasCustom = false;
+          this.businessPromptSaving = false;
+        }
+      },
+      error: (err) => {
+        const message = err?.error?.detail || 'Failed to reset prompt.';
+        if (kind === 'technical') {
+          this.technicalPromptSaving = false;
+          this.technicalPromptError = message;
+        } else {
+          this.businessPromptSaving = false;
+          this.businessPromptError = message;
+        }
       },
     });
   }

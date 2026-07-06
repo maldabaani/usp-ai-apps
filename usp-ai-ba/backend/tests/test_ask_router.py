@@ -7,6 +7,7 @@ import jwt
 import pytest
 from fastapi.testclient import TestClient
 
+import prompt_store
 from api.main import app
 from api.routers import ask
 from config import settings
@@ -54,14 +55,17 @@ _SAMPLE_RETRIEVED = {
 
 
 @pytest.fixture(autouse=True)
-def _reset_ask_chat_cache():
+def _reset_ask_chat_cache(tmp_path, monkeypatch):
     ask._ask_chat = None
     ask._ask_chat_generation = -1
     ask._ask_chat_model_kind = None
+    monkeypatch.setattr(settings, "JOBS_DIR", str(tmp_path / "jobs"))
+    prompt_store._cache = None
     yield
     ask._ask_chat = None
     ask._ask_chat_generation = -1
     ask._ask_chat_model_kind = None
+    prompt_store._cache = None
 
 
 def test_ask_technical_returns_sse_sources_and_chunks(monkeypatch):
@@ -132,6 +136,24 @@ def test_ask_technical_and_business_use_different_system_prompts(monkeypatch):
     # codemind/qa.py), differing only in framing around it.
     assert _GROUNDING_RULES in technical_system_prompt
     assert _GROUNDING_RULES in business_system_prompt
+
+
+def test_ask_technical_uses_a_saved_custom_prompt_with_no_restart(monkeypatch):
+    async def fake_retrieve(question, top_k=10):
+        return _SAMPLE_RETRIEVED
+
+    monkeypatch.setattr(ask, "retrieve_all_collections", fake_retrieve)
+    prompt_store.save_custom_prompt("technical", "Custom override.\n{context}\n")
+
+    fake_chat = _FakeChat(["answer"])
+    monkeypatch.setattr(ask, "_get_ask_chat", lambda: fake_chat)
+
+    resp = client.post("/api/ask/technical", json={"question": "q"}, headers=_auth_headers())
+
+    assert resp.status_code == 200
+    sent_system_prompt = fake_chat.calls[0][0].content
+    assert sent_system_prompt == "Custom override.\n{context}\n".format(context=ask._build_context(_SAMPLE_RETRIEVED))
+    assert sent_system_prompt != TECHNICAL_ASK_SYSTEM_PROMPT.format(context=ask._build_context(_SAMPLE_RETRIEVED))
 
 
 def test_ask_rejects_blank_question():
