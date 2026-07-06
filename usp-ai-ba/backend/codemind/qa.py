@@ -44,7 +44,7 @@ _STOPWORDS = {
     "which", "who", "why", "when", "did", "can", "could", "would", "should", "to", "of", "in",
     "on", "a", "an", "it", "do", "be", "i", "you", "we",
 }
-_TOP_K = 6
+_TOP_K = 157
 _MAX_CONTENT_CHARS_PER_FILE = 3000
 
 # Shared across all four prompt templates below. Targets two failure modes
