@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import time
 
+TERMINAL_STATUSES = {"done", "error", "cancelled"}
+
 _jobs: dict[str, dict] = {}
 
 
@@ -41,3 +43,14 @@ def fail_job(job_id: str, error: str) -> None:
 
 def get_ingest_job(job_id: str) -> dict | None:
     return _jobs.get(job_id)
+
+
+def is_terminal(job_id: str) -> bool:
+    job = _jobs.get(job_id)
+    return job is not None and job["status"] in TERMINAL_STATUSES
+
+
+def cancel_job(job_id: str) -> None:
+    job = _jobs.get(job_id)
+    if job is not None:
+        job["status"] = "cancelled"
