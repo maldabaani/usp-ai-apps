@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 from api.main import app
 from api.routers import codemind_jobs
-from codemind import job_registry, orchestrator, qa
+from codemind import job_registry, orchestrator, output, qa
 from codemind.orchestrator import JobPhase
 from codemind.qa import QaAnswer
 from config import settings
@@ -182,3 +182,40 @@ def test_ask_rejects_blank_question(tmp_path):
 
     assert resp.status_code >= 400
     assert resp.status_code < 500
+
+
+def test_export_includes_results_with_markdown_fenced_content(tmp_path):
+    """_build_export_json previously did a bare json.loads(result["content"])
+    with no markdown-fence stripping, unlike scripts/count_extracted_logic.py
+    and the Angular job-detail viewer (both of which do strip fences) -- any
+    fenced result silently vanished from the export. Now shares
+    extraction_stats.parse_extracted_content, which strips fences first."""
+    job = job_registry.register(tmp_path, tmp_path / "out", None, None)
+    output.write_result(
+        job.output_directory,
+        "auth.js",
+        {
+            "relativePath": "auth.js",
+            "success": True,
+            "skipped": False,
+            "content": '```json\n{"file": "auth.js", "rules": [{"name": "checks password"}]}\n```',
+        },
+    )
+    output.write_result(
+        job.output_directory,
+        "payments.js",
+        {
+            "relativePath": "payments.js",
+            "success": True,
+            "skipped": False,
+            "content": '{"file": "payments.js", "rules": []}',
+        },
+    )
+
+    resp = client.get(f"/api/v1/extraction-jobs/{job.id}/export", headers=_auth_headers())
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["totalExtracted"] == 2
+    exported_files = {f["file"] for f in body["files"]}
+    assert exported_files == {"auth.js", "payments.js"}

@@ -22,7 +22,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
 from pydantic import BaseModel, Field, field_validator
 
 from api.deps import require_auth
-from codemind import job_registry, manifest, output, qa
+from codemind import extraction_stats, job_registry, manifest, output, qa
 from codemind.agents.selector import get_agent_selector
 from codemind.orchestrator import DEFAULT_OUTPUT_DIRECTORY, ExecutionMode, ExtractionJob, run as run_job
 
@@ -243,10 +243,10 @@ def _build_export_json(job: ExtractionJob) -> bytes:
             continue
         if not result.get("success") or result.get("skipped") or not result.get("content"):
             continue
-        try:
-            files.append(json.loads(result["content"]))
-        except ValueError:
+        parsed_content = extraction_stats.parse_extracted_content(result.get("content"))
+        if parsed_content is None:
             continue
+        files.append(parsed_content)
 
     export = {
         "jobId": str(job.id),
