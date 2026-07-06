@@ -4,7 +4,10 @@ review approval, and retrying a failed step.
 """
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
+from typing import Coroutine
 
 from config import settings
 from notion_export.client import get_notion_export_client
@@ -21,8 +24,30 @@ from pipeline.state import StoryForgeState, resolve_output_mode
 
 RECREATABLE_OUTPUT_MODES = ("ado", "notion")
 UPDATABLE_OUTPUT_MODES = ("notion",)
+TERMINAL_STATUSES = {"done", "error", "cancelled"}
 
 logger = logging.getLogger(__name__)
+
+# Tracks the currently in-flight asyncio Task for each job_id (start/retry/
+# recreate/update are mutually exclusive in practice, so one entry per job_id
+# is enough) so cancel_job() has something to actually interrupt. FastAPI's
+# BackgroundTasks doesn't expose a handle to what it schedules -- it just
+# awaits callables after the response is sent -- so there'd otherwise be no
+# way to stop a running job at all, unlike CodeMind's extraction jobs.
+_active_tasks: dict[str, "asyncio.Task"] = {}
+
+
+def run_tracked(job_id: str, coro: "Coroutine") -> "asyncio.Task":
+    """Schedules coro as a fire-and-forget task, tracked by job_id. Holding
+    the Task in _active_tasks is itself what keeps it alive (asyncio doesn't
+    guarantee an unreferenced task won't be garbage-collected mid-run), and
+    is what cancel_job() below cancels."""
+    task = asyncio.ensure_future(coro)
+    _active_tasks[job_id] = task
+    task.add_done_callback(
+        lambda t, jid=job_id: _active_tasks.pop(jid, None) if _active_tasks.get(jid) is t else None
+    )
+    return task
 
 # Maps the node whose error prefix (e.g. "generate_node: ...") appears last in
 # state["errors"] to (node to rewind the checkpoint to, status to resume with).
@@ -249,3 +274,35 @@ async def update_tasks(job_id: str) -> StoryForgeState:
         as_node=NODE_REVIEW,
     )
     return await _drive(job_id)
+
+
+async def cancel_job(job_id: str) -> StoryForgeState:
+    """Stops a running assessment job. Cancels the tracked asyncio Task (if
+    one is currently in flight -- the human-in-the-loop pauses,
+    "clarifying"/"reviewing" with review_mode on, have no task running at
+    all, just a checkpoint waiting for an answer/approval that will now never
+    come) and marks the checkpoint status "cancelled" either way, so
+    GET /assess/status/{job_id} reflects it instead of staying stuck showing
+    whatever status was current the moment cancellation was requested.
+
+    Callers must check TERMINAL_STATUSES themselves before calling this (see
+    api/routers/assess.py) -- raises ValueError as a last-line defense against
+    a race, matching this module's existing validation style."""
+    graph = await get_graph()
+    config = _config(job_id)
+    snapshot = await graph.aget_state(config)
+    state = snapshot.values
+    if not state:
+        raise ValueError(f"No job found for job_id={job_id}")
+    if state.get("status") in TERMINAL_STATUSES:
+        raise ValueError(f"Job {job_id} is already {state.get('status')!r}")
+
+    task = _active_tasks.get(job_id)
+    if task is not None and not task.done():
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+    await graph.aupdate_state(config, {"status": "cancelled"})
+    snapshot = await graph.aget_state(config)
+    return snapshot.values

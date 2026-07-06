@@ -32,6 +32,7 @@ const STEP_DEFS: StepDef[] = [
 ];
 
 const STATUS_ORDER = STEP_DEFS.map(s => s.key);
+const TERMINAL_STATUSES = ['done', 'error', 'cancelled'];
 
 export type StepState = 'pending' | 'active' | 'done' | 'error';
 
@@ -54,6 +55,8 @@ export class StatusComponent implements OnInit, OnDestroy {
   recreateError = '';
   updating = false;
   updateError = '';
+  cancelling = false;
+  cancelError = '';
 
   readonly stepDefs = STEP_DEFS;
   readonly ragSections: { key: keyof RetrievedContext; label: string }[] = [
@@ -103,7 +106,7 @@ export class StatusComponent implements OnInit, OnDestroy {
       next: (state) => {
         this.state = state;
 
-        if (state.status !== 'error') {
+        if (state.status !== 'error' && state.status !== 'cancelled') {
           this.lastActiveStep = state.status;
         }
 
@@ -111,11 +114,11 @@ export class StatusComponent implements OnInit, OnDestroy {
           this.redirectOnce(['/clarify', this.jobId]);
         } else if (state.status === 'reviewing' && state.review_mode) {
           this.redirectOnce(['/review', this.jobId]);
-        } else if (state.status === 'done' || state.status === 'error') {
+        } else if (TERMINAL_STATUSES.includes(state.status)) {
           if (this.pendingAction) {
             // Might just be the stale pre-action status -- give the
             // background task one more poll cycle to actually start before
-            // trusting a "done"/"error" this soon after triggering it.
+            // trusting a terminal status this soon after triggering it.
             this.pendingAction = false;
             return;
           }
@@ -125,6 +128,7 @@ export class StatusComponent implements OnInit, OnDestroy {
           this.retrying = false;
           this.recreating = false;
           this.updating = false;
+          this.cancelling = false;
           this.stopPolling();
         }
       },
@@ -141,11 +145,14 @@ export class StatusComponent implements OnInit, OnDestroy {
 
     if (currentStatus === 'done') return 'done';
 
-    if (currentStatus === 'error') {
-      const errorIdx = STATUS_ORDER.indexOf(this.lastActiveStep);
+    if (currentStatus === 'error' || currentStatus === 'cancelled') {
+      const refIdx = STATUS_ORDER.indexOf(this.lastActiveStep);
       const stepIdx = STATUS_ORDER.indexOf(key);
-      if (stepIdx < errorIdx) return 'done';
-      if (stepIdx === errorIdx) return 'error';
+      if (stepIdx < refIdx) return 'done';
+      // Only "error" gets the X icon on its step -- a cancelled job just
+      // leaves the step it was on as a plain pending circle, relying on the
+      // "Cancelled" banner (not this icon) to communicate what happened.
+      if (stepIdx === refIdx && currentStatus === 'error') return 'error';
       return 'pending';
     }
 
@@ -244,6 +251,38 @@ export class StatusComponent implements OnInit, OnDestroy {
       error: (err) => {
         this.updating = false;
         this.updateError = err?.error?.detail || 'Update failed.';
+      },
+    });
+  }
+
+  get canCancel(): boolean {
+    if (!this.state) return false;
+    return !TERMINAL_STATUSES.includes(this.state.status);
+  }
+
+  cancel(): void {
+    if (!this.jobId || this.cancelling || !this.state) return;
+    if (!confirm('Stop this assessment? This cannot be resumed -- you would need to start a new one.')) {
+      return;
+    }
+
+    this.cancelling = true;
+    this.cancelError = '';
+
+    this.storyForgeService.cancelAssessment(this.jobId).subscribe({
+      next: () => {
+        // cancelling stays true -- poll() clears it once it observes the
+        // job actually reach a terminal status (see pendingAction above).
+        this.pendingAction = true;
+        this.redirected = false;
+        this.poll();
+        if (!this.pollHandle) {
+          this.pollHandle = setInterval(() => this.poll(), POLL_INTERVAL_MS);
+        }
+      },
+      error: (err) => {
+        this.cancelling = false;
+        this.cancelError = err?.error?.detail || 'Cancel failed.';
       },
     });
   }

@@ -6,18 +6,21 @@ import shutil
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from api.deps import require_auth
 from api.job_registry import list_assess_jobs, register_assess_job
 from config import settings
 from pipeline.runner import (
     RECREATABLE_OUTPUT_MODES,
+    TERMINAL_STATUSES,
     UPDATABLE_OUTPUT_MODES,
+    cancel_job,
     get_job_state,
     identify_retryable_failure,
     recreate_tasks,
     retry_failed_step,
+    run_tracked,
     start_job,
     update_tasks,
 )
@@ -45,7 +48,6 @@ async def _run_assessment(initial_state: StoryForgeState) -> None:
 
 @router.post("")
 async def submit_assessment(
-    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     ppm_number: str = Form(...),
     ppm_name: str = Form(...),
@@ -73,15 +75,13 @@ async def submit_assessment(
     )
 
     register_assess_job(job_id, ppm_number, ppm_name, system_name, resolved_output_mode)
-    background_tasks.add_task(_run_assessment, initial_state)
+    run_tracked(job_id, _run_assessment(initial_state))
 
     return {"job_id": job_id}
 
 
 @router.post("/rerun/{job_id}")
-async def rerun_assessment(
-    job_id: str, background_tasks: BackgroundTasks, user: dict = Depends(require_auth)
-):
+async def rerun_assessment(job_id: str, user: dict = Depends(require_auth)):
     """Create a new job using the stored PDF from a previous job."""
     original = next((j for j in list_assess_jobs() if j["job_id"] == job_id), None)
     if original is None:
@@ -116,7 +116,7 @@ async def rerun_assessment(
         original["system_name"],
         resolved_output_mode,
     )
-    background_tasks.add_task(_run_assessment, initial_state)
+    run_tracked(new_job_id, _run_assessment(initial_state))
 
     return {"job_id": new_job_id}
 
@@ -130,9 +130,7 @@ async def _run_retry(job_id: str) -> None:
 
 
 @router.post("/retry/{job_id}")
-async def retry_assessment(
-    job_id: str, background_tasks: BackgroundTasks, user: dict = Depends(require_auth)
-):
+async def retry_assessment(job_id: str, user: dict = Depends(require_auth)):
     """Re-run just the step that failed (generate_node, or whichever create_*
     node OUTPUT_MODE selects), without redoing SDD parsing, RAG retrieval,
     clarification, generation, or review that already succeeded."""
@@ -148,7 +146,7 @@ async def retry_assessment(
             "checkpoint) — submit a new assessment instead",
         )
 
-    background_tasks.add_task(_run_retry, job_id)
+    run_tracked(job_id, _run_retry(job_id))
     return {"status": "retrying"}
 
 
@@ -161,9 +159,7 @@ async def _run_recreate(job_id: str) -> None:
 
 
 @router.post("/recreate/{job_id}")
-async def recreate_assessment_tasks(
-    job_id: str, background_tasks: BackgroundTasks, user: dict = Depends(require_auth)
-):
+async def recreate_assessment_tasks(job_id: str, user: dict = Depends(require_auth)):
     """Push a completed job's approved stories to Notion/ADO again from
     scratch (Notion: archives the old pages first; ADO: no delete capability
     exists, so this just creates a fresh hierarchy alongside the old one)."""
@@ -178,7 +174,7 @@ async def recreate_assessment_tasks(
             detail="Re-create is only available for Notion or ADO output modes",
         )
 
-    background_tasks.add_task(_run_recreate, job_id)
+    run_tracked(job_id, _run_recreate(job_id))
     return {"status": "recreating"}
 
 
@@ -191,9 +187,7 @@ async def _run_update(job_id: str) -> None:
 
 
 @router.post("/update/{job_id}")
-async def update_assessment_tasks(
-    job_id: str, background_tasks: BackgroundTasks, user: dict = Depends(require_auth)
-):
+async def update_assessment_tasks(job_id: str, user: dict = Depends(require_auth)):
     """Update a completed job's existing Notion pages in place (position-
     matched against its approved stories/tasks) instead of archiving and
     recreating them. Notion only -- see pipeline/runner.py's update_tasks."""
@@ -208,8 +202,22 @@ async def update_assessment_tasks(
             detail="Updating tasks in place is only available for the Notion output mode",
         )
 
-    background_tasks.add_task(_run_update, job_id)
+    run_tracked(job_id, _run_update(job_id))
     return {"status": "updating"}
+
+
+@router.post("/cancel/{job_id}")
+async def cancel_assessment(job_id: str, user: dict = Depends(require_auth)):
+    """Stops a running (non-terminal) assessment job -- see
+    pipeline/runner.py's cancel_job for what "stop" means at each phase."""
+    state = await get_job_state(job_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if state.get("status") in TERMINAL_STATUSES:
+        raise HTTPException(status_code=409, detail=f"Job is already {state.get('status')!r}")
+
+    state = await cancel_job(job_id)
+    return {"status": state["status"]}
 
 
 @router.get("/jobs")

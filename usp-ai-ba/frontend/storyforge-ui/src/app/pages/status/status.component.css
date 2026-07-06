@@ -28,6 +28,21 @@
   color: var(--sf-muted);
 }
 
+.sf-status-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sf-cancelled-banner {
+  background: #fef3c7;
+  color: #b45309;
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin: 0;
+  font-size: 14px;
+}
+
 /* ── Stepper card ────────────────────────────────────────────────────────── */
 .sf-stepper-card {
   padding: 28px 24px;

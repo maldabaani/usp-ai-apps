@@ -57,7 +57,7 @@ class StoryForgeState(TypedDict):
     # failing to archive an old Notion page. Older checkpoints predating this
     # field won't have it; treat a missing key the same as an empty list.
     warnings: list[str]
-    status: str  # "analyzing|clarifying|generating|reviewing|creating|done|error"
+    status: str  # "analyzing|clarifying|generating|reviewing|creating|done|error|cancelled"
 
 
 def new_state(

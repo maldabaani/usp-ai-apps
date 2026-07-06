@@ -188,6 +188,10 @@ export class StoryForgeService {
     return this.http.post<{ status: string }>(`${API_BASE_URL}/assess/update/${jobId}`, {});
   }
 
+  cancelAssessment(jobId: string): Observable<{ status: string }> {
+    return this.http.post<{ status: string }>(`${API_BASE_URL}/assess/cancel/${jobId}`, {});
+  }
+
   listJobs(): Observable<JobSummary[]> {
     return this.http.get<JobSummary[]>(`${API_BASE_URL}/assess/jobs`);
   }

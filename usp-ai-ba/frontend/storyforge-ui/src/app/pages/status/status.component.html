@@ -7,10 +7,16 @@
         <span class="sf-status-id">Job #{{ jobId }}</span>
       </p>
     </div>
-    <span *ngIf="state" class="sf-badge sf-badge-{{ state.status }}">{{ state.status }}</span>
+    <div class="sf-status-header-right">
+      <span *ngIf="state" class="sf-badge sf-badge-{{ state.status }}">{{ state.status }}</span>
+      <button *ngIf="canCancel" class="sf-btn sf-btn-danger" [disabled]="cancelling" (click)="cancel()">
+        {{ cancelling ? 'Stopping…' : 'Stop Assessment' }}
+      </button>
+    </div>
   </div>
 
   <p *ngIf="loadError" class="sf-error-text">{{ loadError }}</p>
+  <p *ngIf="cancelError" class="sf-error-text">{{ cancelError }}</p>
 
   <!-- Vertical stepper -->
   <div class="sf-card sf-stepper-card" *ngIf="state">
@@ -63,6 +69,10 @@
       </button>
       <p class="sf-error-text" *ngIf="retryError">{{ retryError }}</p>
     </div>
+
+    <p class="sf-cancelled-banner" *ngIf="state.status === 'cancelled'">
+      This assessment was stopped before it finished. Submit a new assessment to try again.
+    </p>
   </div>
 
   <!-- RAG context panel -->
