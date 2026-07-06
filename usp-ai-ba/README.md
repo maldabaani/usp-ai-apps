@@ -104,6 +104,7 @@ backend/
       settings.py              GET/PUT /api/settings
       monitoring.py             GET /api/monitoring/errors -- captures ERROR+ logs from every module in this process
       corpus.py                 GET /api/corpus/sources -- per-source chunk-count/LLM-summary/format metadata for the corpus browser
+      watch.py                  GET/POST /api/watch/targets, PATCH/DELETE /api/watch/targets/{id} -- watched-path CRUD for auto re-ingestion
   scripts/
     setup_notion_database.py  One-off script: creates the Notion "StoryForge Epics" database, prints NOTION_DATABASE_ID
   pipeline/
@@ -126,6 +127,8 @@ backend/
     ingest_code.py             Mechanical structural chunking (16 languages) + embedding into sf_codebase/sf_jpa_entities
     enrichment/                Optional per-file LLM-summary enrichment tier (agents/, prompts.py, manifest.py for incremental skip)
     runner_jobs.py             Shared run_document_ingestion/run_code_ingestion wrappers used by both api/routers/ingest.py and the watcher
+    watch_registry.py          Persisted watched-path targets ({id, path, kind, enabled}), same _load()/_save() idiom as api/job_registry.py
+    watcher.py                 WatcherManager: one watchdog Observer per enabled target, per-target debounce, auto re-triggers ingestion on create/modify/delete
   ado_mcp/
     ado_client.py              MultiServerMCPClient wrapper for the ADO MCP server
   notion_export/
@@ -290,6 +293,8 @@ curl -X POST http://localhost:8000/api/ingest/code -H "Content-Type: application
 
 Both return `{"job_id": ..., "status": "pending"}` immediately; poll `GET /api/ingest/status/{job_id}` for progress/completion, or use the `/ingestion` page. Deterministic per-chunk IDs mean re-running ingestion against the same repo/folder **updates in place** — unchanged chunks are untouched, changed files' chunks are replaced, and files deleted since the last run have their stale chunks purged.
 
+**Auto re-ingestion via a filesystem watcher**: instead of re-running ingestion by hand, add a path under "Watched Paths" on the `/ingestion` page (or `POST /api/watch/targets`) and every create/modify/delete anywhere underneath it automatically triggers a full re-ingestion run of that path (debounced to one run per burst of changes, not one per touched file — see `backend/ingestion/watcher.py`). A watched path and a manually-started run of the same path can't race each other; whichever started first wins and the other is skipped until it finishes.
+
 **Code chunking rules** (`backend/ingestion/ingest_code.py`):
 - **Java** — chunked by whole class AND by individual method. Files annotated `@Entity` are indexed into both `sf_codebase` and `sf_jpa_entities`. Layer is inferred from `@RestController`/`@Service`/`@Repository`/`@Entity`/`@Configuration` annotations. `*Test.java` and `*IT.java` files are excluded.
 - **TypeScript/Angular** — chunked by `@Component`/`@Injectable`/`@NgModule`/`@Directive`/`@Pipe` decorated class. Files with no decorator are chunked whole as a service/utility file. `*.spec.ts` files are excluded.
@@ -327,6 +332,10 @@ All endpoints are served under the FastAPI app created in `backend/api/main.py`,
 | `PUT` | `/api/settings` | Body: any subset of the fields returned by `GET /api/settings`, plus optionally `notion_api_key`/`anthropic_api_key` (a real new value — omitting it, or sending back the mask unchanged, leaves the current secret untouched). Writes changed fields to `backend/.env` and applies them to the running backend immediately for the fields that support hot-reload — see [`config.py`](backend/config.py)'s `Settings.apply_updates` and [`config_store.py`](backend/config_store.py). Returns the refreshed (masked) settings |
 | `GET` | `/api/monitoring/errors` | Every `ERROR`+-level log record captured from this process since startup (see [`monitoring/log_capture.py`](backend/monitoring/log_capture.py)), ring-buffered to the most recent N. Backs the `/monitoring` page's error feed |
 | `GET` | `/api/corpus/sources` | → `{"manuals": [...], "codebase": [...]}`, one row per distinct source file in each collection: `{"source", "chunk_count", "has_llm_summary", "format", "ingested_at"}`. Backs the `/corpus` corpus-browser page (file list + metadata only, no chunk-content drill-down); `entities` is intentionally excluded since it's a derived re-indexing of `@Entity` files already counted under `codebase` |
+| `GET` | `/api/watch/targets` | List watched paths → `[{"id", "path", "kind", "enabled", "created_at"}, ...]` |
+| `POST` | `/api/watch/targets` | Admin only. Body: `{"path", "kind": "documents"\|"code"}`. 400 if `path` isn't a directory. Starts watching immediately (no restart needed) |
+| `PATCH` | `/api/watch/targets/{id}` | Admin only. Body: `{"enabled": bool}`. Starts/stops the live watch immediately. 404 if unknown |
+| `DELETE` | `/api/watch/targets/{id}` | Admin only. Stops watching and removes the target. 404 if unknown |
 
 Ask Technical/Business's endpoints (`/api/ask/technical`, `/api/ask/business`, `/api/ask/status`)
 are documented in the [Ask Technical / Ask Business](#ask-technical--ask-business) section

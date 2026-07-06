@@ -100,6 +100,65 @@
   </div>
 
   <div class="sf-card">
+    <h2>Watched Paths</h2>
+    <p class="ing-muted">
+      Directories watched for changes -- a create, edit, or delete anywhere underneath one
+      automatically re-triggers a full ingestion run for that path (debounced to one run per
+      burst of changes).
+    </p>
+    <p class="sf-error-text" *ngIf="watchError">{{ watchError }}</p>
+    <form (ngSubmit)="addWatchTarget()" class="ing-watch-form">
+      <div class="sf-field">
+        <label for="watchPath">Path to watch</label>
+        <input
+          id="watchPath"
+          class="sf-input"
+          type="text"
+          [(ngModel)]="watchPath"
+          name="watchPath"
+          placeholder="/path/to/repo-or-documents"
+          required
+        />
+      </div>
+      <div class="sf-field">
+        <label for="watchKind">Kind</label>
+        <select id="watchKind" class="sf-select" [(ngModel)]="watchKind" name="watchKind">
+          <option value="documents">Documents</option>
+          <option value="code">Code</option>
+        </select>
+      </div>
+      <button type="submit" class="sf-btn" [disabled]="addingWatchTarget">
+        {{ addingWatchTarget ? 'Adding…' : 'Add Watched Path' }}
+      </button>
+    </form>
+
+    <p *ngIf="watchTargetsLoading">Loading…</p>
+    <p *ngIf="!watchTargetsLoading && !watchTargets.length" class="ing-muted">No watched paths yet.</p>
+    <table class="sf-table" *ngIf="!watchTargetsLoading && watchTargets.length">
+      <thead>
+        <tr>
+          <th>Path</th>
+          <th>Kind</th>
+          <th>Enabled</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let target of watchTargets">
+          <td class="ing-mono">{{ target.path }}</td>
+          <td>{{ target.kind }}</td>
+          <td>
+            <input type="checkbox" [checked]="target.enabled" (change)="toggleWatchTarget(target)" />
+          </td>
+          <td>
+            <button class="sf-btn sf-btn-danger" (click)="removeWatchTarget(target)">Remove</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="sf-card">
     <h2>History</h2>
     <p *ngIf="historyLoading">Loading…</p>
     <p *ngIf="!historyLoading && !history.length" class="ing-muted">No ingestion runs yet.</p>

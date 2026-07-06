@@ -77,3 +77,30 @@
   max-height: 220px;
   overflow: auto;
 }
+
+.ing-watch-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.ing-watch-form .sf-field {
+  flex: 1;
+}
+
+.sf-select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--sf-border);
+  border-radius: 6px;
+  font-size: 14px;
+  background: var(--sf-surface);
+  color: var(--sf-text);
+  cursor: pointer;
+  outline: none;
+}
+
+.sf-select:focus {
+  border-color: var(--sf-primary);
+}

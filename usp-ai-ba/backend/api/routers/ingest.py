@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from api.deps import require_auth
 from api.ingest_jobs import get_ingest_job, is_terminal, register_job
-from ingestion import ingest_job_registry, runner
+from ingestion import ingest_job_registry, runner, watcher
 from ingestion.enrichment.enrich import DEFAULT_MAX_CONCURRENCY
 from ingestion.runner_jobs import run_code_ingestion, run_document_ingestion
 
@@ -30,16 +30,22 @@ class IngestCodeRequest(BaseModel):
 
 @router.post("/documents")
 async def ingest_documents_endpoint(request: IngestDocumentsRequest, user: dict = Depends(require_auth)):
+    if watcher.is_path_active(request.folder_path):
+        raise HTTPException(status_code=409, detail="An ingestion run is already active for this path")
     job_id = str(uuid.uuid4())
     register_job(job_id, kind="documents")
+    watcher.mark_path_active(request.folder_path, job_id)
     runner.run_tracked(job_id, run_document_ingestion(job_id, request.folder_path))
     return {"job_id": job_id, "status": "pending"}
 
 
 @router.post("/code")
 async def ingest_code_endpoint(request: IngestCodeRequest, user: dict = Depends(require_auth)):
+    if watcher.is_path_active(request.repo_path):
+        raise HTTPException(status_code=409, detail="An ingestion run is already active for this path")
     job_id = str(uuid.uuid4())
     register_job(job_id, kind="code")
+    watcher.mark_path_active(request.repo_path, job_id)
     runner.run_tracked(
         job_id,
         run_code_ingestion(

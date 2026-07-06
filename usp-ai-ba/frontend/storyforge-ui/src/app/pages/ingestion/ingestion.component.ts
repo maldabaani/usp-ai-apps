@@ -8,6 +8,7 @@ import {
   IngestStatus,
   StoryForgeService,
 } from '../../services/storyforge.service';
+import { WatchService, WatchTarget } from '../../services/watch.service';
 
 const POLL_INTERVAL_MS = 2000;
 
@@ -37,16 +38,71 @@ export class IngestionComponent implements OnInit, OnDestroy {
   history: IngestHistoryEntry[] = [];
   historyLoading = true;
 
+  watchTargets: WatchTarget[] = [];
+  watchTargetsLoading = true;
+  watchPath = '';
+  watchKind: 'documents' | 'code' = 'documents';
+  addingWatchTarget = false;
+  watchError = '';
+
   private pollHandle: ReturnType<typeof setInterval> | null = null;
 
-  constructor(private storyForgeService: StoryForgeService) {}
+  constructor(
+    private storyForgeService: StoryForgeService,
+    private watchService: WatchService
+  ) {}
 
   ngOnInit(): void {
     this.loadHistory();
+    this.loadWatchTargets();
   }
 
   ngOnDestroy(): void {
     this.stopPolling();
+  }
+
+  loadWatchTargets(): void {
+    this.watchTargetsLoading = true;
+    this.watchService.listTargets().subscribe({
+      next: (targets) => {
+        this.watchTargets = targets;
+        this.watchTargetsLoading = false;
+      },
+      error: () => {
+        this.watchTargetsLoading = false;
+      },
+    });
+  }
+
+  addWatchTarget(): void {
+    if (!this.watchPath.trim() || this.addingWatchTarget) return;
+    this.addingWatchTarget = true;
+    this.watchError = '';
+
+    this.watchService.addTarget(this.watchPath.trim(), this.watchKind).subscribe({
+      next: () => {
+        this.addingWatchTarget = false;
+        this.watchPath = '';
+        this.loadWatchTargets();
+      },
+      error: (err) => {
+        this.addingWatchTarget = false;
+        this.watchError = err?.error?.detail || 'Failed to add watched path.';
+      },
+    });
+  }
+
+  toggleWatchTarget(target: WatchTarget): void {
+    this.watchService.setEnabled(target.id, !target.enabled).subscribe({
+      next: () => this.loadWatchTargets(),
+    });
+  }
+
+  removeWatchTarget(target: WatchTarget): void {
+    if (!confirm(`Stop watching ${target.path}?`)) return;
+    this.watchService.deleteTarget(target.id).subscribe({
+      next: () => this.loadWatchTargets(),
+    });
   }
 
   loadHistory(): void {

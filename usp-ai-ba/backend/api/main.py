@@ -8,10 +8,11 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from api.routers import ado, ask, assess, auth, clarify, corpus, export, ingest, monitoring, review
+from api.routers import ado, ask, assess, auth, clarify, corpus, export, ingest, monitoring, review, watch
 from api.routers import settings as settings_router
 from api.user_store import ensure_default_admin
 from config import settings
+from ingestion.watcher import watcher
 from monitoring.log_capture import install as install_error_capture
 from pipeline.graph import close_graph, get_graph
 
@@ -25,9 +26,11 @@ async def lifespan(app: FastAPI):
     logger.info("StoryForge AI backend starting up")
     ensure_default_admin()
     await get_graph()  # open the persistent checkpoint DB now, not on first request
+    await watcher.start_all()
 
     yield
 
+    watcher.stop_all()
     await close_graph()
     logger.info("StoryForge AI backend shutting down")
 
@@ -54,6 +57,7 @@ def create_app() -> FastAPI:
     app.include_router(settings_router.router, prefix="/api")
     app.include_router(monitoring.router, prefix="/api")
     app.include_router(corpus.router, prefix="/api")
+    app.include_router(watch.router, prefix="/api")
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception):
