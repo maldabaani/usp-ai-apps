@@ -23,6 +23,13 @@ Optional: --questions /path/to/questions.txt (one question per line;
 otherwise a small built-in default set is used) and --output report.md
 (default: ask_parity_report.md in the current directory).
 
+Optional: --codemind-output-dir /path/to/output/<job-id> reuses an
+already-completed CodeMind extraction (e.g. from a prior run of this same
+script) instead of re-running the whole extraction phase -- useful for
+resuming after a crash further down the pipeline (ingestion, embeddings)
+without re-paying for extraction again. Find prior runs' directories under
+CODEMIND_DEFAULT_OUTPUT_DIRECTORY (default ./output), one subfolder per job.
+
 Side effect: this ingests the repo into BOTH systems -- a fresh CodeMind
 extraction job (codemind/job_registry.py + orchestrator.run) and a fresh
 ingestion run into the live ChromaDB collections
@@ -120,10 +127,16 @@ async def _new_answer(question: str) -> str:
     return response.content
 
 
-async def _run(repo_path: Path, questions: list[str], output_path: Path) -> None:
-    print(f"Running CodeMind extraction against {repo_path} ...")
-    output_directory = await _run_codemind_extraction(repo_path)
-    print(f"CodeMind extraction complete: {output_directory}")
+async def _run(
+    repo_path: Path, questions: list[str], output_path: Path, codemind_output_dir: Path | None
+) -> None:
+    if codemind_output_dir is not None:
+        print(f"Reusing existing CodeMind output directory: {codemind_output_dir}")
+        output_directory = codemind_output_dir
+    else:
+        print(f"Running CodeMind extraction against {repo_path} ...")
+        output_directory = await _run_codemind_extraction(repo_path)
+        print(f"CodeMind extraction complete: {output_directory}")
 
     print(f"Running unified ingestion against {repo_path} ...")
     await ingest_code(str(repo_path), progress_callback=_print_ingest_progress)
@@ -155,11 +168,22 @@ def main() -> None:
     parser.add_argument("repo_path", help="Path to the repository to ingest into both systems")
     parser.add_argument("--questions", help="Path to a file of questions, one per line")
     parser.add_argument("--output", default="ask_parity_report.md", help="Where to write the report")
+    parser.add_argument(
+        "--codemind-output-dir",
+        help="Reuse an already-completed CodeMind extraction's output directory instead of "
+        "re-running extraction (see module docstring)",
+    )
     args = parser.parse_args()
 
     repo_path = Path(args.repo_path).expanduser().resolve()
     if not repo_path.is_dir():
         raise SystemExit(f"Not a directory: {repo_path}")
+
+    codemind_output_dir: Path | None = None
+    if args.codemind_output_dir:
+        codemind_output_dir = Path(args.codemind_output_dir).expanduser().resolve()
+        if not codemind_output_dir.is_dir():
+            raise SystemExit(f"--codemind-output-dir is not a directory: {codemind_output_dir}")
 
     if args.questions:
         questions = [
@@ -168,7 +192,7 @@ def main() -> None:
     else:
         questions = DEFAULT_QUESTIONS
 
-    asyncio.run(_run(repo_path, questions, Path(args.output)))
+    asyncio.run(_run(repo_path, questions, Path(args.output), codemind_output_dir))
 
 
 if __name__ == "__main__":
