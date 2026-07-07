@@ -33,7 +33,7 @@ def _isolated_state(tmp_path, monkeypatch):
 def test_burst_of_schedule_checks_triggers_exactly_one_run(tmp_path, monkeypatch):
     calls = []
 
-    async def fake_ingest_documents(folder_path, progress_callback=None):
+    async def fake_ingest_documents(folder_path, progress_callback=None, enable_llm_summary=None, max_concurrency=None):
         calls.append(folder_path)
         return {"errors": []}
 
@@ -63,7 +63,7 @@ def test_burst_of_schedule_checks_triggers_exactly_one_run(tmp_path, monkeypatch
 def test_on_deleted_also_triggers_a_run(tmp_path, monkeypatch):
     calls = []
 
-    async def fake_ingest_documents(folder_path, progress_callback=None):
+    async def fake_ingest_documents(folder_path, progress_callback=None, enable_llm_summary=None, max_concurrency=None):
         calls.append(folder_path)
         return {"errors": []}
 
@@ -94,7 +94,7 @@ def test_overlap_guard_skips_a_second_trigger_while_a_run_is_active(tmp_path, mo
     started = asyncio.Event()
     release = asyncio.Event()
 
-    async def fake_ingest_documents(folder_path, progress_callback=None):
+    async def fake_ingest_documents(folder_path, progress_callback=None, enable_llm_summary=None, max_concurrency=None):
         calls.append(folder_path)
         started.set()
         await release.wait()

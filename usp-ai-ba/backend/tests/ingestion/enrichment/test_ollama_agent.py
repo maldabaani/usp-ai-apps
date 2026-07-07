@@ -62,6 +62,36 @@ def test_caps_num_predict_so_a_non_terminating_generation_cannot_run_to_the_full
     assert agent._chat.num_predict < settings.OLLAMA_NUM_CTX
 
 
+def test_uses_custom_build_messages_when_given(monkeypatch):
+    """Plan file section Q: enrich_documents.py points this same agent class
+    at doc_prompts.build_extraction_messages instead of the code-oriented
+    default -- verifies the override is actually used, not just accepted."""
+    captured: list = []
+
+    def fake_build_messages(file):
+        return "custom system prompt", "custom user content"
+
+    agent = OllamaLogicExtractionAgent(build_messages=fake_build_messages)
+
+    async def fake_ainvoke(self, messages):
+        captured.extend(messages)
+        return SimpleNamespace(content="extracted logic", usage_metadata=None)
+
+    monkeypatch.setattr(ChatOllama, "ainvoke", fake_ainvoke)
+
+    asyncio.run(agent.extract(_source_file()))
+
+    assert captured[0].content == "custom system prompt"
+    assert captured[1].content == "custom user content"
+
+
+def test_defaults_to_code_prompt_builder_when_no_override_given():
+    from ingestion.enrichment.prompts import build_extraction_messages
+
+    agent = OllamaLogicExtractionAgent()
+    assert agent._build_messages is build_extraction_messages
+
+
 def test_rebuilds_chat_client_only_when_settings_generation_changes():
     agent = OllamaLogicExtractionAgent()
 

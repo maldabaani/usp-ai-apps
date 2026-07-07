@@ -4,7 +4,8 @@
   <h1>Ingestion</h1>
   <p class="ing-muted">
     Index a code repository and/or a folder of documents (PDF, Word) into the shared knowledge base
-    used by the Ask Technical/Business Questions pages and by StoryForge's SDD assessment.
+    used by the Ask Technical/Business Questions pages and by StoryForge's SDD assessment. Documents
+    can optionally get the same LLM-synthesized per-file summary tier as code.
   </p>
 
   <div class="ing-forms">
@@ -69,6 +70,24 @@
             name="folderPath"
             placeholder="/path/to/documents"
             required
+          />
+        </div>
+        <div class="sf-field ing-checkbox-field">
+          <label>
+            <input type="checkbox" [(ngModel)]="documentsEnableLlmSummary" name="documentsEnableLlmSummary" />
+            Build LLM-synthesized per-document summaries (slower, uses your configured LLM)
+          </label>
+        </div>
+        <div class="sf-field">
+          <label for="documentsMaxConcurrency">Max concurrency (optional)</label>
+          <input
+            id="documentsMaxConcurrency"
+            class="sf-input"
+            type="number"
+            min="1"
+            [(ngModel)]="documentsMaxConcurrency"
+            name="documentsMaxConcurrency"
+            placeholder="defaults to 8"
           />
         </div>
         <button type="submit" class="sf-btn" [disabled]="startingDocuments">

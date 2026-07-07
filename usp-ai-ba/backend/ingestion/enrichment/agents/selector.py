@@ -9,14 +9,21 @@ LLM-summary enrichment tier gracefully with a logged warning -- ingestion's
 raw-chunk tier must still succeed even with no LLM configured at all.
 AgentSelector itself keeps raising ValueError on an empty list, since that's
 still the right behavior for any caller that does need at least one agent.
+
+``build_messages``, when given, is forwarded to both agent constructors in
+place of their code-oriented default -- see plan file section Q. Used by
+ingestion/enrichment/enrich_documents.py to point the same agent classes at
+doc_prompts.build_extraction_messages instead of prompts.build_extraction_messages.
 """
 from __future__ import annotations
 
 from itertools import count
+from typing import Callable
 
 from ingestion.enrichment.agents.base import LogicExtractionAgent
 from ingestion.enrichment.agents.claude_agent import ClaudeLogicExtractionAgent
 from ingestion.enrichment.agents.ollama_agent import OllamaLogicExtractionAgent
+from ingestion.enrichment.models import SourceFile
 from config import settings
 
 
@@ -35,12 +42,14 @@ class AgentSelector:
         return len(self._agents)
 
 
-def build_agents() -> list[LogicExtractionAgent]:
+def build_agents(
+    build_messages: Callable[[SourceFile], tuple[str, str]] | None = None,
+) -> list[LogicExtractionAgent]:
     agents: list[LogicExtractionAgent] = []
     if settings.ANTHROPIC_API_KEY.strip():
-        agents.append(ClaudeLogicExtractionAgent())
+        agents.append(ClaudeLogicExtractionAgent() if build_messages is None else ClaudeLogicExtractionAgent(build_messages))
     if settings.INGEST_OLLAMA_ENABLED:
-        agents.append(OllamaLogicExtractionAgent())
+        agents.append(OllamaLogicExtractionAgent() if build_messages is None else OllamaLogicExtractionAgent(build_messages))
     return agents
 
 

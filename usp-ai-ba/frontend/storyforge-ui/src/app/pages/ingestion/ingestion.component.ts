@@ -36,6 +36,8 @@ export class IngestionComponent implements OnInit, OnDestroy {
   codeError = '';
 
   folderPath = '';
+  documentsEnableLlmSummary = true;
+  documentsMaxConcurrency: number | null = null;
   startingDocuments = false;
   documentsError = '';
 
@@ -162,16 +164,22 @@ export class IngestionComponent implements OnInit, OnDestroy {
     this.startingDocuments = true;
     this.documentsError = '';
 
-    this.storyForgeService.ingestDocuments(this.folderPath.trim()).subscribe({
-      next: ({ job_id }) => {
-        this.startingDocuments = false;
-        this.trackJob(job_id);
-      },
-      error: (err) => {
-        this.startingDocuments = false;
-        this.documentsError = err?.error?.detail || 'Failed to start document ingestion.';
-      },
-    });
+    this.storyForgeService
+      .ingestDocuments(
+        this.folderPath.trim(),
+        this.documentsEnableLlmSummary,
+        this.documentsMaxConcurrency ?? undefined
+      )
+      .subscribe({
+        next: ({ job_id }) => {
+          this.startingDocuments = false;
+          this.trackJob(job_id);
+        },
+        error: (err) => {
+          this.startingDocuments = false;
+          this.documentsError = err?.error?.detail || 'Failed to start document ingestion.';
+        },
+      });
   }
 
   private trackJob(jobId: string): void {
@@ -248,7 +256,7 @@ export class IngestionComponent implements OnInit, OnDestroy {
   }
 
   phaseLabel(status: IngestStatus | null): string {
-    if (!status || status.kind !== 'code') return '';
+    if (!status || !status.phase) return '';
     return status.phase === 'enrichment' ? 'Generating LLM summaries' : 'Chunking files';
   }
 

@@ -9,11 +9,18 @@ pattern pipeline/nodes/generate.py's _get_llm() and clarify.py use) -- so a
 settings-screen change to the Anthropic key/model takes effect on the next
 extraction without a restart. Single attempt per file, catching all
 exceptions into a failure_result (no internal retry loop).
+
+``build_messages`` defaults to the code-oriented build_extraction_messages
+but is overridable (see plan file section Q) -- ingestion/enrichment/
+enrich_documents.py passes doc_prompts.build_extraction_messages instead, so
+the same agent class can summarize manuals with a document-appropriate
+prompt instead of silently reusing the code prompt.
 """
 from __future__ import annotations
 
 import logging
 import time
+from typing import Callable
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -29,9 +36,10 @@ NAME = "claude-logic-extractor"
 
 
 class ClaudeLogicExtractionAgent:
-    def __init__(self) -> None:
+    def __init__(self, build_messages: Callable[[SourceFile], tuple[str, str]] = build_extraction_messages) -> None:
         self._chat: ChatAnthropic | None = None
         self._built_at_generation = -1
+        self._build_messages = build_messages
         self._rebuild_if_needed()
 
     def name(self) -> str:
@@ -41,7 +49,7 @@ class ClaudeLogicExtractionAgent:
         self._rebuild_if_needed()
         start = time.monotonic()
         try:
-            system_message, user_message = build_extraction_messages(file)
+            system_message, user_message = self._build_messages(file)
             response = await self._chat.ainvoke(
                 [SystemMessage(content=system_message), HumanMessage(content=user_message)]
             )

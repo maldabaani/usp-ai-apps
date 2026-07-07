@@ -80,7 +80,7 @@ def test_unsupported_extensions_are_excluded(tmp_path, fake_manuals_store, suffi
     (tmp_path / f"file{suffix}").write_text("some content that would otherwise be ingested")
     _write_docx(tmp_path / "spec.docx", ["Word document content."])
 
-    result = asyncio.run(ingest_documents.ingest_documents(str(tmp_path)))
+    result = asyncio.run(ingest_documents.ingest_documents(str(tmp_path), enable_llm_summary=False))
 
     # Only the .docx file is picked up -- the other extension is invisible to
     # the walk entirely, not skipped-with-a-reason.
@@ -94,7 +94,7 @@ def test_mixed_pdf_and_docx_folder_tags_correct_format_per_source(tmp_path, fake
 
     monkeypatch.setattr(ingest_documents, "_extract_pdf_text", lambda path: "Extracted PDF body text.")
 
-    result = asyncio.run(ingest_documents.ingest_documents(str(tmp_path)))
+    result = asyncio.run(ingest_documents.ingest_documents(str(tmp_path), enable_llm_summary=False))
 
     assert result["files_processed"] == 2
     assert not result["errors"]

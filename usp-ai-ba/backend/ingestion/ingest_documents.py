@@ -21,6 +21,7 @@ from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pypdf import PdfReader
 
+from config import settings
 from ingestion.chroma_client import delete_by_source, get_vector_store, list_distinct_sources
 
 logger = logging.getLogger(__name__)
@@ -114,6 +115,9 @@ def _chunk_document(path: Path, folder_path: Path) -> list[Document]:
 async def ingest_documents(
     folder_path: str,
     progress_callback=None,
+    *,
+    enable_llm_summary: bool | None = None,
+    max_concurrency: int | None = None,
 ) -> dict:
     """Chunk and embed every supported document found (recursively) under
     ``folder_path`` -- PDF and Word (.docx) only.
@@ -125,7 +129,19 @@ async def ingest_documents(
     from the folder since the last run has its chunks purged too (diffed
     against what the collection already has, since nothing else here
     persists prior runs).
+
+    After tier 1 (mechanical chunking) finishes, optionally runs tier 2 (see
+    ingestion/enrichment/enrich_documents.py): a per-document LLM-synthesized
+    business-rule summary, embedded alongside the raw chunks above.
+    ``enable_llm_summary`` defaults to settings.INGEST_LLM_SUMMARY_ENABLED
+    when not given explicitly (a per-request override, matching
+    ingest_code.py's own precedent).
     """
+    # Imported lazily (not at module top) to avoid a circular import --
+    # enrich_documents.py itself imports _extract_text/_splitter/
+    # _FORMAT_BY_SUFFIX from this module at its own top level.
+    from ingestion.enrichment import enrich_documents as enrich_documents_module
+
     folder = Path(folder_path)
     if not folder.is_dir():
         raise FileNotFoundError(f"Documents folder not found: {folder_path}")
@@ -167,9 +183,24 @@ async def ingest_documents(
                 index, total_files, phase="chunking", partial_result={"files": file_records.copy()}
             )
 
+    resolved_enable_llm_summary = (
+        settings.INGEST_LLM_SUMMARY_ENABLED if enable_llm_summary is None else enable_llm_summary
+    )
+    enrichment_result = await enrich_documents_module.enrich_documents(
+        folder,
+        doc_paths,
+        enabled=resolved_enable_llm_summary,
+        max_concurrency=max_concurrency or enrich_documents_module.DEFAULT_MAX_CONCURRENCY,
+        progress_callback=progress_callback,
+    )
+
     return {
         "files_processed": total_files,
         "chunks_indexed": total_chunks,
-        "errors": errors,
+        "errors": errors + enrichment_result["errors"],
+        "llm_summary_enabled": enrichment_result["enabled"],
+        "files_summarized": enrichment_result["files_summarized"],
+        "files_skipped_unchanged": enrichment_result["files_skipped_unchanged"],
         "files": file_records,
+        "enrichment_files": enrichment_result["files"],
     }

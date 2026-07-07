@@ -18,6 +18,10 @@ router = APIRouter(prefix="/ingest", tags=["ingest"])
 
 class IngestDocumentsRequest(BaseModel):
     folder_path: str
+    # Per-request override for settings.INGEST_LLM_SUMMARY_ENABLED -- see
+    # IngestCodeRequest's identical field for why this is opt-out, not opt-in.
+    enable_llm_summary: bool | None = None
+    max_concurrency: int | None = None
 
 
 class IngestCodeRequest(BaseModel):
@@ -40,7 +44,15 @@ async def ingest_documents_endpoint(request: IngestDocumentsRequest, user: dict 
     job_id = str(uuid.uuid4())
     register_job(job_id, kind="documents", source_path=request.folder_path)
     watcher.mark_path_active(request.folder_path, job_id)
-    runner.run_tracked(job_id, run_document_ingestion(job_id, request.folder_path))
+    runner.run_tracked(
+        job_id,
+        run_document_ingestion(
+            job_id,
+            request.folder_path,
+            request.enable_llm_summary,
+            request.max_concurrency or DEFAULT_MAX_CONCURRENCY,
+        ),
+    )
     return {"job_id": job_id, "status": "pending"}
 
 

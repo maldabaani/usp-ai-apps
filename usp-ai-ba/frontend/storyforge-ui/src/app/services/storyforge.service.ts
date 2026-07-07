@@ -151,8 +151,8 @@ export interface IngestResult {
   chunking_files_skipped_unchanged?: number;
   // Tier 1 (mechanical chunking) per-file outcomes.
   files?: IngestFileRecord[];
-  // Tier 2 (LLM-summary enrichment) per-file outcomes -- absent for
-  // document ingestion, which has no enrichment tier.
+  // Tier 2 (LLM-summary enrichment) per-file outcomes -- present for both
+  // "code" and "documents" jobs.
   enrichment_files?: IngestFileRecord[];
 }
 
@@ -160,9 +160,8 @@ export interface IngestStatus {
   status: string;
   kind: string;
   source_path: string;
-  // Which tier is currently running for a "code" job ("documents" jobs are
-  // always "chunking", since they have no enrichment tier). Only meaningful
-  // while status is "running".
+  // Which tier is currently running. Only meaningful while status is
+  // "running".
   phase: 'chunking' | 'enrichment' | null;
   progress: { done: number; total: number };
   errors: string[];
@@ -185,9 +184,15 @@ const API_BASE_URL = environment.apiBaseUrl;
 export class StoryForgeService {
   constructor(private http: HttpClient) {}
 
-  ingestDocuments(folderPath: string): Observable<{ job_id: string; status: string }> {
+  ingestDocuments(
+    folderPath: string,
+    enableLlmSummary?: boolean,
+    maxConcurrency?: number
+  ): Observable<{ job_id: string; status: string }> {
     return this.http.post<{ job_id: string; status: string }>(`${API_BASE_URL}/ingest/documents`, {
       folder_path: folderPath,
+      enable_llm_summary: enableLlmSummary ?? null,
+      max_concurrency: maxConcurrency ?? null,
     });
   }
 

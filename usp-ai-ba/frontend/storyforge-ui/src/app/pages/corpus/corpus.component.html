@@ -53,6 +53,8 @@
       </table>
       <p class="corpus-hint" *ngIf="manuals.length">
         Deleting here does not prevent re-ingestion from adding a file back if it still exists on disk.
+        Unlike code, documents have no "force re-chunk" override -- a stale/stuck LLM summary can only be
+        refreshed by an actual content change to the source file.
       </p>
     </div>
 

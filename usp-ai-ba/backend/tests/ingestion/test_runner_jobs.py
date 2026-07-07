@@ -33,7 +33,7 @@ def _isolated_state(tmp_path, monkeypatch):
 
 
 def test_successful_document_ingestion_bumps_generation_exactly_once(monkeypatch, tmp_path):
-    async def fake_ingest_documents(folder_path, progress_callback=None):
+    async def fake_ingest_documents(folder_path, progress_callback=None, enable_llm_summary=None, max_concurrency=None):
         return {"errors": []}
 
     monkeypatch.setattr(runner_jobs, "ingest_documents", fake_ingest_documents)
@@ -45,7 +45,7 @@ def test_successful_document_ingestion_bumps_generation_exactly_once(monkeypatch
 
 
 def test_failed_document_ingestion_does_not_bump_generation(monkeypatch, tmp_path):
-    async def fake_ingest_documents(folder_path, progress_callback=None):
+    async def fake_ingest_documents(folder_path, progress_callback=None, enable_llm_summary=None, max_concurrency=None):
         raise RuntimeError("boom")
 
     monkeypatch.setattr(runner_jobs, "ingest_documents", fake_ingest_documents)

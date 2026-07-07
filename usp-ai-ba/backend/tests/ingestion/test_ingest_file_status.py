@@ -103,7 +103,7 @@ def test_ingest_code_reports_per_file_success_and_error_status(tmp_path, fake_st
 def test_ingest_documents_reports_per_file_success_status(tmp_path, fake_stores):
     _write_docx(tmp_path, "manual.docx", ["Some document content."])
 
-    result = asyncio.run(ingest_documents.ingest_documents(str(tmp_path)))
+    result = asyncio.run(ingest_documents.ingest_documents(str(tmp_path), enable_llm_summary=False))
 
     assert result["files"] == [{"path": "manual.docx", "status": "success", "chunks": 1}]
 
@@ -116,7 +116,7 @@ def test_ingest_documents_reports_error_status_on_exception(tmp_path, fake_store
 
     monkeypatch.setattr(ingest_documents, "_chunk_document", fake_chunk_document)
 
-    result = asyncio.run(ingest_documents.ingest_documents(str(tmp_path)))
+    result = asyncio.run(ingest_documents.ingest_documents(str(tmp_path), enable_llm_summary=False))
 
     assert result["files"] == [{"path": "manual.docx", "status": "error", "reason": "boom"}]
     assert result["errors"][0].endswith("boom")
@@ -170,7 +170,11 @@ def test_ingest_documents_progress_callback_reports_chunking_phase(tmp_path, fak
     async def progress_callback(done, total, *, phase, partial_result):
         calls.append((phase, partial_result))
 
-    asyncio.run(ingest_documents.ingest_documents(str(tmp_path), progress_callback=progress_callback))
+    asyncio.run(
+        ingest_documents.ingest_documents(
+            str(tmp_path), progress_callback=progress_callback, enable_llm_summary=False
+        )
+    )
 
     assert len(calls) == 1
     phase, partial_result = calls[0]

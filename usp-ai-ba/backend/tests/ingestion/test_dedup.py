@@ -242,10 +242,10 @@ def test_pdf_reingesting_unchanged_folder_does_not_grow_chunk_count(tmp_path, fa
     monkeypatch.setattr(ingest_documents, "_chunk_document", fake_chunk_document)
     (tmp_path / "manual.pdf").write_bytes(b"%PDF-1.4 fake")
 
-    asyncio.run(ingest_documents.ingest_documents(str(tmp_path)))
+    asyncio.run(ingest_documents.ingest_documents(str(tmp_path), enable_llm_summary=False))
     first_count = len(fake_stores["manuals"].docs)
 
-    asyncio.run(ingest_documents.ingest_documents(str(tmp_path)))
+    asyncio.run(ingest_documents.ingest_documents(str(tmp_path), enable_llm_summary=False))
     second_count = len(fake_stores["manuals"].docs)
 
     assert first_count == 2
@@ -265,11 +265,11 @@ def test_pdf_deleted_from_folder_purges_its_chunks(tmp_path, fake_stores, monkey
     (tmp_path / "a.pdf").write_bytes(b"%PDF-1.4 fake a")
     (tmp_path / "b.pdf").write_bytes(b"%PDF-1.4 fake b")
 
-    asyncio.run(ingest_documents.ingest_documents(str(tmp_path)))
+    asyncio.run(ingest_documents.ingest_documents(str(tmp_path), enable_llm_summary=False))
     assert len(fake_stores["manuals"].docs) == 2
 
     (tmp_path / "b.pdf").unlink()
-    asyncio.run(ingest_documents.ingest_documents(str(tmp_path)))
+    asyncio.run(ingest_documents.ingest_documents(str(tmp_path), enable_llm_summary=False))
 
     remaining_sources = {doc.metadata.get("source") for doc in fake_stores["manuals"].docs.values()}
     assert remaining_sources == {"a.pdf"}
@@ -288,11 +288,11 @@ def test_mixed_format_folder_reingesting_does_not_grow_chunk_count(tmp_path, fak
     (tmp_path / "manual.pdf").write_bytes(b"%PDF-1.4 fake")
     (tmp_path / "spec.docx").write_bytes(b"fake docx bytes")
 
-    asyncio.run(ingest_documents.ingest_documents(str(tmp_path)))
+    asyncio.run(ingest_documents.ingest_documents(str(tmp_path), enable_llm_summary=False))
     first_count = len(fake_stores["manuals"].docs)
     sources = {doc.metadata.get("source") for doc in fake_stores["manuals"].docs.values()}
 
-    asyncio.run(ingest_documents.ingest_documents(str(tmp_path)))
+    asyncio.run(ingest_documents.ingest_documents(str(tmp_path), enable_llm_summary=False))
     second_count = len(fake_stores["manuals"].docs)
 
     assert first_count > 0

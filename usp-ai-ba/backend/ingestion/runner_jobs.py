@@ -16,14 +16,24 @@ from ingestion.ingest_code import ingest_code
 from ingestion.ingest_documents import ingest_documents
 
 
-async def run_document_ingestion(job_id: str, folder_path: str) -> None:
+async def run_document_ingestion(
+    job_id: str,
+    folder_path: str,
+    enable_llm_summary: bool | None = None,
+    max_concurrency: int | None = None,
+) -> None:
     async def on_progress(done: int, total: int, *, phase: str, partial_result: dict) -> None:
         ingest_jobs.update_progress(job_id, done, total)
         ingest_jobs.set_phase(job_id, phase)
         ingest_jobs.update_result(job_id, partial_result)
 
     try:
-        result = await ingest_documents(folder_path, progress_callback=on_progress)
+        result = await ingest_documents(
+            folder_path,
+            progress_callback=on_progress,
+            enable_llm_summary=enable_llm_summary,
+            max_concurrency=max_concurrency,
+        )
         ingest_jobs.finish_job(job_id, result)
         ingestion_generation.bump()
         job = ingest_jobs.get_ingest_job(job_id)
