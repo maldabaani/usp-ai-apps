@@ -265,6 +265,37 @@ def test_changed_file_content_is_resummarized(tmp_path, monkeypatch, fake_store)
     assert result["files_summarized"] == 1
 
 
+def test_progress_callback_fires_once_per_file_with_enrichment_phase(tmp_path, monkeypatch, fake_store):
+    _write(tmp_path, "a.py", "def a(): pass\n")
+    _write(tmp_path, "b.py", "def b(): pass\n")
+    agent = _StubAgent()
+    monkeypatch.setattr(enrich, "build_agents", lambda: [agent])
+
+    calls: list[tuple] = []
+
+    async def progress_callback(done, total, *, phase, partial_result):
+        calls.append((done, total, phase, partial_result))
+
+    result = asyncio.run(
+        enrich.enrich_repository(
+            tmp_path,
+            [tmp_path / "a.py", tmp_path / "b.py"],
+            enabled=True,
+            manifests_root=tmp_path / "manifests",
+            progress_callback=progress_callback,
+        )
+    )
+
+    assert len(calls) == 2
+    assert all(phase == "enrichment" for _done, _total, phase, _partial in calls)
+    assert all(total == 2 for _done, total, _phase, _partial in calls)
+    # Completion order under the semaphore is nondeterministic, so assert
+    # membership as a set of paths rather than a fixed order.
+    last_partial = calls[-1][3]
+    assert {f["path"] for f in last_partial["enrichment_files"]} == {"a.py", "b.py"}
+    assert {f["path"] for f in result["files"]} == {"a.py", "b.py"}
+
+
 def test_oversized_file_is_chunked_and_summaries_joined(tmp_path, monkeypatch, fake_store):
     huge_content = "\n".join(f"line_{i} = {i}" for i in range(1000))
     _write(tmp_path, "big.py", huge_content)

@@ -110,3 +110,59 @@ def test_ingest_documents_reports_error_status_on_exception(tmp_path, fake_store
 
     assert result["files"] == [{"path": "manual.md", "status": "error", "reason": "boom"}]
     assert result["errors"][0].endswith("boom")
+
+
+def test_ingest_code_progress_callback_reports_both_phases(tmp_path, fake_stores, monkeypatch):
+    _write(
+        tmp_path,
+        "Widget.java",
+        "package com.example;\n\npublic class Widget {\n    public void alpha() { int x = 1; }\n}\n",
+    )
+
+    class _StubAgent:
+        def name(self):
+            return "stub-agent"
+
+        async def extract(self, file):
+            from ingestion.enrichment.agents.base import success_result
+
+            return success_result(file, self.name(), "a summary", 0, None, None)
+
+    from ingestion.enrichment import enrich
+
+    monkeypatch.setattr(enrich, "build_agents", lambda: [_StubAgent()])
+
+    calls: list[tuple] = []
+
+    async def progress_callback(done, total, *, phase, partial_result):
+        calls.append((phase, partial_result))
+
+    asyncio.run(
+        ingest_code.ingest_code(
+            str(tmp_path), progress_callback=progress_callback, enable_llm_summary=True
+        )
+    )
+
+    phases = [phase for phase, _partial in calls]
+    assert "chunking" in phases
+    assert "enrichment" in phases
+    chunking_partials = [partial for phase, partial in calls if phase == "chunking"]
+    assert any("files" in partial for partial in chunking_partials)
+    enrichment_partials = [partial for phase, partial in calls if phase == "enrichment"]
+    assert any("enrichment_files" in partial for partial in enrichment_partials)
+
+
+def test_ingest_documents_progress_callback_reports_chunking_phase(tmp_path, fake_stores):
+    _write(tmp_path, "manual.md", "# Title\n\nSome markdown content.\n")
+
+    calls: list[tuple] = []
+
+    async def progress_callback(done, total, *, phase, partial_result):
+        calls.append((phase, partial_result))
+
+    asyncio.run(ingest_documents.ingest_documents(str(tmp_path), progress_callback=progress_callback))
+
+    assert len(calls) == 1
+    phase, partial_result = calls[0]
+    assert phase == "chunking"
+    assert partial_result["files"] == [{"path": "manual.md", "status": "success", "chunks": 1}]

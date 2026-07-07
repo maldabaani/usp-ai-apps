@@ -27,8 +27,8 @@ def _token(username: str = "ingest_test_user", role: str = "user") -> str:
     return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
 
 
-def _auth_headers() -> dict:
-    return {"Authorization": f"Bearer {_token()}"}
+def _auth_headers(role: str = "user") -> dict:
+    return {"Authorization": f"Bearer {_token(role=role)}"}
 
 
 @pytest.fixture(autouse=True)
@@ -157,3 +157,53 @@ def test_history_returns_most_recent_first():
 
     job_ids = [entry["job_id"] for entry in resp.json()]
     assert job_ids == ["newer", "older"]
+
+
+def test_clear_history_endpoint_requires_admin():
+    ingest_job_registry.record_completed_job("job-7", "documents", "done", {}, [])
+
+    resp = client.delete("/api/ingest/history", headers=_auth_headers(role="user"))
+
+    assert resp.status_code == 403
+    assert len(ingest_job_registry.list_history()) == 1
+
+
+def test_clear_history_endpoint_wipes_all_entries():
+    ingest_job_registry.record_completed_job("job-8", "documents", "done", {}, [])
+    ingest_job_registry.record_completed_job("job-9", "code", "error", None, ["boom"])
+
+    resp = client.delete("/api/ingest/history", headers=_auth_headers(role="admin"))
+
+    assert resp.status_code == 204
+    assert ingest_job_registry.list_history() == []
+
+
+def test_status_endpoint_includes_source_path_kind_and_phase():
+    ingest_jobs.register_job("job-10", kind="code", source_path="/tmp/some-repo")
+
+    resp = client.get("/api/ingest/status/job-10", headers=_auth_headers())
+
+    body = resp.json()
+    assert body["kind"] == "code"
+    assert body["source_path"] == "/tmp/some-repo"
+    assert body["phase"] is None
+
+
+def test_history_entry_includes_source_path():
+    ingest_job_registry.record_completed_job("job-11", "code", "done", {}, [], source_path="/tmp/some-repo")
+
+    resp = client.get("/api/ingest/history", headers=_auth_headers())
+
+    assert resp.json()[0]["source_path"] == "/tmp/some-repo"
+
+
+def test_ingest_code_endpoint_threads_source_path_into_job(monkeypatch, tmp_path):
+    async def _never_finishes(repo_path, progress_callback=None, **kwargs):
+        await asyncio.sleep(10)
+
+    monkeypatch.setattr(runner_jobs, "ingest_code", _never_finishes)
+
+    resp = client.post("/api/ingest/code", json={"repo_path": str(tmp_path)}, headers=_auth_headers())
+
+    job_id = resp.json()["job_id"]
+    assert ingest_jobs.get_ingest_job(job_id)["source_path"] == str(tmp_path)

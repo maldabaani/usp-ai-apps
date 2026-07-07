@@ -73,6 +73,7 @@ async def enrich_repository(
     enabled: bool,
     max_concurrency: int = DEFAULT_MAX_CONCURRENCY,
     manifests_root: Path | None = None,
+    progress_callback=None,
 ) -> dict:
     """Runs tier-2 LLM-summary enrichment across every file in `files`
     (already filtered to eligible extensions by ingest_code.py's own file
@@ -177,7 +178,24 @@ async def enrich_repository(
                 errors.append(f"{relative_path}: {exc}")
                 file_records.append({"path": relative_path, "status": "error", "reason": str(exc)})
 
-    await asyncio.gather(*[process_one(path) for path in files])
+    done_count = 0
+
+    async def process_and_report(path: Path) -> None:
+        nonlocal done_count
+        await process_one(path)
+        # asyncio is single-threaded cooperative scheduling: done_count += 1
+        # and file_records.append(...) (inside process_one) are both
+        # synchronous, non-awaiting statements, so no two of these
+        # semaphore-gated concurrent tasks can interleave mid-update -- same
+        # guarantee files_summarized/files_skipped_unchanged above already
+        # rely on. No asyncio.Lock needed.
+        done_count += 1
+        if progress_callback:
+            await progress_callback(
+                done_count, len(files), phase="enrichment", partial_result={"enrichment_files": list(file_records)}
+            )
+
+    await asyncio.gather(*[process_and_report(path) for path in files])
 
     manifest.save(manifests_root, repo, current_hashes)
     file_records.sort(key=lambda record: record["path"])

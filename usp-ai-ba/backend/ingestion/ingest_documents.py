@@ -191,7 +191,9 @@ async def ingest_documents(
             file_records.append({"path": relative_source, "status": "error", "reason": str(exc)})
 
         if progress_callback:
-            await progress_callback(index, total_files)
+            await progress_callback(
+                index, total_files, phase="chunking", partial_result={"files": file_records.copy()}
+            )
 
     return {
         "files_processed": total_files,

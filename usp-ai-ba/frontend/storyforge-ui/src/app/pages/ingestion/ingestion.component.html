@@ -79,6 +79,8 @@
       <span class="sf-badge sf-badge-{{ activeStatus.status }}">{{ activeStatus.status }}</span>
     </div>
     <p class="ing-mono">{{ activeJobId }}</p>
+    <p class="ing-mono" *ngIf="activeStatus.source_path">{{ activeStatus.source_path }}</p>
+    <p class="ing-muted" *ngIf="phaseLabel(activeStatus)">Phase: {{ phaseLabel(activeStatus) }}</p>
 
     <div class="ing-progress-bar" *ngIf="activeStatus.progress.total">
       <div class="ing-progress-fill" [style.width.%]="progressPercent(activeStatus)"></div>
@@ -215,7 +217,18 @@
   </div>
 
   <div class="sf-card">
-    <h2>History</h2>
+    <div class="ing-active-header">
+      <h2>History</h2>
+      <button
+        class="sf-btn sf-btn-danger"
+        *ngIf="history.length"
+        [disabled]="clearingHistory"
+        (click)="clearHistory()"
+      >
+        {{ clearingHistory ? 'Clearing…' : 'Clear All' }}
+      </button>
+    </div>
+    <p class="sf-error-text" *ngIf="clearHistoryError">{{ clearHistoryError }}</p>
     <p *ngIf="historyLoading">Loading…</p>
     <p *ngIf="!historyLoading && !history.length" class="ing-muted">No ingestion runs yet.</p>
     <table class="sf-table" *ngIf="!historyLoading && history.length">
@@ -223,6 +236,7 @@
         <tr>
           <th>Kind</th>
           <th>Status</th>
+          <th>Location</th>
           <th>Finished</th>
           <th></th>
         </tr>
@@ -232,11 +246,12 @@
           <tr class="ing-history-row" (click)="toggleHistoryDetails(entry.job_id)">
             <td>{{ entry.kind }}</td>
             <td><span class="sf-badge sf-badge-{{ entry.status }}">{{ entry.status }}</span></td>
+            <td class="ing-mono">{{ entry.source_path || '—' }}</td>
             <td>{{ relativeTime(entry.finished_at) }}</td>
             <td>{{ expandedHistoryJobId === entry.job_id ? '▾' : '▸' }}</td>
           </tr>
           <tr *ngIf="expandedHistoryJobId === entry.job_id">
-            <td colspan="4">
+            <td colspan="5">
               <ul class="ing-error-list" *ngIf="entry.errors?.length && !hasFileBreakdown(entry.result)">
                 <li *ngFor="let error of entry.errors">{{ error }}</li>
               </ul>

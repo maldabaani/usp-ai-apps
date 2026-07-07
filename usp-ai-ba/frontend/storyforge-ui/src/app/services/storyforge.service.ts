@@ -128,7 +128,11 @@ export interface StoryForgeJobState {
 
 export interface IngestFileRecord {
   path: string;
-  status: 'success' | 'skipped' | 'error';
+  // Tier 2 (enrichment) reports a successful file as 'summarized', not
+  // 'success' -- ingestion.component.ts's displayFiles() normalizes this to
+  // 'success' for display (badges/counts/filter), so both raw values must be
+  // accepted here.
+  status: 'success' | 'summarized' | 'skipped' | 'error';
   reason?: string;
   chunks?: number;
 }
@@ -151,6 +155,12 @@ export interface IngestResult {
 
 export interface IngestStatus {
   status: string;
+  kind: string;
+  source_path: string;
+  // Which tier is currently running for a "code" job ("documents" jobs are
+  // always "chunking", since they have no enrichment tier). Only meaningful
+  // while status is "running".
+  phase: 'chunking' | 'enrichment' | null;
   progress: { done: number; total: number };
   errors: string[];
   result: IngestResult | null;
@@ -163,6 +173,7 @@ export interface IngestHistoryEntry {
   result: IngestResult | null;
   errors: string[];
   finished_at: number;
+  source_path: string;
 }
 
 const API_BASE_URL = environment.apiBaseUrl;
@@ -199,6 +210,10 @@ export class StoryForgeService {
 
   getIngestHistory(): Observable<IngestHistoryEntry[]> {
     return this.http.get<IngestHistoryEntry[]>(`${API_BASE_URL}/ingest/history`);
+  }
+
+  clearIngestHistory(): Observable<void> {
+    return this.http.delete<void>(`${API_BASE_URL}/ingest/history`);
   }
 
   submitAssessment(

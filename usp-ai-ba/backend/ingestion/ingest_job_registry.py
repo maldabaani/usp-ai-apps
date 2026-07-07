@@ -48,7 +48,9 @@ def _save() -> None:
         json.dump(_entries, f)
 
 
-def record_completed_job(job_id: str, kind: str, status: str, result: dict | None, errors: list[str]) -> None:
+def record_completed_job(
+    job_id: str, kind: str, status: str, result: dict | None, errors: list[str], source_path: str = ""
+) -> None:
     entries = _load()
     entries.append(
         {
@@ -58,6 +60,7 @@ def record_completed_job(job_id: str, kind: str, status: str, result: dict | Non
             "result": result,
             "errors": errors,
             "finished_at": time.time(),
+            "source_path": source_path,
         }
     )
     _save()
@@ -65,3 +68,14 @@ def record_completed_job(job_id: str, kind: str, status: str, result: dict | Non
 
 def list_history() -> list[dict]:
     return list(reversed(_load()))
+
+
+def clear_history() -> int:
+    """Wipes every persisted history entry. Irreversible -- no soft-delete or
+    audit trail, matching this codebase's other hard-delete precedents (e.g.
+    api/routers/corpus.py's delete-source endpoint)."""
+    global _entries
+    count = len(_load())
+    _entries = []
+    _save()
+    return count

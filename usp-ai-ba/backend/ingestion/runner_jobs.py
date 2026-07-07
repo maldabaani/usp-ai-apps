@@ -10,31 +10,41 @@ branch, since a failed run didn't actually change the corpus.
 """
 from __future__ import annotations
 
-from api.ingest_jobs import fail_job, finish_job, update_progress
+from api import ingest_jobs
 from ingestion import ingest_job_registry, ingestion_generation
 from ingestion.ingest_code import ingest_code
 from ingestion.ingest_documents import ingest_documents
 
 
 async def run_document_ingestion(job_id: str, folder_path: str) -> None:
-    async def on_progress(done: int, total: int) -> None:
-        update_progress(job_id, done, total)
+    async def on_progress(done: int, total: int, *, phase: str, partial_result: dict) -> None:
+        ingest_jobs.update_progress(job_id, done, total)
+        ingest_jobs.set_phase(job_id, phase)
+        ingest_jobs.update_result(job_id, partial_result)
 
     try:
         result = await ingest_documents(folder_path, progress_callback=on_progress)
-        finish_job(job_id, result)
+        ingest_jobs.finish_job(job_id, result)
         ingestion_generation.bump()
-        ingest_job_registry.record_completed_job(job_id, "documents", "done", result, result.get("errors", []))
+        job = ingest_jobs.get_ingest_job(job_id)
+        ingest_job_registry.record_completed_job(
+            job_id, "documents", job["status"], result, result.get("errors", []), source_path=job["source_path"]
+        )
     except Exception as exc:  # noqa: BLE001 - surfaced via the job status endpoint
-        fail_job(job_id, str(exc))
-        ingest_job_registry.record_completed_job(job_id, "documents", "error", None, [str(exc)])
+        ingest_jobs.fail_job(job_id, str(exc))
+        job = ingest_jobs.get_ingest_job(job_id)
+        ingest_job_registry.record_completed_job(
+            job_id, "documents", "error", job["result"], job["errors"], source_path=job["source_path"]
+        )
 
 
 async def run_code_ingestion(
     job_id: str, repo_path: str, enable_llm_summary: bool | None, max_concurrency: int
 ) -> None:
-    async def on_progress(done: int, total: int) -> None:
-        update_progress(job_id, done, total)
+    async def on_progress(done: int, total: int, *, phase: str, partial_result: dict) -> None:
+        ingest_jobs.update_progress(job_id, done, total)
+        ingest_jobs.set_phase(job_id, phase)
+        ingest_jobs.update_result(job_id, partial_result)
 
     try:
         result = await ingest_code(
@@ -43,9 +53,15 @@ async def run_code_ingestion(
             enable_llm_summary=enable_llm_summary,
             max_concurrency=max_concurrency,
         )
-        finish_job(job_id, result)
+        ingest_jobs.finish_job(job_id, result)
         ingestion_generation.bump()
-        ingest_job_registry.record_completed_job(job_id, "code", "done", result, result.get("errors", []))
+        job = ingest_jobs.get_ingest_job(job_id)
+        ingest_job_registry.record_completed_job(
+            job_id, "code", job["status"], result, result.get("errors", []), source_path=job["source_path"]
+        )
     except Exception as exc:  # noqa: BLE001 - surfaced via the job status endpoint
-        fail_job(job_id, str(exc))
-        ingest_job_registry.record_completed_job(job_id, "code", "error", None, [str(exc)])
+        ingest_jobs.fail_job(job_id, str(exc))
+        job = ingest_jobs.get_ingest_job(job_id)
+        ingest_job_registry.record_completed_job(
+            job_id, "code", "error", job["result"], job["errors"], source_path=job["source_path"]
+        )

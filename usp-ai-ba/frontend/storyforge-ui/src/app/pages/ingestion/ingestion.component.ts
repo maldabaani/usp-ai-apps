@@ -46,6 +46,8 @@ export class IngestionComponent implements OnInit, OnDestroy {
   history: IngestHistoryEntry[] = [];
   historyLoading = true;
   expandedHistoryJobId: string | null = null;
+  clearingHistory = false;
+  clearHistoryError = '';
 
   fileStatusFilter: FileStatusFilter = 'all';
   fileSearch = '';
@@ -239,10 +241,40 @@ export class IngestionComponent implements OnInit, OnDestroy {
     this.expandedHistoryJobId = this.expandedHistoryJobId === jobId ? null : jobId;
   }
 
+  phaseLabel(status: IngestStatus | null): string {
+    if (!status || status.kind !== 'code') return '';
+    return status.phase === 'enrichment' ? 'Generating LLM summaries' : 'Chunking files';
+  }
+
+  clearHistory(): void {
+    if (!this.history.length || this.clearingHistory) return;
+    if (!confirm('Permanently clear all ingestion history? This cannot be undone.')) return;
+
+    this.clearingHistory = true;
+    this.clearHistoryError = '';
+    this.storyForgeService.clearIngestHistory().subscribe({
+      next: () => {
+        this.clearingHistory = false;
+        this.history = [];
+      },
+      error: (err) => {
+        this.clearingHistory = false;
+        this.clearHistoryError = err?.error?.detail || 'Failed to clear history.';
+      },
+    });
+  }
+
   private displayFiles(result: IngestResult | null): DisplayFileRecord[] {
     if (!result) return [];
     const mechanical = (result.files || []).map((f) => ({ ...f, tier: 'mechanical' as const }));
-    const enrichment = (result.enrichment_files || []).map((f) => ({ ...f, tier: 'enrichment' as const }));
+    // Tier 2 reports a successful file as 'summarized', not 'success' --
+    // normalized here so the shared badge/count/filter logic (which only
+    // ever checks for 'success') treats a summarized file as a success too.
+    const enrichment = (result.enrichment_files || []).map((f) => ({
+      ...f,
+      status: f.status === 'summarized' ? ('success' as const) : f.status,
+      tier: 'enrichment' as const,
+    }));
     return [...mechanical, ...enrichment];
   }
 

@@ -512,7 +512,9 @@ async def ingest_code(
         await flush()
 
         if progress_callback:
-            await progress_callback(index, total_files)
+            await progress_callback(
+                index, total_files, phase="chunking", partial_result={"files": file_records.copy()}
+            )
 
     await flush(force=True)
 
@@ -520,7 +522,11 @@ async def ingest_code(
         settings.INGEST_LLM_SUMMARY_ENABLED if enable_llm_summary is None else enable_llm_summary
     )
     enrichment_result = await enrich.enrich_repository(
-        repo, files, enabled=resolved_enable_llm_summary, max_concurrency=max_concurrency
+        repo,
+        files,
+        enabled=resolved_enable_llm_summary,
+        max_concurrency=max_concurrency,
+        progress_callback=progress_callback,
     )
 
     return {
