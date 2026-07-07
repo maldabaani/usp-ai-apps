@@ -53,7 +53,7 @@ export class IngestionComponent implements OnInit, OnDestroy {
   fileSearch = '';
 
   watchTargets: WatchTarget[] = [];
-  watchTargetsLoading = true;
+  // watchTargetsLoading = true;
   watchPath = '';
   watchKind: 'documents' | 'code' = 'documents';
   addingWatchTarget = false;
@@ -68,56 +68,56 @@ export class IngestionComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.loadHistory();
-    this.loadWatchTargets();
+    // this.loadWatchTargets();
   }
 
   ngOnDestroy(): void {
     this.stopPolling();
   }
 
-  loadWatchTargets(): void {
-    this.watchTargetsLoading = true;
-    this.watchService.listTargets().subscribe({
-      next: (targets) => {
-        this.watchTargets = targets;
-        this.watchTargetsLoading = false;
-      },
-      error: () => {
-        this.watchTargetsLoading = false;
-      },
-    });
-  }
+  // loadWatchTargets(): void {
+  //   this.watchTargetsLoading = true;
+  //   this.watchService.listTargets().subscribe({
+  //     next: (targets) => {
+  //       this.watchTargets = targets;
+  //       this.watchTargetsLoading = false;
+  //     },
+  //     error: () => {
+  //       this.watchTargetsLoading = false;
+  //     },
+  //   });
+  // }
 
-  addWatchTarget(): void {
-    if (!this.watchPath.trim() || this.addingWatchTarget) return;
-    this.addingWatchTarget = true;
-    this.watchError = '';
+  // addWatchTarget(): void {
+  //   if (!this.watchPath.trim() || this.addingWatchTarget) return;
+  //   this.addingWatchTarget = true;
+  //   this.watchError = '';
 
-    this.watchService.addTarget(this.watchPath.trim(), this.watchKind).subscribe({
-      next: () => {
-        this.addingWatchTarget = false;
-        this.watchPath = '';
-        this.loadWatchTargets();
-      },
-      error: (err) => {
-        this.addingWatchTarget = false;
-        this.watchError = err?.error?.detail || 'Failed to add watched path.';
-      },
-    });
-  }
+  //   this.watchService.addTarget(this.watchPath.trim(), this.watchKind).subscribe({
+  //     next: () => {
+  //       this.addingWatchTarget = false;
+  //       this.watchPath = '';
+  //       this.loadWatchTargets();
+  //     },
+  //     error: (err) => {
+  //       this.addingWatchTarget = false;
+  //       this.watchError = err?.error?.detail || 'Failed to add watched path.';
+  //     },
+  //   });
+  // }
 
-  toggleWatchTarget(target: WatchTarget): void {
-    this.watchService.setEnabled(target.id, !target.enabled).subscribe({
-      next: () => this.loadWatchTargets(),
-    });
-  }
+  // toggleWatchTarget(target: WatchTarget): void {
+  //   this.watchService.setEnabled(target.id, !target.enabled).subscribe({
+  //     next: () => this.loadWatchTargets(),
+  //   });
+  // }
 
-  removeWatchTarget(target: WatchTarget): void {
-    if (!confirm(`Stop watching ${target.path}?`)) return;
-    this.watchService.deleteTarget(target.id).subscribe({
-      next: () => this.loadWatchTargets(),
-    });
-  }
+  // removeWatchTarget(target: WatchTarget): void {
+  //   if (!confirm(`Stop watching ${target.path}?`)) return;
+  //   this.watchService.deleteTarget(target.id).subscribe({
+  //     next: () => this.loadWatchTargets(),
+  //   });
+  // }
 
   loadHistory(): void {
     this.historyLoading = true;
