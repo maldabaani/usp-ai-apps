@@ -42,7 +42,12 @@ def _default_jwt_secret(jobs_dir: str) -> str:
 
 
 class Settings:
-    ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "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")
+    # Blank by default -- Claude is opt-in only. A previous hardcoded
+    # placeholder key here made "ANTHROPIC_API_KEY is non-blank" silently true
+    # on every install regardless of intent, which is why Claude kept getting
+    # selected (ingestion enrichment, Ask Technical/Business) even when the
+    # user had configured Ollama everywhere else.
+    ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
     CLAUDE_MODEL: str = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
 
     OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
@@ -66,14 +71,18 @@ class Settings:
     # stronger one for one-shot story generation) even though their defaults
     # happen to coincide today. OLLAMA_BASE_URL is shared (every local model
     # hits the same physical Ollama server -- two independently-configurable
-    # URLs for one server would be a bug, not a feature).
-    INGEST_OLLAMA_ENABLED: bool = os.getenv("INGEST_OLLAMA_ENABLED", "false").lower() == "true"
+    # URLs for one server would be a bug, not a feature). On by default so a
+    # fresh install has at least one enrichment agent configured without
+    # touching .env -- Claude is opt-in (see ANTHROPIC_API_KEY above), so
+    # Ollama is the only agent that can sensibly default to "on".
+    INGEST_OLLAMA_ENABLED: bool = os.getenv("INGEST_OLLAMA_ENABLED", "true").lower() == "true"
     INGEST_OLLAMA_MODEL: str = os.getenv("INGEST_OLLAMA_MODEL", "qwen2.5:14b")
 
-    # api/routers/ask.py's standing Ask Technical/Business endpoints: "claude"
-    # (default) uses ANTHROPIC_API_KEY/CLAUDE_MODEL, "ollama" uses
-    # OLLAMA_BASE_URL/OLLAMA_LLM_MODEL/OLLAMA_NUM_CTX above.
-    ASK_QA_MODEL: str = os.getenv("ASK_QA_MODEL", "claude")
+    # api/routers/ask.py's standing Ask Technical/Business endpoints: "ollama"
+    # (default) uses OLLAMA_BASE_URL/OLLAMA_LLM_MODEL/OLLAMA_NUM_CTX, "claude"
+    # uses ANTHROPIC_API_KEY/CLAUDE_MODEL above -- opt-in only, since Claude
+    # needs a real key configured first.
+    ASK_QA_MODEL: str = os.getenv("ASK_QA_MODEL", "ollama")
 
     # Shared HTTP request timeout for every LLM call in this app (Ask
     # Technical/Business's chat client, and ingestion/enrichment/'s Claude and

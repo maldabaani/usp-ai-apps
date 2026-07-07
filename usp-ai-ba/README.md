@@ -238,15 +238,15 @@ All backend configuration is environment-variable driven (`backend/.env`, loaded
 
 | Variable | Default | Description |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | _(none)_ | Not called anywhere in *this* pipeline (`clarify_node`/`generate_node` use `OLLAMA_LLM_MODEL` instead) — but it **is** required for ingestion's default (Claude) LLM-summary enrichment agent and Ask Technical/Business's default model |
-| `CLAUDE_MODEL` | `claude-sonnet-4-6` | Not used by this pipeline; used by ingestion's enrichment tier and Ask Technical/Business (exposed as `anthropic_model` on the settings screen) |
-| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL, shared by every local model (embeddings, clarify/generate, ingestion's optional enrichment agent, Ask's optional Ollama mode) |
+| `ANTHROPIC_API_KEY` | _(none)_ | Blank/opt-in by default — Claude is never used unless this is set to a real key. Not called anywhere in *this* pipeline (`clarify_node`/`generate_node` use `OLLAMA_LLM_MODEL` instead); when set, it enables Claude as an ingestion LLM-summary enrichment agent and as an `ASK_QA_MODEL=claude` option for Ask Technical/Business |
+| `CLAUDE_MODEL` | `claude-sonnet-4-6` | Not used by this pipeline; used by ingestion's enrichment tier and Ask Technical/Business (exposed as `anthropic_model` on the settings screen) when Claude is enabled |
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL, shared by every local model (embeddings, clarify/generate, ingestion's enrichment agent, Ask's default Ollama mode) |
 | `OLLAMA_EMBED_MODEL` | `nomic-embed-text` | Embedding model name, used for all RAG retrieval |
 | `OLLAMA_LLM_MODEL` | `qwen2.5:14b` | Chat model used by `clarify_node` and `generate_node`, both run at `temperature=0` with a fixed seed for reproducible output across runs of the same SDD |
-| `INGEST_OLLAMA_ENABLED` | `false` | Enables Ollama as a second agent (round-robin with Claude) for ingestion's optional per-file LLM-summary enrichment tier |
+| `INGEST_OLLAMA_ENABLED` | `true` | Enables Ollama as an agent for ingestion's optional per-file LLM-summary enrichment tier (on by default; round-robins with Claude too if `ANTHROPIC_API_KEY` is also set) |
 | `INGEST_OLLAMA_MODEL` | `qwen2.5:14b` | Model name for the above |
 | `INGEST_LLM_SUMMARY_ENABLED` | `true` | Whether ingestion runs its optional per-file LLM-summary enrichment tier at all (mechanical chunking always runs regardless) |
-| `ASK_QA_MODEL` | `claude` | `claude` or `ollama` — which model answers Ask Technical/Business. Editable from `/settings` (hot-reloads, no restart needed) |
+| `ASK_QA_MODEL` | `ollama` | `ollama` (default) or `claude` — which model answers Ask Technical/Business. `claude` requires a real `ANTHROPIC_API_KEY`. Editable from `/settings` (hot-reloads, no restart needed) |
 | `LLM_REQUEST_TIMEOUT_SECONDS` | `300` | Shared HTTP request timeout for every LLM call in this app (Ask, StoryForge's `generate_node`/`clarify_node`, ingestion's LLM-summary enrichment agents) — previously three separate hardcoded 120s constants that could kill a slow local Ollama response before it finished. Editable from `/settings` (hot-reloads, no restart needed) |
 | `CONVERSATION_HISTORY_CHAR_BUDGET` | `8000` | Character ceiling (not token — see `config.py`'s comment) for how much prior conversation history is folded into a follow-up Ask Technical/Business question; trimmed oldest-turn-first |
 | `CHROMA_PERSIST_PATH` | `./chroma_db` | On-disk path for the persistent ChromaDB store |
@@ -313,7 +313,7 @@ Both return `{"job_id": ..., "status": "pending"}` immediately; poll `GET /api/i
 - **HTML** is never indexed. `node_modules/`, `target/`, `dist/`, `.git/`, and similar build/dependency directories are always skipped.
 - Any chunk exceeding ~1500 tokens (~6000 chars) is further split with `RecursiveCharacterTextSplitter` (150-token overlap).
 
-**Optional LLM-summary enrichment** (`backend/ingestion/enrichment/`, `INGEST_LLM_SUMMARY_ENABLED`, on by default): after mechanical chunking, each eligible file is also sent to an LLM (Claude by default, optionally Ollama too) for a narrative business-logic summary, embedded into `sf_codebase` alongside the raw chunks. Incremental re-runs skip re-summarizing files whose content hasn't changed, via a per-repo content-hash manifest under `JOBS_DIR/.enrichment-manifests/`.
+**Optional LLM-summary enrichment** (`backend/ingestion/enrichment/`, `INGEST_LLM_SUMMARY_ENABLED`, on by default): after mechanical chunking, each eligible file is also sent to an LLM (Ollama by default, optionally Claude too) for a narrative business-logic summary, embedded into `sf_codebase` alongside the raw chunks. Incremental re-runs skip re-summarizing files whose content hasn't changed, via a per-repo content-hash manifest under `JOBS_DIR/.enrichment-manifests/`.
 
 ## API reference
 
