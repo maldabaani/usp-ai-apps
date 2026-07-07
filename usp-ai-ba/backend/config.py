@@ -75,6 +75,18 @@ class Settings:
     # OLLAMA_BASE_URL/OLLAMA_LLM_MODEL/OLLAMA_NUM_CTX above.
     ASK_QA_MODEL: str = os.getenv("ASK_QA_MODEL", "claude")
 
+    # Shared HTTP request timeout for every LLM call in this app (Ask
+    # Technical/Business's chat client, and ingestion/enrichment/'s Claude and
+    # Ollama extraction agents) -- previously three separate hardcoded
+    # REQUEST_TIMEOUT_SECONDS = 120 module constants (api/routers/ask.py,
+    # ingestion/enrichment/agents/{claude,ollama}_agent.py), which silently
+    # killed the connection before a slow local model (CPU-bound Ollama can
+    # run well under 15 tokens/sec) finished responding, discarding a real,
+    # already-in-progress answer. Centralized here so raising it for slow
+    # hardware is a one-line change (or a Settings-page edit) that every
+    # consumer picks up, instead of three files to hunt down and edit in sync.
+    LLM_REQUEST_TIMEOUT_SECONDS: int = int(os.getenv("LLM_REQUEST_TIMEOUT_SECONDS", "300"))
+
     # Character budget for how much prior conversation history
     # api/conversation_store.py's messages get folded into a follow-up Ask
     # Technical/Business request (api/routers/ask.py's

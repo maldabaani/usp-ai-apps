@@ -44,6 +44,7 @@ def _get_llm() -> ChatOllama:
             num_ctx=settings.OLLAMA_NUM_CTX,
             temperature=0,
             seed=BASE_SEED,
+            timeout=settings.LLM_REQUEST_TIMEOUT_SECONDS,
         )
         _llm_generation = settings.settings_generation
     return _llm

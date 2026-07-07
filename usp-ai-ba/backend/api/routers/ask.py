@@ -45,8 +45,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/ask", tags=["ask"])
 
-REQUEST_TIMEOUT_SECONDS = 120
-
 _NO_RESULTS_MESSAGE = (
     "No content has been ingested yet. Run code/manual ingestion first, then ask again."
 )
@@ -85,14 +83,14 @@ def _get_ask_chat() -> ChatAnthropic | ChatOllama:
                 model=settings.OLLAMA_LLM_MODEL,
                 base_url=settings.OLLAMA_BASE_URL,
                 num_ctx=settings.OLLAMA_NUM_CTX,
-                timeout=REQUEST_TIMEOUT_SECONDS,
+                timeout=settings.LLM_REQUEST_TIMEOUT_SECONDS,
                 temperature=0,
             )
         else:
             _ask_chat = ChatAnthropic(
                 model=settings.CLAUDE_MODEL,
                 api_key=settings.ANTHROPIC_API_KEY,
-                timeout=REQUEST_TIMEOUT_SECONDS,
+                timeout=settings.LLM_REQUEST_TIMEOUT_SECONDS,
                 temperature=0,
             )
         _ask_chat_generation = settings.settings_generation

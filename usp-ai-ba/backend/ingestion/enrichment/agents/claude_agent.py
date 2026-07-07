@@ -27,8 +27,6 @@ logger = logging.getLogger(__name__)
 
 NAME = "claude-logic-extractor"
 
-REQUEST_TIMEOUT_SECONDS = 120
-
 
 class ClaudeLogicExtractionAgent:
     def __init__(self) -> None:
@@ -63,6 +61,6 @@ class ClaudeLogicExtractionAgent:
         self._chat = ChatAnthropic(
             model=settings.CLAUDE_MODEL,
             api_key=settings.ANTHROPIC_API_KEY,
-            timeout=REQUEST_TIMEOUT_SECONDS,
+            timeout=settings.LLM_REQUEST_TIMEOUT_SECONDS,
         )
         self._built_at_generation = settings.settings_generation

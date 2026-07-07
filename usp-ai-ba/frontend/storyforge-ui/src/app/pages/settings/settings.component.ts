@@ -46,6 +46,7 @@ export class SettingsComponent implements OnInit {
   ingestOllamaEnabled = false;
   ingestOllamaModel = '';
   askQaModel = 'claude';
+  llmRequestTimeoutSeconds = 300;
   restartRequiredFields: string[] = [];
 
   // Ask Technical/Business prompt customization
@@ -192,6 +193,7 @@ export class SettingsComponent implements OnInit {
     this.ingestOllamaEnabled = s.ingest_ollama_enabled;
     this.ingestOllamaModel = s.ingest_ollama_model;
     this.askQaModel = s.ask_qa_model;
+    this.llmRequestTimeoutSeconds = s.llm_request_timeout_seconds;
     this.restartRequiredFields = s.restart_required_fields;
   }
 
@@ -223,6 +225,7 @@ export class SettingsComponent implements OnInit {
       ingest_ollama_enabled: this.ingestOllamaEnabled,
       ingest_ollama_model: this.ingestOllamaModel,
       ask_qa_model: this.askQaModel,
+      llm_request_timeout_seconds: this.llmRequestTimeoutSeconds,
     };
     // Leaving a key input untouched (still showing the mask) means "keep
     // the current secret" -- only send it if the user actually typed something new.

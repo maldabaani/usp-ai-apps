@@ -247,6 +247,7 @@ All backend configuration is environment-variable driven (`backend/.env`, loaded
 | `INGEST_OLLAMA_MODEL` | `qwen2.5:14b` | Model name for the above |
 | `INGEST_LLM_SUMMARY_ENABLED` | `true` | Whether ingestion runs its optional per-file LLM-summary enrichment tier at all (mechanical chunking always runs regardless) |
 | `ASK_QA_MODEL` | `claude` | `claude` or `ollama` — which model answers Ask Technical/Business. Editable from `/settings` (hot-reloads, no restart needed) |
+| `LLM_REQUEST_TIMEOUT_SECONDS` | `300` | Shared HTTP request timeout for every LLM call in this app (Ask, StoryForge's `generate_node`/`clarify_node`, ingestion's LLM-summary enrichment agents) — previously three separate hardcoded 120s constants that could kill a slow local Ollama response before it finished. Editable from `/settings` (hot-reloads, no restart needed) |
 | `CONVERSATION_HISTORY_CHAR_BUDGET` | `8000` | Character ceiling (not token — see `config.py`'s comment) for how much prior conversation history is folded into a follow-up Ask Technical/Business question; trimmed oldest-turn-first |
 | `CHROMA_PERSIST_PATH` | `./chroma_db` | On-disk path for the persistent ChromaDB store |
 | `MCP_SERVER_PATH` | _(empty)_ | Path to the ADO MCP server's Node.js entry script |

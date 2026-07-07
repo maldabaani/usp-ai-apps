@@ -34,7 +34,6 @@ logger = logging.getLogger(__name__)
 
 NAME = "ollama-logic-extractor"
 
-REQUEST_TIMEOUT_SECONDS = 120
 MAX_OUTPUT_TOKENS = 4096
 
 
@@ -73,6 +72,6 @@ class OllamaLogicExtractionAgent:
             base_url=settings.OLLAMA_BASE_URL,
             num_ctx=settings.OLLAMA_NUM_CTX,
             num_predict=MAX_OUTPUT_TOKENS,
-            timeout=REQUEST_TIMEOUT_SECONDS,
+            timeout=settings.LLM_REQUEST_TIMEOUT_SECONDS,
         )
         self._built_at_generation = settings.settings_generation

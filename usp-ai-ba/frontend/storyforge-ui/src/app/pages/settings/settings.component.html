@@ -138,6 +138,27 @@
       </div>
     </div>
 
+    <div class="sf-card">
+      <h2 class="sf-section-title">LLM Request Timeout</h2>
+      <div class="sf-field">
+        <label for="llmRequestTimeoutSeconds">Timeout (seconds)</label>
+        <input
+          id="llmRequestTimeoutSeconds"
+          class="sf-input"
+          type="number"
+          min="1"
+          [(ngModel)]="llmRequestTimeoutSeconds"
+        />
+        <p class="sf-hint">
+          Shared HTTP timeout for every LLM call in this app (Ask, StoryForge generation/clarification,
+          and ingestion's LLM-summary enrichment agents). Raise this if a slower local Ollama model
+          on your hardware needs more than 300 seconds to finish a response -- the request is
+          otherwise cut off before Ollama returns, even though it may still complete server-side.
+          Takes effect immediately, no restart needed.
+        </p>
+      </div>
+    </div>
+
     <p *ngIf="saveError" class="sf-error-text">{{ saveError }}</p>
     <p *ngIf="saved" class="sf-success-text">Settings saved.</p>
 

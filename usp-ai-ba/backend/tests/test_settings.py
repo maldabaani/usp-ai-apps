@@ -91,6 +91,31 @@ def test_put_settings_updates_ask_qa_model():
     assert get_resp.json()["ask_qa_model"] == "ollama"
 
 
+def test_get_settings_includes_llm_request_timeout_and_it_is_not_restart_required():
+    resp = client.get("/api/settings", headers={"Authorization": f"Bearer {_token('settings_test_user', 'user')}"})
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "llm_request_timeout_seconds" in body
+    assert "llm_request_timeout_seconds" not in body["restart_required_fields"]
+
+
+def test_put_settings_updates_llm_request_timeout_seconds():
+    resp = client.put(
+        "/api/settings",
+        json={"llm_request_timeout_seconds": 600},
+        headers={"Authorization": f"Bearer {_token('settings_test_admin', 'admin')}"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["llm_request_timeout_seconds"] == 600
+
+    get_resp = client.get(
+        "/api/settings", headers={"Authorization": f"Bearer {_token('settings_test_admin', 'admin')}"}
+    )
+    assert get_resp.json()["llm_request_timeout_seconds"] == 600
+
+
 def test_put_settings_updates_ingest_ollama_fields():
     resp = client.put(
         "/api/settings",
