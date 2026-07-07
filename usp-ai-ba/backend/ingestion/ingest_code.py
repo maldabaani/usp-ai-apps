@@ -429,6 +429,12 @@ async def ingest_code(
     ``enable_llm_summary`` defaults to settings.INGEST_LLM_SUMMARY_ENABLED
     when not given explicitly (a per-request override, e.g. for a quick
     raw-only re-index of a huge repo without the LLM-cost tier).
+
+    The returned dict's "files" list gives per-file tier-1 outcomes
+    (``{"path", "status": "success"|"error", "reason"}``, "reason" only
+    present on "error"); "enrichment_files" is tier 2's own per-file list
+    (see enrich.py's docstring for its richer status/reason vocabulary),
+    passed through unchanged so callers get one place to see both tiers.
     """
     repo = Path(repo_path)
     if not repo.is_dir():
@@ -456,6 +462,7 @@ async def ingest_code(
     chunks_indexed = 0
     entity_chunks_indexed = 0
     errors: list[str] = []
+    file_records: list[dict] = []
 
     async def flush(force: bool = False):
         nonlocal codebase_batch, entities_batch, chunks_indexed, entity_chunks_indexed
@@ -471,9 +478,9 @@ async def ingest_code(
             entities_batch = []
 
     for index, path in enumerate(files, start=1):
+        relative_path = str(path.relative_to(repo))
         try:
             result = chunk_file(path, repo)
-            relative_path = str(path.relative_to(repo))
             # Clear this file's prior raw-chunk set before adding its fresh
             # one -- deterministic IDs alone only upsert chunks that still
             # exist in this run; a renamed/removed method or a deleted file
@@ -496,9 +503,11 @@ async def ingest_code(
             if result.is_entity:
                 entities_batch.extend(result.documents)
             files_processed += 1
+            file_records.append({"path": relative_path, "status": "success"})
         except Exception as exc:  # noqa: BLE001 - surfaced to caller via errors list
             logger.exception("Failed to chunk %s", path)
             errors.append(f"{path}: {exc}")
+            file_records.append({"path": relative_path, "status": "error", "reason": str(exc)})
 
         await flush()
 
@@ -523,4 +532,6 @@ async def ingest_code(
         "llm_summary_enabled": enrichment_result["enabled"],
         "files_summarized": enrichment_result["files_summarized"],
         "files_skipped_unchanged": enrichment_result["files_skipped_unchanged"],
+        "files": file_records,
+        "enrichment_files": enrichment_result["files"],
     }

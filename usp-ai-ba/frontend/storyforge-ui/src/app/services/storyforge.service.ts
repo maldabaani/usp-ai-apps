@@ -126,18 +126,41 @@ export interface StoryForgeJobState {
   status: string;
 }
 
+export interface IngestFileRecord {
+  path: string;
+  status: 'success' | 'skipped' | 'error';
+  reason?: string;
+  chunks?: number;
+}
+
+export interface IngestResult {
+  files_processed?: number;
+  files_total?: number;
+  chunks_indexed?: number;
+  entity_chunks_indexed?: number;
+  errors: string[];
+  llm_summary_enabled?: boolean;
+  files_summarized?: number;
+  files_skipped_unchanged?: number;
+  // Tier 1 (mechanical chunking) per-file outcomes.
+  files?: IngestFileRecord[];
+  // Tier 2 (LLM-summary enrichment) per-file outcomes -- absent for
+  // document ingestion, which has no enrichment tier.
+  enrichment_files?: IngestFileRecord[];
+}
+
 export interface IngestStatus {
   status: string;
   progress: { done: number; total: number };
   errors: string[];
-  result: Record<string, unknown> | null;
+  result: IngestResult | null;
 }
 
 export interface IngestHistoryEntry {
   job_id: string;
   kind: string;
   status: string;
-  result: Record<string, unknown> | null;
+  result: IngestResult | null;
   errors: string[];
   finished_at: number;
 }

@@ -75,6 +75,18 @@ class _FailingAgent:
         return failure_result(file, self.name(), "boom", 0)
 
 
+class _RaisingAgent:
+    """Unlike _FailingAgent (a graceful failure_result(), the "no work
+    produced" case), this raises an exception -- the genuine "error" status
+    case, e.g. a real network/API failure."""
+
+    def name(self) -> str:
+        return "raising-agent"
+
+    async def extract(self, file) -> ExtractionResult:
+        raise RuntimeError("credit balance too low")
+
+
 def _write(repo, relative: str, content: str) -> None:
     path = repo / relative
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -89,7 +101,21 @@ def test_disabled_is_a_pure_no_op(tmp_path, monkeypatch, fake_store):
 
     result = asyncio.run(enrich.enrich_repository(tmp_path, [], enabled=False))
 
-    assert result == {"enabled": False, "files_summarized": 0, "files_skipped_unchanged": 0, "errors": []}
+    assert result == {
+        "enabled": False,
+        "files_summarized": 0,
+        "files_skipped_unchanged": 0,
+        "errors": [],
+        "files": [],
+    }
+
+
+def test_disabled_marks_every_file_skipped_with_reason(tmp_path, monkeypatch, fake_store):
+    _write(tmp_path, "app.py", "def handler(): pass\n")
+
+    result = asyncio.run(enrich.enrich_repository(tmp_path, [tmp_path / "app.py"], enabled=False))
+
+    assert result["files"] == [{"path": "app.py", "status": "skipped", "reason": "llm_summary_disabled"}]
 
 
 def test_skips_gracefully_when_no_agents_configured(tmp_path, monkeypatch, fake_store):
@@ -99,6 +125,15 @@ def test_skips_gracefully_when_no_agents_configured(tmp_path, monkeypatch, fake_
 
     assert result["enabled"] is False
     assert result["errors"] == []
+
+
+def test_no_agents_configured_marks_every_file_skipped_with_reason(tmp_path, monkeypatch, fake_store):
+    _write(tmp_path, "app.py", "def handler(): pass\n")
+    monkeypatch.setattr(enrich, "build_agents", lambda: [])
+
+    result = asyncio.run(enrich.enrich_repository(tmp_path, [tmp_path / "app.py"], enabled=True))
+
+    assert result["files"] == [{"path": "app.py", "status": "skipped", "reason": "no_agents_configured"}]
 
 
 def test_summarizes_eligible_file_and_writes_llm_summary_document(tmp_path, monkeypatch, fake_store):
@@ -113,6 +148,7 @@ def test_summarizes_eligible_file_and_writes_llm_summary_document(tmp_path, monk
     assert result["enabled"] is True
     assert result["files_summarized"] == 1
     assert agent.calls == ["app.py"]
+    assert result["files"] == [{"path": "app.py", "status": "summarized"}]
     docs = list(fake_store.docs.values())
     assert len(docs) == 1
     assert docs[0].metadata["type"] == "llm_summary"
@@ -134,6 +170,7 @@ def test_skip_reason_files_are_not_summarized(tmp_path, monkeypatch, fake_store)
 
     assert result["files_summarized"] == 0
     assert agent.calls == []
+    assert result["files"] == [{"path": "src/foo.test.tsx", "status": "skipped", "reason": "test/spec file"}]
 
 
 def test_failed_extraction_is_not_written_and_recorded_in_errors_only_on_exception(tmp_path, monkeypatch, fake_store):
@@ -147,6 +184,19 @@ def test_failed_extraction_is_not_written_and_recorded_in_errors_only_on_excepti
     assert result["files_summarized"] == 0
     assert result["errors"] == []
     assert len(fake_store.docs) == 0
+    assert result["files"] == [{"path": "app.py", "status": "skipped", "reason": "no_summary_produced"}]
+
+
+def test_raised_exception_is_recorded_with_error_status_and_message(tmp_path, monkeypatch, fake_store):
+    _write(tmp_path, "app.py", "def handler(): pass\n")
+    monkeypatch.setattr(enrich, "build_agents", lambda: [_RaisingAgent()])
+
+    result = asyncio.run(
+        enrich.enrich_repository(tmp_path, [tmp_path / "app.py"], enabled=True, manifests_root=tmp_path / "manifests")
+    )
+
+    assert result["errors"] == ["app.py: credit balance too low"]
+    assert result["files"] == [{"path": "app.py", "status": "error", "reason": "credit balance too low"}]
 
 
 def test_failed_extraction_is_retried_on_next_run_not_silently_skipped(tmp_path, monkeypatch, fake_store):
@@ -193,6 +243,7 @@ def test_incremental_skip_avoids_resummarizing_unchanged_file(tmp_path, monkeypa
     assert agent.calls == ["app.py"]  # not called again
     assert result["files_skipped_unchanged"] == 1
     assert result["files_summarized"] == 0
+    assert result["files"] == [{"path": "app.py", "status": "skipped", "reason": "unchanged_since_last_run"}]
 
 
 def test_changed_file_content_is_resummarized(tmp_path, monkeypatch, fake_store):

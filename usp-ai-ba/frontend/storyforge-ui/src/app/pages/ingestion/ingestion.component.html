@@ -92,12 +92,68 @@
     </button>
     <p class="sf-error-text" *ngIf="cancelError">{{ cancelError }}</p>
 
-    <ul class="ing-error-list" *ngIf="activeStatus.errors?.length">
+    <ul class="ing-error-list" *ngIf="activeStatus.errors?.length && !hasFileBreakdown(activeStatus.result)">
       <li *ngFor="let error of activeStatus.errors">{{ error }}</li>
     </ul>
 
-    <pre class="ing-result" *ngIf="activeStatus.result">{{ activeStatus.result | json }}</pre>
+    <ng-container *ngIf="activeStatus.result as result">
+      <ng-container *ngTemplateOutlet="fileBreakdown; context: { result: result }"></ng-container>
+    </ng-container>
   </div>
+
+  <ng-template #fileBreakdown let-result="result">
+    <div class="ing-file-breakdown" *ngIf="hasFileBreakdown(result)">
+      <div class="ing-file-summary">
+        <span class="sf-badge sf-badge-done">{{ statusCount(result, 'success') }} success</span>
+        <span class="sf-badge sf-badge-pending">{{ statusCount(result, 'skipped') }} skipped</span>
+        <span class="sf-badge sf-badge-error">{{ statusCount(result, 'error') }} error</span>
+      </div>
+      <div class="ing-file-filters">
+        <select class="sf-select" [(ngModel)]="fileStatusFilter" name="fileStatusFilter">
+          <option value="all">All statuses</option>
+          <option value="success">Success</option>
+          <option value="skipped">Skipped</option>
+          <option value="error">Error</option>
+        </select>
+        <input
+          class="sf-input"
+          type="text"
+          [(ngModel)]="fileSearch"
+          name="fileSearch"
+          placeholder="Filter by path…"
+        />
+      </div>
+      <table class="sf-table ing-file-table">
+        <thead>
+          <tr>
+            <th>Path</th>
+            <th>Tier</th>
+            <th>Status</th>
+            <th>Detail</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let f of filteredFiles(result)">
+            <td class="ing-mono">{{ f.path }}</td>
+            <td>{{ f.tier === 'mechanical' ? 'Chunking' : 'LLM Summary' }}</td>
+            <td>
+              <span
+                class="sf-badge"
+                [class.sf-badge-done]="f.status === 'success'"
+                [class.sf-badge-pending]="f.status === 'skipped'"
+                [class.sf-badge-error]="f.status === 'error'"
+                >{{ f.status }}</span
+              >
+            </td>
+            <td>{{ f.reason || (f.chunks !== undefined ? f.chunks + ' chunks' : '') }}</td>
+          </tr>
+          <tr *ngIf="!filteredFiles(result).length">
+            <td colspan="4" class="ing-muted">No files match the current filter.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </ng-template>
 
   <div class="sf-card">
     <h2>Watched Paths</h2>
@@ -168,14 +224,29 @@
           <th>Kind</th>
           <th>Status</th>
           <th>Finished</th>
+          <th></th>
         </tr>
       </thead>
       <tbody>
-        <tr *ngFor="let entry of history">
-          <td>{{ entry.kind }}</td>
-          <td><span class="sf-badge sf-badge-{{ entry.status }}">{{ entry.status }}</span></td>
-          <td>{{ relativeTime(entry.finished_at) }}</td>
-        </tr>
+        <ng-container *ngFor="let entry of history">
+          <tr class="ing-history-row" (click)="toggleHistoryDetails(entry.job_id)">
+            <td>{{ entry.kind }}</td>
+            <td><span class="sf-badge sf-badge-{{ entry.status }}">{{ entry.status }}</span></td>
+            <td>{{ relativeTime(entry.finished_at) }}</td>
+            <td>{{ expandedHistoryJobId === entry.job_id ? '▾' : '▸' }}</td>
+          </tr>
+          <tr *ngIf="expandedHistoryJobId === entry.job_id">
+            <td colspan="4">
+              <ul class="ing-error-list" *ngIf="entry.errors?.length && !hasFileBreakdown(entry.result)">
+                <li *ngFor="let error of entry.errors">{{ error }}</li>
+              </ul>
+              <ng-container *ngIf="entry.result as result">
+                <ng-container *ngTemplateOutlet="fileBreakdown; context: { result: result }"></ng-container>
+              </ng-container>
+              <p *ngIf="!entry.result" class="ing-muted">No result recorded for this run.</p>
+            </td>
+          </tr>
+        </ng-container>
       </tbody>
     </table>
   </div>

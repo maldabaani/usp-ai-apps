@@ -20,6 +20,14 @@ per-file fan-out pattern. Incremental re-runs skip re-summarizing files whose
 content hasn't changed since the last run, via a per-repo content-hash
 manifest (see manifest.py) -- tier 1's mechanical chunking always re-runs
 (it's cheap); only tier 2's LLM cost is worth skipping.
+
+The returned dict's "files" list gives per-file visibility into every
+outcome this tier can produce: "summarized", or "skipped" (with a reason of
+"unchanged_since_last_run", one of filter.py's skip_reason() strings, or
+"no_summary_produced"), or "error" (with the exception message) -- surfaced
+end-to-end through ingest_code.py's own result, the job registries, and the
+ingestion screen's per-file breakdown, so a credit-exhaustion-style failure
+(previously indistinguishable from a deliberate skip) is now visible by name.
 """
 from __future__ import annotations
 
@@ -71,7 +79,16 @@ async def enrich_repository(
     walk). Returns a result dict shaped like ingest_code.py's own return
     value, for the caller to fold into its overall stats."""
     if not enabled:
-        return {"enabled": False, "files_summarized": 0, "files_skipped_unchanged": 0, "errors": []}
+        return {
+            "enabled": False,
+            "files_summarized": 0,
+            "files_skipped_unchanged": 0,
+            "errors": [],
+            "files": [
+                {"path": str(path.relative_to(repo)), "status": "skipped", "reason": "llm_summary_disabled"}
+                for path in files
+            ],
+        }
 
     agents = build_agents()
     if not agents:
@@ -80,7 +97,16 @@ async def enrich_repository(
             "(no ANTHROPIC_API_KEY, INGEST_OLLAMA_ENABLED off) -- skipping "
             "tier 2 for this run; raw chunking (tier 1) is unaffected."
         )
-        return {"enabled": False, "files_summarized": 0, "files_skipped_unchanged": 0, "errors": []}
+        return {
+            "enabled": False,
+            "files_summarized": 0,
+            "files_skipped_unchanged": 0,
+            "errors": [],
+            "files": [
+                {"path": str(path.relative_to(repo)), "status": "skipped", "reason": "no_agents_configured"}
+                for path in files
+            ],
+        }
 
     selector = AgentSelector(agents)
     codebase_store = chroma_client.get_vector_store("codebase")
@@ -93,6 +119,7 @@ async def enrich_repository(
     files_summarized = 0
     files_skipped_unchanged = 0
     errors: list[str] = []
+    file_records: list[dict] = []
 
     async def process_one(path: Path) -> None:
         nonlocal files_summarized, files_skipped_unchanged
@@ -101,6 +128,7 @@ async def enrich_repository(
         if digest is not None and previous_hashes.get(relative_path) == digest:
             current_hashes[relative_path] = digest
             files_skipped_unchanged += 1
+            file_records.append({"path": relative_path, "status": "skipped", "reason": "unchanged_since_last_run"})
             return
 
         async with semaphore:
@@ -109,6 +137,7 @@ async def enrich_repository(
                 source_file = SourceFile(path, relative_path, content, len(content.encode("utf-8")))
                 reason = enrichment_filter.skip_reason(source_file)
                 if reason:
+                    file_records.append({"path": relative_path, "status": "skipped", "reason": reason})
                     return
 
                 parts: list[SourceFile] = [source_file]
@@ -123,6 +152,7 @@ async def enrich_repository(
                         summaries.append(result.content)
 
                 if not summaries:
+                    file_records.append({"path": relative_path, "status": "skipped", "reason": "no_summary_produced"})
                     return
 
                 combined = "\n\n---\n\n".join(summaries) if len(summaries) > 1 else summaries[0]
@@ -141,17 +171,21 @@ async def enrich_repository(
                 files_summarized += 1
                 if digest is not None:
                     current_hashes[relative_path] = digest
+                file_records.append({"path": relative_path, "status": "summarized"})
             except Exception as exc:  # noqa: BLE001 - per-file isolation
                 logger.exception("Enrichment failed for %s", relative_path)
                 errors.append(f"{relative_path}: {exc}")
+                file_records.append({"path": relative_path, "status": "error", "reason": str(exc)})
 
     await asyncio.gather(*[process_one(path) for path in files])
 
     manifest.save(manifests_root, repo, current_hashes)
+    file_records.sort(key=lambda record: record["path"])
 
     return {
         "enabled": True,
         "files_summarized": files_summarized,
         "files_skipped_unchanged": files_skipped_unchanged,
         "errors": errors,
+        "files": file_records,
     }

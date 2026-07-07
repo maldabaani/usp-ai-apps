@@ -4,13 +4,21 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 
 import {
+  IngestFileRecord,
   IngestHistoryEntry,
+  IngestResult,
   IngestStatus,
   StoryForgeService,
 } from '../../services/storyforge.service';
 import { WatchService, WatchTarget } from '../../services/watch.service';
 
 const POLL_INTERVAL_MS = 2000;
+
+type FileStatusFilter = 'all' | 'success' | 'skipped' | 'error';
+
+interface DisplayFileRecord extends IngestFileRecord {
+  tier: 'mechanical' | 'enrichment';
+}
 
 @Component({
   selector: 'app-ingestion',
@@ -37,6 +45,10 @@ export class IngestionComponent implements OnInit, OnDestroy {
 
   history: IngestHistoryEntry[] = [];
   historyLoading = true;
+  expandedHistoryJobId: string | null = null;
+
+  fileStatusFilter: FileStatusFilter = 'all';
+  fileSearch = '';
 
   watchTargets: WatchTarget[] = [];
   watchTargetsLoading = true;
@@ -221,5 +233,33 @@ export class IngestionComponent implements OnInit, OnDestroy {
     if (hrs < 24) return `${hrs}h ago`;
     const days = Math.floor(hrs / 24);
     return `${days}d ago`;
+  }
+
+  toggleHistoryDetails(jobId: string): void {
+    this.expandedHistoryJobId = this.expandedHistoryJobId === jobId ? null : jobId;
+  }
+
+  private displayFiles(result: IngestResult | null): DisplayFileRecord[] {
+    if (!result) return [];
+    const mechanical = (result.files || []).map((f) => ({ ...f, tier: 'mechanical' as const }));
+    const enrichment = (result.enrichment_files || []).map((f) => ({ ...f, tier: 'enrichment' as const }));
+    return [...mechanical, ...enrichment];
+  }
+
+  filteredFiles(result: IngestResult | null): DisplayFileRecord[] {
+    const search = this.fileSearch.trim().toLowerCase();
+    return this.displayFiles(result).filter(
+      (f) =>
+        (this.fileStatusFilter === 'all' || f.status === this.fileStatusFilter) &&
+        (!search || f.path.toLowerCase().includes(search))
+    );
+  }
+
+  statusCount(result: IngestResult | null, status: IngestFileRecord['status']): number {
+    return this.displayFiles(result).filter((f) => f.status === status).length;
+  }
+
+  hasFileBreakdown(result: IngestResult | null): boolean {
+    return this.displayFiles(result).length > 0;
   }
 }

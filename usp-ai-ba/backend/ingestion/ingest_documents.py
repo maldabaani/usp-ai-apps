@@ -171,19 +171,24 @@ async def ingest_documents(
     total_files = len(doc_paths)
     total_chunks = 0
     errors: list[str] = []
+    file_records: list[dict] = []
 
     for index, doc_path in enumerate(doc_paths, start=1):
+        relative_source = str(doc_path.relative_to(folder))
         try:
             documents = _chunk_document(doc_path, folder)
             if documents:
-                relative_source = str(doc_path.relative_to(folder))
                 await delete_by_source("manuals", relative_source)
                 ids = [_document_id(relative_source, doc.metadata["chunk_index"]) for doc in documents]
                 await vector_store.aadd_documents(documents, ids=ids)
                 total_chunks += len(documents)
+                file_records.append({"path": relative_source, "status": "success", "chunks": len(documents)})
+            else:
+                file_records.append({"path": relative_source, "status": "skipped", "reason": "no_content_extracted"})
         except Exception as exc:  # noqa: BLE001 - surfaced to caller via errors list
             logger.exception("Failed to ingest %s", doc_path)
             errors.append(f"{doc_path}: {exc}")
+            file_records.append({"path": relative_source, "status": "error", "reason": str(exc)})
 
         if progress_callback:
             await progress_callback(index, total_files)
@@ -192,4 +197,5 @@ async def ingest_documents(
         "files_processed": total_files,
         "chunks_indexed": total_chunks,
         "errors": errors,
+        "files": file_records,
     }
