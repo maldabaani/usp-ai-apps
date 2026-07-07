@@ -37,6 +37,15 @@ export class ClarifyComponent implements OnInit {
     this.loading = true;
     this.storyForgeService.getAssessmentStatus(this.jobId).subscribe({
       next: (state) => {
+        if (!state.clarification_needed) {
+          // The job has already moved past this step (e.g. a stale reload or
+          // browser-back after answers were already submitted successfully).
+          // Showing the form again would only lead to a guaranteed 409 on
+          // submit, since the backend has nothing left to apply the answers
+          // to -- go straight to the status page instead.
+          this.router.navigate(['/status', this.jobId]);
+          return;
+        }
         this.questions = state.clarification_questions;
         for (const question of this.questions) {
           this.answers[question] = this.answers[question] ?? '';
@@ -70,7 +79,14 @@ export class ClarifyComponent implements OnInit {
       next: () => {
         this.router.navigate(['/status', this.jobId]);
       },
-      error: () => {
+      error: (err) => {
+        if (err?.status === 409) {
+          // The job already moved past clarification (e.g. this request was
+          // a duplicate of one that already succeeded) -- nothing is wrong,
+          // there's just nothing left to submit here.
+          this.router.navigate(['/status', this.jobId]);
+          return;
+        }
         this.submitting = false;
         this.submitError = 'Failed to submit answers. Please try again.';
       },
