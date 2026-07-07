@@ -17,6 +17,9 @@ export class CorpusComponent implements OnInit {
   manuals: CorpusSource[] = [];
   codebase: CorpusSource[] = [];
 
+  deletingSource: string | null = null;
+  deleteSourceError = '';
+
   constructor(private corpusService: CorpusService) {}
 
   ngOnInit(): void {
@@ -42,5 +45,22 @@ export class CorpusComponent implements OnInit {
   formatIngestedAt(epochSeconds: number | null): string {
     if (epochSeconds === null) return 'unknown';
     return new Date(epochSeconds * 1000).toLocaleString();
+  }
+
+  deleteSource(row: CorpusSource, collectionKey: 'manuals' | 'codebase'): void {
+    if (!confirm(`Delete "${row.source}" from the ${collectionKey} index?`)) return;
+
+    this.deletingSource = row.source;
+    this.deleteSourceError = '';
+    this.corpusService.deleteSource(collectionKey, row.source).subscribe({
+      next: () => {
+        this.deletingSource = null;
+        this.load();
+      },
+      error: (err) => {
+        this.deletingSource = null;
+        this.deleteSourceError = err?.error?.detail || 'Failed to delete source.';
+      },
+    });
   }
 }

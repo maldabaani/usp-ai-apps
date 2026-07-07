@@ -7,12 +7,20 @@ population.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from typing import Literal
 
-from api.deps import require_auth
-from ingestion.chroma_client import source_metadata
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel
+
+from api.deps import require_admin, require_auth
+from ingestion.chroma_client import delete_by_source, source_metadata
 
 router = APIRouter(prefix="/corpus", tags=["corpus"])
+
+
+class DeleteSourceRequest(BaseModel):
+    collection_key: Literal["manuals", "codebase"]
+    source: str
 
 
 @router.get("/sources")
@@ -21,3 +29,29 @@ async def get_corpus_sources(user: dict = Depends(require_auth)):
         "manuals": await source_metadata("manuals"),
         "codebase": await source_metadata("codebase"),
     }
+
+
+@router.post("/sources/delete")
+async def delete_corpus_source(request: DeleteSourceRequest, user: dict = Depends(require_admin)):
+    """Removes one source's chunks from the corpus. Idempotent -- deleting an
+    already-gone or never-ingested source is not an error, matching
+    delete_by_source's own no-op-if-nothing-matches semantics.
+
+    Deleting a "codebase" source also clears "entities", mirroring
+    ingest_code.py's own per-file loop (a Java @Entity class is written to
+    both collections, and its entities-collection chunks must never be left
+    behind as an orphaned entry once "codebase" no longer has it).
+
+    Known v1 limitation: this does not touch enrichment's per-repo
+    content-hash manifest. If the source file still exists on disk and its
+    parent repo is later fully re-ingested without that file's content
+    changing, the enrichment tier's incremental-skip logic still treats it as
+    unchanged and will not regenerate its LLM-summary chunk -- only the
+    mechanical chunks (tier 1, which always reruns unconditionally) come
+    back. Not solved here: nothing in the corpus browser tracks which repo's
+    manifest a given "codebase" source belongs to.
+    """
+    await delete_by_source(request.collection_key, request.source)
+    if request.collection_key == "codebase":
+        await delete_by_source("entities", request.source)
+    return {"status": "deleted"}

@@ -11,6 +11,8 @@
   <p *ngIf="loadError" class="sf-error-text">{{ loadError }}</p>
 
   <ng-container *ngIf="!loading && !loadError">
+    <p class="sf-error-text" *ngIf="deleteSourceError">{{ deleteSourceError }}</p>
+
     <div class="sf-card">
       <div class="corpus-section-header">
         <h2 class="sf-section-title">Manuals ({{ manuals.length }})</h2>
@@ -25,6 +27,7 @@
             <th>LLM Summary</th>
             <th>Format</th>
             <th>Ingested At</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -36,9 +39,21 @@
             </td>
             <td>{{ row.format || 'unknown' }}</td>
             <td>{{ formatIngestedAt(row.ingested_at) }}</td>
+            <td>
+              <button
+                class="sf-btn sf-btn-danger"
+                [disabled]="deletingSource === row.source"
+                (click)="deleteSource(row, 'manuals')"
+              >
+                {{ deletingSource === row.source ? 'Deleting…' : 'Delete' }}
+              </button>
+            </td>
           </tr>
         </tbody>
       </table>
+      <p class="corpus-hint" *ngIf="manuals.length">
+        Deleting here does not prevent re-ingestion from adding a file back if it still exists on disk.
+      </p>
     </div>
 
     <div class="sf-card">
@@ -54,6 +69,7 @@
             <th>LLM Summary</th>
             <th>Format</th>
             <th>Ingested At</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -65,9 +81,24 @@
             </td>
             <td>{{ row.format || 'unknown' }}</td>
             <td>{{ formatIngestedAt(row.ingested_at) }}</td>
+            <td>
+              <button
+                class="sf-btn sf-btn-danger"
+                [disabled]="deletingSource === row.source"
+                (click)="deleteSource(row, 'codebase')"
+              >
+                {{ deletingSource === row.source ? 'Deleting…' : 'Delete' }}
+              </button>
+            </td>
           </tr>
         </tbody>
       </table>
+      <p class="corpus-hint" *ngIf="codebase.length">
+        Deleting here also clears any JPA entity index entry for the same file, but does not prevent
+        re-ingestion from adding it back if it still exists on disk (its LLM summary may not be
+        regenerated until the file's content actually changes -- see the enrichment manifest note in
+        the docs).
+      </p>
     </div>
   </ng-container>
 </div>

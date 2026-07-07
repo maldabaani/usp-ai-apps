@@ -103,7 +103,7 @@ backend/
       ask.py                    POST /api/ask/technical, POST /api/ask/business, GET /api/ask/status (see Ask Technical / Ask Business below)
       settings.py              GET/PUT /api/settings
       monitoring.py             GET /api/monitoring/errors -- captures ERROR+ logs from every module in this process
-      corpus.py                 GET /api/corpus/sources -- per-source chunk-count/LLM-summary/format metadata for the corpus browser
+      corpus.py                 GET /api/corpus/sources -- per-source chunk-count/LLM-summary/format metadata for the corpus browser; POST /api/corpus/sources/delete -- admin-only per-source delete
       watch.py                  GET/POST /api/watch/targets, PATCH/DELETE /api/watch/targets/{id} -- watched-path CRUD for auto re-ingestion
       prompts.py                 GET /api/prompts/ask, PUT /api/prompts/ask/{kind} -- Ask Technical/Business prompt customization
       conversations.py           GET/POST /api/conversations, GET/DELETE /api/conversations/{id} -- per-user conversation memory CRUD
@@ -342,6 +342,7 @@ All endpoints are served under the FastAPI app created in `backend/api/main.py`,
 | `PUT` | `/api/settings` | Body: any subset of the fields returned by `GET /api/settings`, plus optionally `notion_api_key`/`anthropic_api_key` (a real new value — omitting it, or sending back the mask unchanged, leaves the current secret untouched). Writes changed fields to `backend/.env` and applies them to the running backend immediately for the fields that support hot-reload — see [`config.py`](backend/config.py)'s `Settings.apply_updates` and [`config_store.py`](backend/config_store.py). Returns the refreshed (masked) settings |
 | `GET` | `/api/monitoring/errors` | Every `ERROR`+-level log record captured from this process since startup (see [`monitoring/log_capture.py`](backend/monitoring/log_capture.py)), ring-buffered to the most recent N. Backs the `/monitoring` page's error feed |
 | `GET` | `/api/corpus/sources` | → `{"manuals": [...], "codebase": [...]}`, one row per distinct source file in each collection: `{"source", "chunk_count", "has_llm_summary", "format", "ingested_at"}`. Backs the `/corpus` corpus-browser page (file list + metadata only, no chunk-content drill-down); `entities` is intentionally excluded since it's a derived re-indexing of `@Entity` files already counted under `codebase` |
+| `POST` | `/api/corpus/sources/delete` | Admin only. Body: `{"collection_key": "manuals"\|"codebase", "source": str}`. Removes that source's chunks (idempotent — deleting an already-gone source isn't an error); deleting a `codebase` source also clears its `entities` chunks, if any. Does **not** clear the enrichment manifest — if the source file still exists on disk, a later full re-ingestion of its parent repo restores the mechanical chunks but skips regenerating the LLM summary unless the file's content actually changed |
 | `GET` | `/api/watch/targets` | List watched paths → `[{"id", "path", "kind", "enabled", "created_at"}, ...]` |
 | `POST` | `/api/watch/targets` | Admin only. Body: `{"path", "kind": "documents"\|"code"}`. 400 if `path` isn't a directory. Starts watching immediately (no restart needed) |
 | `PATCH` | `/api/watch/targets/{id}` | Admin only. Body: `{"enabled": bool}`. Starts/stops the live watch immediately. 404 if unknown |

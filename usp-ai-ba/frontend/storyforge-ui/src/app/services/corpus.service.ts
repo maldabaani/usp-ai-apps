@@ -26,4 +26,11 @@ export class CorpusService {
   getSources(): Observable<CorpusSources> {
     return this.http.get<CorpusSources>(`${API_BASE_URL}/corpus/sources`);
   }
+
+  deleteSource(collectionKey: 'manuals' | 'codebase', source: string): Observable<{ status: string }> {
+    return this.http.post<{ status: string }>(`${API_BASE_URL}/corpus/sources/delete`, {
+      collection_key: collectionKey,
+      source,
+    });
+  }
 }
