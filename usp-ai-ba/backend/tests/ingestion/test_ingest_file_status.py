@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 
+import docx
 import pytest
 
 from ingestion import chroma_client, ingest_code, ingest_documents
@@ -61,6 +62,15 @@ def _write(repo, relative: str, content: str) -> None:
     path.write_text(content)
 
 
+def _write_docx(repo, relative: str, paragraphs: list[str]) -> None:
+    path = repo / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    document = docx.Document()
+    for text in paragraphs:
+        document.add_paragraph(text)
+    document.save(str(path))
+
+
 def test_ingest_code_reports_per_file_success_and_error_status(tmp_path, fake_stores):
     _write(
         tmp_path,
@@ -91,15 +101,15 @@ def test_ingest_code_reports_per_file_success_and_error_status(tmp_path, fake_st
 
 
 def test_ingest_documents_reports_per_file_success_status(tmp_path, fake_stores):
-    _write(tmp_path, "manual.md", "# Title\n\nSome markdown content.\n")
+    _write_docx(tmp_path, "manual.docx", ["Some document content."])
 
     result = asyncio.run(ingest_documents.ingest_documents(str(tmp_path)))
 
-    assert result["files"] == [{"path": "manual.md", "status": "success", "chunks": 1}]
+    assert result["files"] == [{"path": "manual.docx", "status": "success", "chunks": 1}]
 
 
 def test_ingest_documents_reports_error_status_on_exception(tmp_path, fake_stores, monkeypatch):
-    _write(tmp_path, "manual.md", "# Title\n\nSome content.\n")
+    _write_docx(tmp_path, "manual.docx", ["Some content."])
 
     def fake_chunk_document(path, folder):
         raise ValueError("boom")
@@ -108,7 +118,7 @@ def test_ingest_documents_reports_error_status_on_exception(tmp_path, fake_store
 
     result = asyncio.run(ingest_documents.ingest_documents(str(tmp_path)))
 
-    assert result["files"] == [{"path": "manual.md", "status": "error", "reason": "boom"}]
+    assert result["files"] == [{"path": "manual.docx", "status": "error", "reason": "boom"}]
     assert result["errors"][0].endswith("boom")
 
 
@@ -153,7 +163,7 @@ def test_ingest_code_progress_callback_reports_both_phases(tmp_path, fake_stores
 
 
 def test_ingest_documents_progress_callback_reports_chunking_phase(tmp_path, fake_stores):
-    _write(tmp_path, "manual.md", "# Title\n\nSome markdown content.\n")
+    _write_docx(tmp_path, "manual.docx", ["Some document content."])
 
     calls: list[tuple] = []
 
@@ -165,4 +175,4 @@ def test_ingest_documents_progress_callback_reports_chunking_phase(tmp_path, fak
     assert len(calls) == 1
     phase, partial_result = calls[0]
     assert phase == "chunking"
-    assert partial_result["files"] == [{"path": "manual.md", "status": "success", "chunks": 1}]
+    assert partial_result["files"] == [{"path": "manual.docx", "status": "success", "chunks": 1}]

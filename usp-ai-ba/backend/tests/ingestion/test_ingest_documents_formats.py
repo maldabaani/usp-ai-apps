@@ -1,7 +1,9 @@
-"""Covers ingest_documents.py's Phase L-A widening from PDF-only to
-PDF/Word (.docx)/Markdown/Confluence-HTML-export support: each format's text
-extractor produces non-empty content, and a mixed-format folder ingestion
-produces distinct sources tagged with the correct "format" metadata per file.
+"""Covers ingest_documents.py's supported-format allow-list: PDF and Word
+(.docx) only. Markdown and Confluence-HTML-export support (added in an
+earlier phase) was deliberately removed -- it let non-document files leak
+into the manuals collection -- and .js/.json were never accepted here at all
+(those belong exclusively to the separate "Ingest Code" flow). This confirms
+that narrowing, not just the extraction logic for the two formats that remain.
 
 Uses a fake vector store standing in for `langchain_chroma.Chroma`, matching
 this codebase's mocked-client testing convention (see tests/ingestion/test_dedup.py).
@@ -58,28 +60,6 @@ def _write_docx(path, paragraphs: list[str]) -> None:
     document.save(str(path))
 
 
-@pytest.mark.parametrize(
-    "suffix,write_fn,expected_snippet",
-    [
-        (".md", lambda p: p.write_text("# Heading\n\nSome markdown body text.\n"), "markdown body text"),
-        (
-            ".html",
-            lambda p: p.write_text(
-                "<html><body><nav>Menu</nav><h1>Title</h1><p>Some html body text.</p></body></html>"
-            ),
-            "html body text",
-        ),
-    ],
-)
-def test_extract_text_produces_non_empty_content(tmp_path, suffix, write_fn, expected_snippet):
-    path = tmp_path / f"doc{suffix}"
-    write_fn(path)
-
-    text = ingest_documents._extract_text(path)
-
-    assert expected_snippet in text
-
-
 def test_extract_docx_text_includes_paragraphs_and_table_cells(tmp_path):
     path = tmp_path / "doc.docx"
     document = docx.Document()
@@ -95,35 +75,31 @@ def test_extract_docx_text_includes_paragraphs_and_table_cells(tmp_path):
     assert "Key | Value" in text
 
 
-def test_extract_html_text_strips_noise_tags(tmp_path):
-    path = tmp_path / "page.html"
-    path.write_text(
-        "<html><body><nav>Nav link</nav><script>var x = 1;</script>"
-        "<p>Real content.</p></body></html>"
-    )
-
-    text = ingest_documents._extract_html_text(path)
-
-    assert "Real content." in text
-    assert "Nav link" not in text
-    assert "var x" not in text
-
-
-def test_mixed_format_folder_ingestion_tags_correct_format_per_source(tmp_path, fake_manuals_store):
-    (tmp_path / "manual.md").write_text("# Manual\n\nMarkdown manual content.\n")
-    (tmp_path / "page.html").write_text("<html><body><p>Confluence export content.</p></body></html>")
+@pytest.mark.parametrize("suffix", [".md", ".markdown", ".html", ".htm", ".doc", ".js", ".json", ".txt"])
+def test_unsupported_extensions_are_excluded(tmp_path, fake_manuals_store, suffix):
+    (tmp_path / f"file{suffix}").write_text("some content that would otherwise be ingested")
     _write_docx(tmp_path / "spec.docx", ["Word document content."])
 
     result = asyncio.run(ingest_documents.ingest_documents(str(tmp_path)))
 
-    assert result["files_processed"] == 3
+    # Only the .docx file is picked up -- the other extension is invisible to
+    # the walk entirely, not skipped-with-a-reason.
+    assert result["files_processed"] == 1
+    assert [f["path"] for f in result["files"]] == ["spec.docx"]
+
+
+def test_mixed_pdf_and_docx_folder_tags_correct_format_per_source(tmp_path, fake_manuals_store, monkeypatch):
+    _write_docx(tmp_path / "spec.docx", ["Word document content."])
+    (tmp_path / "manual.pdf").write_text("not a real pdf, but extraction is stubbed below")
+
+    monkeypatch.setattr(ingest_documents, "_extract_pdf_text", lambda path: "Extracted PDF body text.")
+
+    result = asyncio.run(ingest_documents.ingest_documents(str(tmp_path)))
+
+    assert result["files_processed"] == 2
     assert not result["errors"]
 
     formats_by_source = {
         doc.metadata["source"]: doc.metadata["format"] for doc in fake_manuals_store.docs.values()
     }
-    assert formats_by_source == {
-        "manual.md": "markdown",
-        "page.html": "html",
-        "spec.docx": "docx",
-    }
+    assert formats_by_source == {"manual.pdf": "pdf", "spec.docx": "docx"}

@@ -3,9 +3,8 @@
 
   <h1>Ingestion</h1>
   <p class="ing-muted">
-    Index a code repository and/or a folder of documents (PDF, Word, Markdown, Confluence page
-    exports) into the shared knowledge base used by the Ask Technical/Business Questions pages and
-    by StoryForge's SDD assessment.
+    Index a code repository and/or a folder of documents (PDF, Word) into the shared knowledge base
+    used by the Ask Technical/Business Questions pages and by StoryForge's SDD assessment.
   </p>
 
   <div class="ing-forms">
@@ -51,7 +50,7 @@
 
     <div class="sf-card">
       <h2>Ingest Documents</h2>
-      <p class="ing-muted">PDF, Word (.docx), Markdown, and Confluence page exports (.html)</p>
+      <p class="ing-muted">PDF and Word (.docx) only</p>
       <p class="sf-error-text" *ngIf="documentsError">{{ documentsError }}</p>
       <form (ngSubmit)="startDocumentIngestion()">
         <div class="sf-field">

@@ -275,15 +275,18 @@ def test_pdf_deleted_from_folder_purges_its_chunks(tmp_path, fake_stores, monkey
     assert remaining_sources == {"a.pdf"}
 
 
-def test_mixed_format_folder_reingesting_does_not_grow_chunk_count(tmp_path, fake_stores):
+def test_mixed_format_folder_reingesting_does_not_grow_chunk_count(tmp_path, fake_stores, monkeypatch):
     import asyncio
 
-    _write(tmp_path, "manual.md", "# Title\n\nSome markdown content.\n")
-    _write(
-        tmp_path,
-        "page.html",
-        "<html><body><h1>Title</h1><p>Some html content.</p></body></html>",
-    )
+    from langchain_core.documents import Document
+
+    def fake_chunk_document(doc_path, folder_path):
+        relative_source = str(doc_path.relative_to(folder_path))
+        return [Document(page_content="content", metadata={"source": relative_source, "chunk_index": 0})]
+
+    monkeypatch.setattr(ingest_documents, "_chunk_document", fake_chunk_document)
+    (tmp_path / "manual.pdf").write_bytes(b"%PDF-1.4 fake")
+    (tmp_path / "spec.docx").write_bytes(b"fake docx bytes")
 
     asyncio.run(ingest_documents.ingest_documents(str(tmp_path)))
     first_count = len(fake_stores["manuals"].docs)
@@ -294,4 +297,4 @@ def test_mixed_format_folder_reingesting_does_not_grow_chunk_count(tmp_path, fak
 
     assert first_count > 0
     assert second_count == first_count
-    assert sources == {"manual.md", "page.html"}
+    assert sources == {"manual.pdf", "spec.docx"}

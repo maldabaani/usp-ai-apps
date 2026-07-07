@@ -1,12 +1,13 @@
-"""One-time ingestion of user-facing documents -- PDF, Word (.docx), Markdown,
-and Confluence page exports (.html/.htm) -- into the ``sf_user_manuals``
-ChromaDB collection.
+"""One-time ingestion of user-facing documents -- PDF and Word (.docx) only --
+into the ``sf_user_manuals`` ChromaDB collection.
 
-Confluence support means reading already-exported HTML/XML/Markdown files
-dropped into the ingested folder, not a live Confluence API integration --
-export a space to HTML (Confluence's built-in "Export to HTML" or "Export to
-Word" action) and point this at the resulting folder like any other manuals
-directory.
+Deliberately narrow: earlier this also accepted Markdown and Confluence-HTML
+exports, but that let non-document files (release notes, README-style
+Markdown, etc.) leak into the manuals collection alongside real business
+documents. Restricted back to just PDF/Word so "Ingest Documents" only ever
+indexes actual documents -- source code and code-adjacent files (.js/.json/
+.md/etc.) are handled exclusively by the separate "Ingest Code" flow
+(ingest_code.py) and were never accepted here to begin with.
 """
 from __future__ import annotations
 
@@ -16,7 +17,6 @@ import time
 from pathlib import Path
 
 import docx
-from bs4 import BeautifulSoup
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pypdf import PdfReader
@@ -42,17 +42,8 @@ _splitter = RecursiveCharacterTextSplitter(
 _FORMAT_BY_SUFFIX = {
     ".pdf": "pdf",
     ".docx": "docx",
-    ".md": "markdown",
-    ".markdown": "markdown",
-    ".html": "html",
-    ".htm": "html",
 }
 SUPPORTED_EXTENSIONS = frozenset(_FORMAT_BY_SUFFIX)
-
-# Tags that never carry document body text (nav chrome, scripts, styling) --
-# stripped before extracting text from an HTML/Confluence export so they
-# don't pollute the chunked content with menu labels and JS/CSS source.
-_HTML_NOISE_TAGS = ("script", "style", "nav", "header", "footer")
 
 
 def _extract_pdf_text(path: Path) -> str:
@@ -76,29 +67,11 @@ def _extract_docx_text(path: Path) -> str:
     return "\n".join(parts)
 
 
-def _extract_markdown_text(path: Path) -> str:
-    return path.read_text(encoding="utf-8", errors="ignore")
-
-
-def _extract_html_text(path: Path) -> str:
-    raw = path.read_text(encoding="utf-8", errors="ignore")
-    soup = BeautifulSoup(raw, "html.parser")
-    for tag_name in _HTML_NOISE_TAGS:
-        for tag in soup.find_all(tag_name):
-            tag.decompose()
-    root = soup.body or soup
-    return root.get_text(separator="\n", strip=True)
-
-
 def _extract_text(path: Path) -> str:
     format_tag = _FORMAT_BY_SUFFIX[path.suffix.lower()]
     if format_tag == "pdf":
         return _extract_pdf_text(path)
-    if format_tag == "docx":
-        return _extract_docx_text(path)
-    if format_tag == "markdown":
-        return _extract_markdown_text(path)
-    return _extract_html_text(path)
+    return _extract_docx_text(path)
 
 
 def _document_id(relative_source: str, chunk_index: int) -> str:
@@ -143,8 +116,7 @@ async def ingest_documents(
     progress_callback=None,
 ) -> dict:
     """Chunk and embed every supported document found (recursively) under
-    ``folder_path`` -- PDF, Word (.docx), Markdown, and Confluence HTML/XML
-    page exports (.html/.htm).
+    ``folder_path`` -- PDF and Word (.docx) only.
 
     Stores all chunks into the ``sf_user_manuals`` collection. Safe to re-run:
     deterministic per-chunk IDs make an unchanged file's re-add a no-op

@@ -127,7 +127,7 @@ backend/
   ingestion/
     chroma_client.py          ChromaDB + Ollama embeddings singletons, 3 collections
     retrieval.py               Shared RAG retrieval over all 3 collections -- used by analyze_node and api/routers/ask.py
-    ingest_documents.py        PDF/Word/Markdown/Confluence-export chunking + embedding into sf_user_manuals
+    ingest_documents.py        PDF/Word (.docx) chunking + embedding into sf_user_manuals
     ingest_code.py             Mechanical structural chunking (16 languages) + embedding into sf_codebase/sf_jpa_entities
     enrichment/                Optional per-file LLM-summary enrichment tier (agents/, prompts.py, manifest.py for incremental skip)
     runner_jobs.py             Shared run_document_ingestion/run_code_ingestion wrappers used by both api/routers/ingest.py and the watcher
@@ -325,7 +325,7 @@ All endpoints are served under the FastAPI app created in `backend/api/main.py`,
 | `POST` | `/api/auth/login` | Body: `{"username", "password"}` → `{"access_token", "username", "role"}`. This one JWT is trusted by every route in this app |
 | `POST` | `/api/auth/logout` | Stateless — nothing to invalidate server-side; the client just drops the token |
 | `GET` | `/api/auth/me` | → the decoded `{"username", "role"}` for the caller's current token |
-| `POST` | `/api/ingest/documents` | Body: `{"folder_path": str}`. Starts background document ingestion (PDF/Word/Markdown/Confluence export) → `{"job_id", "status": "pending"}` |
+| `POST` | `/api/ingest/documents` | Body: `{"folder_path": str}`. Starts background document ingestion (PDF/Word (.docx) only) → `{"job_id", "status": "pending"}` |
 | `POST` | `/api/ingest/code` | Body: `{"repo_path": str}`. Starts background code ingestion → `{"job_id", "status": "pending"}` |
 | `GET` | `/api/ingest/status/{job_id}` | → `{"status", "progress", "errors", "result"}` (`result` is `null` until the job finishes, then holds `files_processed`/`chunks_indexed`/etc., plus per-file breakdowns in `files` (tier 1: `{"path", "status": "success"\|"error", "reason"}`) and `enrichment_files` (tier 2: `status` also includes `"skipped"`, with `reason` one of `"unchanged_since_last_run"`, a filter.py skip reason, `"no_summary_produced"`, `"llm_summary_disabled"`, `"no_agents_configured"`, or the raised exception message)). 404 if unknown |
 | `POST` | `/api/assess` | Multipart form: `file` (PDF), `ppm_number`, `ppm_name`, `system_name`, `review_mode` (bool, default `false`), `output_mode` (optional — `document`/`ado`/`notion`; defaults to `settings.OUTPUT_MODE` if omitted). Starts the pipeline in the background → `{"job_id"}`. `output_mode` is stamped onto the job (`state["output_mode"]`) at submission time, so each job keeps using the system it was created with even if the global default in Settings changes later |
