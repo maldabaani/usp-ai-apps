@@ -66,6 +66,31 @@ def test_put_settings_requires_admin():
     assert resp.status_code == 403
 
 
+def test_get_settings_includes_ask_qa_model_and_it_is_not_restart_required():
+    resp = client.get("/api/settings", headers={"Authorization": f"Bearer {_token('settings_test_user', 'user')}"})
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "ask_qa_model" in body
+    assert "ask_qa_model" not in body["restart_required_fields"]
+
+
+def test_put_settings_updates_ask_qa_model():
+    resp = client.put(
+        "/api/settings",
+        json={"ask_qa_model": "ollama"},
+        headers={"Authorization": f"Bearer {_token('settings_test_admin', 'admin')}"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["ask_qa_model"] == "ollama"
+
+    get_resp = client.get(
+        "/api/settings", headers={"Authorization": f"Bearer {_token('settings_test_admin', 'admin')}"}
+    )
+    assert get_resp.json()["ask_qa_model"] == "ollama"
+
+
 def test_put_settings_updates_ingest_ollama_fields():
     resp = client.put(
         "/api/settings",

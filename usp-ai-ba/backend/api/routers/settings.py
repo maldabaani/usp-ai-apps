@@ -40,6 +40,7 @@ _FIELD_TO_ENV = {
     "anthropic_model": "CLAUDE_MODEL",
     "ingest_ollama_enabled": "INGEST_OLLAMA_ENABLED",
     "ingest_ollama_model": "INGEST_OLLAMA_MODEL",
+    "ask_qa_model": "ASK_QA_MODEL",
 }
 
 _ADO_FIELDS = {"ado_organization", "ado_project", "mcp_server_path"}
@@ -87,6 +88,7 @@ class SettingsResponse(BaseModel):
     anthropic_model: str
     ingest_ollama_enabled: bool
     ingest_ollama_model: str
+    ask_qa_model: str
     restart_required_fields: set[str]
 
 
@@ -113,6 +115,7 @@ class SettingsUpdate(BaseModel):
     anthropic_model: Optional[str] = None
     ingest_ollama_enabled: Optional[bool] = None
     ingest_ollama_model: Optional[str] = None
+    ask_qa_model: Optional[str] = None
 
 
 def _current_settings() -> SettingsResponse:
@@ -136,6 +139,7 @@ def _current_settings() -> SettingsResponse:
         anthropic_model=settings.CLAUDE_MODEL,
         ingest_ollama_enabled=settings.INGEST_OLLAMA_ENABLED,
         ingest_ollama_model=settings.INGEST_OLLAMA_MODEL,
+        ask_qa_model=settings.ASK_QA_MODEL,
         restart_required_fields=RESTART_REQUIRED_FIELDS,
     )
 

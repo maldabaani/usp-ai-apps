@@ -125,6 +125,19 @@
       </div>
     </div>
 
+    <div class="sf-card">
+      <h2 class="sf-section-title">Ask Technical / Ask Business</h2>
+
+      <div class="sf-field">
+        <label for="askQaModel">Model</label>
+        <select id="askQaModel" class="sf-select" [(ngModel)]="askQaModel">
+          <option value="claude">Claude (Anthropic API Key above)</option>
+          <option value="ollama">Ollama ({{ ollamaLlmModel || 'LLM Model above' }})</option>
+        </select>
+        <p class="sf-hint">Which model answers Ask Technical/Business questions. Takes effect immediately, no restart needed.</p>
+      </div>
+    </div>
+
     <p *ngIf="saveError" class="sf-error-text">{{ saveError }}</p>
     <p *ngIf="saved" class="sf-success-text">Settings saved.</p>
 

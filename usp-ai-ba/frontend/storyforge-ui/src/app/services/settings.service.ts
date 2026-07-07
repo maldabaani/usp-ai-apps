@@ -24,6 +24,7 @@ export interface AppSettings {
   anthropic_model: string;
   ingest_ollama_enabled: boolean;
   ingest_ollama_model: string;
+  ask_qa_model: string;
   restart_required_fields: string[];
 }
 

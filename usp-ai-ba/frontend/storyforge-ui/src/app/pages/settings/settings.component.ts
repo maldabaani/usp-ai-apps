@@ -45,6 +45,7 @@ export class SettingsComponent implements OnInit {
   anthropicApiKeyInput = '';
   ingestOllamaEnabled = false;
   ingestOllamaModel = '';
+  askQaModel = 'claude';
   restartRequiredFields: string[] = [];
 
   // Ask Technical/Business prompt customization
@@ -190,6 +191,7 @@ export class SettingsComponent implements OnInit {
     this.anthropicApiKeyInput = s.anthropic_api_key_masked;
     this.ingestOllamaEnabled = s.ingest_ollama_enabled;
     this.ingestOllamaModel = s.ingest_ollama_model;
+    this.askQaModel = s.ask_qa_model;
     this.restartRequiredFields = s.restart_required_fields;
   }
 
@@ -220,6 +222,7 @@ export class SettingsComponent implements OnInit {
       anthropic_model: this.anthropicModel,
       ingest_ollama_enabled: this.ingestOllamaEnabled,
       ingest_ollama_model: this.ingestOllamaModel,
+      ask_qa_model: this.askQaModel,
     };
     // Leaving a key input untouched (still showing the mask) means "keep
     // the current secret" -- only send it if the user actually typed something new.

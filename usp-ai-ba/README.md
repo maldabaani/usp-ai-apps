@@ -246,7 +246,7 @@ All backend configuration is environment-variable driven (`backend/.env`, loaded
 | `INGEST_OLLAMA_ENABLED` | `false` | Enables Ollama as a second agent (round-robin with Claude) for ingestion's optional per-file LLM-summary enrichment tier |
 | `INGEST_OLLAMA_MODEL` | `qwen2.5:14b` | Model name for the above |
 | `INGEST_LLM_SUMMARY_ENABLED` | `true` | Whether ingestion runs its optional per-file LLM-summary enrichment tier at all (mechanical chunking always runs regardless) |
-| `ASK_QA_MODEL` | `claude` | `claude` or `ollama` — which model answers Ask Technical/Business |
+| `ASK_QA_MODEL` | `claude` | `claude` or `ollama` — which model answers Ask Technical/Business. Editable from `/settings` (hot-reloads, no restart needed) |
 | `CONVERSATION_HISTORY_CHAR_BUDGET` | `8000` | Character ceiling (not token — see `config.py`'s comment) for how much prior conversation history is folded into a follow-up Ask Technical/Business question; trimmed oldest-turn-first |
 | `CHROMA_PERSIST_PATH` | `./chroma_db` | On-disk path for the persistent ChromaDB store |
 | `MCP_SERVER_PATH` | _(empty)_ | Path to the ADO MCP server's Node.js entry script |
@@ -448,7 +448,10 @@ the answer back over SSE (`event: sources` with the source file list, then `even
 per text chunk) using the model selected by `ASK_QA_MODEL` (`prompts/ask_prompts.py` holds
 the two system prompt templates, sharing one grounding-rules block that governs
 same-basename-file disambiguation and cross-cutting-feature attribution — customizable
-per-kind from `/settings`, see `prompt_store.py`). `GET
+per-kind from `/settings`, see `prompt_store.py`). `ASK_QA_MODEL` itself is also editable
+from `/settings` ("Ask Technical / Ask Business" card) and takes effect on the very next
+question with no restart, since `_get_ask_chat()` already checks `settings_generation` on
+every call. `GET
 /api/ask/status` reports each collection's document count, so the frontend can show a
 "run ingestion first" empty state.
 
