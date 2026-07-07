@@ -31,6 +31,7 @@ export class IngestionComponent implements OnInit, OnDestroy {
   repoPath = '';
   enableLlmSummary = true;
   maxConcurrency: number | null = null;
+  forceFullRechunk = false;
   startingCode = false;
   codeError = '';
 
@@ -138,7 +139,12 @@ export class IngestionComponent implements OnInit, OnDestroy {
     this.codeError = '';
 
     this.storyForgeService
-      .ingestCode(this.repoPath.trim(), this.enableLlmSummary, this.maxConcurrency ?? undefined)
+      .ingestCode(
+        this.repoPath.trim(),
+        this.enableLlmSummary,
+        this.maxConcurrency ?? undefined,
+        this.forceFullRechunk
+      )
       .subscribe({
         next: ({ job_id }) => {
           this.startingCode = false;

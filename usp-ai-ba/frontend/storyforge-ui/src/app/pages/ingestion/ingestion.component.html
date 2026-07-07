@@ -30,6 +30,12 @@
             Build LLM-synthesized per-file summaries (slower, uses your configured LLM)
           </label>
         </div>
+        <div class="sf-field ing-checkbox-field">
+          <label>
+            <input type="checkbox" [(ngModel)]="forceFullRechunk" name="forceFullRechunk" />
+            Force full re-chunk (ignore unchanged-file skip for this run only)
+          </label>
+        </div>
         <div class="sf-field">
           <label for="maxConcurrency">Max concurrency (optional)</label>
           <input

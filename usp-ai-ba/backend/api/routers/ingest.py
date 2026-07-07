@@ -1,5 +1,5 @@
-"""Ingestion endpoints: one-time document (PDF/Word/Markdown/Confluence
-export) and codebase indexing into ChromaDB."""
+"""Ingestion endpoints: one-time document (PDF/Word) and codebase indexing
+into ChromaDB."""
 from __future__ import annotations
 
 import uuid
@@ -26,6 +26,11 @@ class IngestCodeRequest(BaseModel):
     # quick raw-only re-index of a huge repo without the LLM-cost tier.
     enable_llm_summary: bool | None = None
     max_concurrency: int | None = None
+    # Bypasses tier 1's chunking-manifest skip for this run only (every file
+    # is re-chunked regardless of whether its content changed) -- e.g. if the
+    # manifest is ever suspected stale. Does not disable the manifest going
+    # forward; the next normal run goes back to skipping unchanged files.
+    force_full_rechunk: bool = False
 
 
 @router.post("/documents")
@@ -53,6 +58,7 @@ async def ingest_code_endpoint(request: IngestCodeRequest, user: dict = Depends(
             request.repo_path,
             request.enable_llm_summary,
             request.max_concurrency or DEFAULT_MAX_CONCURRENCY,
+            request.force_full_rechunk,
         ),
     )
     return {"job_id": job_id, "status": "pending"}

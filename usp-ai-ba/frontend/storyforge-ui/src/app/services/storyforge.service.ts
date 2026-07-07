@@ -146,6 +146,9 @@ export interface IngestResult {
   llm_summary_enabled?: boolean;
   files_summarized?: number;
   files_skipped_unchanged?: number;
+  // Tier 1's own skip count -- distinct from files_skipped_unchanged above
+  // (tier 2's), since a file can be skipped by one tier and not the other.
+  chunking_files_skipped_unchanged?: number;
   // Tier 1 (mechanical chunking) per-file outcomes.
   files?: IngestFileRecord[];
   // Tier 2 (LLM-summary enrichment) per-file outcomes -- absent for
@@ -191,12 +194,14 @@ export class StoryForgeService {
   ingestCode(
     repoPath: string,
     enableLlmSummary?: boolean,
-    maxConcurrency?: number
+    maxConcurrency?: number,
+    forceFullRechunk?: boolean
   ): Observable<{ job_id: string; status: string }> {
     return this.http.post<{ job_id: string; status: string }>(`${API_BASE_URL}/ingest/code`, {
       repo_path: repoPath,
       enable_llm_summary: enableLlmSummary ?? null,
       max_concurrency: maxConcurrency ?? null,
+      force_full_rechunk: forceFullRechunk ?? false,
     });
   }
 

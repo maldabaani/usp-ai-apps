@@ -28,6 +28,7 @@ from pathlib import Path
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
+from ingestion import manifest
 from ingestion.chroma_client import (
     delete_by_source,
     delete_by_source_excluding_type,
@@ -417,23 +418,38 @@ async def ingest_code(
     *,
     enable_llm_summary: bool | None = None,
     max_concurrency: int = enrich.DEFAULT_MAX_CONCURRENCY,
+    force_full_rechunk: bool = False,
+    manifests_root: Path | None = None,
 ) -> dict:
     """Walk the repository, chunk every eligible source file, and embed into
-    ChromaDB (tier 1: mechanical, always runs), then optionally run the
-    LLM-summary enrichment tier (tier 2: see enrich.py) over the same file
-    list.
+    ChromaDB (tier 1: mechanical), then optionally run the LLM-summary
+    enrichment tier (tier 2: see enrich.py) over the same file list.
 
     Java entity classes are written to both ``sf_codebase`` and
     ``sf_jpa_entities``. Everything else goes only to ``sf_codebase``.
+
+    Tier 1 skips re-chunking a file whose content hash matches what's
+    recorded in its own manifest (``ingestion/manifest.py``, namespaced under
+    ``.chunking-manifests/`` -- separate from tier 2's ``.enrichment-manifests/``,
+    since "chunked" and "summarized" are different done-states that can drift
+    apart). A skipped file's existing chunks (in both ``sf_codebase`` and, if
+    applicable, ``sf_jpa_entities``) are left untouched -- unchanged content
+    means its prior @Entity classification and chunks are still correct, so
+    neither collection is touched for it. Only a file whose chunking+embedding
+    genuinely succeeds this run has its hash recorded; a failure leaves the
+    manifest as it was, so the file is retried (not silently treated as done)
+    on the next run. ``force_full_rechunk=True`` ignores the manifest for this
+    run only (every file is re-chunked), without discarding the manifest file
+    itself -- the next normal run goes back to skipping unchanged files.
 
     ``enable_llm_summary`` defaults to settings.INGEST_LLM_SUMMARY_ENABLED
     when not given explicitly (a per-request override, e.g. for a quick
     raw-only re-index of a huge repo without the LLM-cost tier).
 
     The returned dict's "files" list gives per-file tier-1 outcomes
-    (``{"path", "status": "success"|"error", "reason"}``, "reason" only
-    present on "error"); "enrichment_files" is tier 2's own per-file list
-    (see enrich.py's docstring for its richer status/reason vocabulary),
+    (``{"path", "status": "success"|"skipped"|"error", "reason"}``, "reason"
+    present on "skipped"/"error"); "enrichment_files" is tier 2's own per-file
+    list (see enrich.py's docstring for its richer status/reason vocabulary),
     passed through unchanged so callers get one place to see both tiers.
     """
     repo = Path(repo_path)
@@ -449,16 +465,23 @@ async def ingest_code(
     # Files present in a prior ingestion of this repo but deleted from disk
     # since are never visited by the loop below, so their stale chunks would
     # otherwise never get cleared -- diff against what Chroma already has
-    # (acting as its own manifest) and purge those up front.
+    # (acting as its own manifest) and purge those up front. Independent of
+    # the content-hash manifest below: this already correctly detects
+    # deletions regardless of whether the surviving files changed or not.
     current_sources = {str(path.relative_to(repo)) for path in files}
     previously_seen = await list_distinct_sources("codebase")
     for removed_source in previously_seen - current_sources:
         await delete_by_source("codebase", removed_source)
         await delete_by_source("entities", removed_source)
 
+    chunking_manifests_root = manifests_root or (Path(settings.JOBS_DIR) / ".chunking-manifests")
+    previous_hashes = {} if force_full_rechunk else (manifest.load(chunking_manifests_root, repo) or {})
+    current_hashes: dict[str, str] = {}
+
     codebase_batch: list[Document] = []
     entities_batch: list[Document] = []
     files_processed = 0
+    files_skipped_unchanged = 0
     chunks_indexed = 0
     entity_chunks_indexed = 0
     errors: list[str] = []
@@ -479,6 +502,21 @@ async def ingest_code(
 
     for index, path in enumerate(files, start=1):
         relative_path = str(path.relative_to(repo))
+        digest = manifest.compute_hash(path)
+        if digest is not None and previous_hashes.get(relative_path) == digest:
+            # Unchanged since the last successful chunking run -- its chunks
+            # (and, if applicable, its entity-collection chunks/classification)
+            # are still correct as-is, so neither collection is touched.
+            current_hashes[relative_path] = digest
+            files_skipped_unchanged += 1
+            file_records.append({"path": relative_path, "status": "skipped", "reason": "unchanged_since_last_run"})
+            await flush()
+            if progress_callback:
+                await progress_callback(
+                    index, total_files, phase="chunking", partial_result={"files": file_records.copy()}
+                )
+            continue
+
         try:
             result = chunk_file(path, repo)
             # Clear this file's prior raw-chunk set before adding its fresh
@@ -504,6 +542,12 @@ async def ingest_code(
                 entities_batch.extend(result.documents)
             files_processed += 1
             file_records.append({"path": relative_path, "status": "success"})
+            # Only a genuinely successful chunk+delete is remembered -- a
+            # failure below leaves no entry here, so the file is retried
+            # (not silently treated as done) on the next run, matching the
+            # same fix already applied to tier 2's manifest.
+            if digest is not None:
+                current_hashes[relative_path] = digest
         except Exception as exc:  # noqa: BLE001 - surfaced to caller via errors list
             logger.exception("Failed to chunk %s", path)
             errors.append(f"{path}: {exc}")
@@ -517,6 +561,14 @@ async def ingest_code(
             )
 
     await flush(force=True)
+
+    # Only saved once the loop above (and the final forced flush) completed
+    # without an uncaught exception -- if flush() throws partway through
+    # (e.g. an unreachable embedding backend), this line is never reached, so
+    # nothing from this run gets remembered as "chunked" and the next run
+    # safely retries everything rather than risking marking un-persisted
+    # work as done.
+    manifest.save(chunking_manifests_root, repo, current_hashes)
 
     resolved_enable_llm_summary = (
         settings.INGEST_LLM_SUMMARY_ENABLED if enable_llm_summary is None else enable_llm_summary
@@ -532,6 +584,10 @@ async def ingest_code(
     return {
         "files_processed": files_processed,
         "files_total": total_files,
+        # Tier 1's own skip count -- distinct from tier 2's "files_skipped_unchanged"
+        # below (a file can be skipped by one tier and not the other, e.g.
+        # enrichment disabled for a run).
+        "chunking_files_skipped_unchanged": files_skipped_unchanged,
         "chunks_indexed": chunks_indexed,
         "entity_chunks_indexed": entity_chunks_indexed,
         "errors": errors + enrichment_result["errors"],

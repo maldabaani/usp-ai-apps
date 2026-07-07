@@ -94,10 +94,10 @@
         </tbody>
       </table>
       <p class="corpus-hint" *ngIf="codebase.length">
-        Deleting here also clears any JPA entity index entry for the same file, but does not prevent
-        re-ingestion from adding it back if it still exists on disk (its LLM summary may not be
-        regenerated until the file's content actually changes -- see the enrichment manifest note in
-        the docs).
+        Deleting here also clears any JPA entity index entry for the same file. If the file still
+        exists on disk and its content hasn't changed, re-ingesting won't bring it back on its own --
+        both tiers' incremental-skip manifests still consider it unchanged. Use "Force full re-chunk"
+        on the Ingestion page, or change the file's content, to bring it back.
       </p>
     </div>
   </ng-container>

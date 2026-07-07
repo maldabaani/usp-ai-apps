@@ -39,7 +39,11 @@ async def run_document_ingestion(job_id: str, folder_path: str) -> None:
 
 
 async def run_code_ingestion(
-    job_id: str, repo_path: str, enable_llm_summary: bool | None, max_concurrency: int
+    job_id: str,
+    repo_path: str,
+    enable_llm_summary: bool | None,
+    max_concurrency: int,
+    force_full_rechunk: bool = False,
 ) -> None:
     async def on_progress(done: int, total: int, *, phase: str, partial_result: dict) -> None:
         ingest_jobs.update_progress(job_id, done, total)
@@ -52,6 +56,7 @@ async def run_code_ingestion(
             progress_callback=on_progress,
             enable_llm_summary=enable_llm_summary,
             max_concurrency=max_concurrency,
+            force_full_rechunk=force_full_rechunk,
         )
         ingest_jobs.finish_job(job_id, result)
         ingestion_generation.bump()

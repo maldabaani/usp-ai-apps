@@ -298,3 +298,145 @@ def test_mixed_format_folder_reingesting_does_not_grow_chunk_count(tmp_path, fak
     assert first_count > 0
     assert second_count == first_count
     assert sources == {"manual.pdf", "spec.docx"}
+
+
+# -- Tier 1 (mechanical chunking) incremental-skip via ingestion/manifest.py --
+
+
+def _counting_chunk_file(monkeypatch, call_count: dict):
+    real_chunk_file = ingest_code.chunk_file
+
+    def counting(path, repo):
+        call_count["n"] += 1
+        return real_chunk_file(path, repo)
+
+    monkeypatch.setattr(ingest_code, "chunk_file", counting)
+    return real_chunk_file
+
+
+def test_unchanged_file_is_skipped_and_not_rechunked_on_second_run(tmp_path, fake_stores, monkeypatch):
+    import asyncio
+
+    _write(tmp_path, "Widget.java", _JAVA_TWO_METHODS)
+    call_count = {"n": 0}
+    _counting_chunk_file(monkeypatch, call_count)
+
+    first_result = asyncio.run(_ingest(tmp_path))
+    assert call_count["n"] == 1
+    assert first_result["files"] == [{"path": "Widget.java", "status": "success"}]
+    assert first_result["chunking_files_skipped_unchanged"] == 0
+
+    second_result = asyncio.run(_ingest(tmp_path))
+
+    assert call_count["n"] == 1  # not called again -- unchanged, skipped entirely
+    assert second_result["files"] == [
+        {"path": "Widget.java", "status": "skipped", "reason": "unchanged_since_last_run"}
+    ]
+    assert second_result["chunking_files_skipped_unchanged"] == 1
+    assert second_result["files_processed"] == 0
+
+
+def test_changed_file_is_rechunked_not_skipped(tmp_path, fake_stores, monkeypatch):
+    import asyncio
+
+    _write(tmp_path, "Widget.java", _JAVA_TWO_METHODS)
+    call_count = {"n": 0}
+    _counting_chunk_file(monkeypatch, call_count)
+
+    asyncio.run(_ingest(tmp_path))
+    assert call_count["n"] == 1
+
+    _write(tmp_path, "Widget.java", _JAVA_CHANGED_BODY)
+    result = asyncio.run(_ingest(tmp_path))
+
+    assert call_count["n"] == 2  # content changed -- rechunked, not skipped
+    assert result["files"] == [{"path": "Widget.java", "status": "success"}]
+    assert result["chunking_files_skipped_unchanged"] == 0
+
+
+def test_force_full_rechunk_bypasses_the_skip_for_one_run(tmp_path, fake_stores, monkeypatch):
+    import asyncio
+
+    _write(tmp_path, "Widget.java", _JAVA_TWO_METHODS)
+    call_count = {"n": 0}
+    _counting_chunk_file(monkeypatch, call_count)
+
+    asyncio.run(_ingest(tmp_path))
+    assert call_count["n"] == 1
+
+    result = asyncio.run(
+        ingest_code.ingest_code(str(tmp_path), enable_llm_summary=False, force_full_rechunk=True)
+    )
+
+    assert call_count["n"] == 2  # forced -- rechunked despite unchanged content
+    assert result["files"] == [{"path": "Widget.java", "status": "success"}]
+    assert result["chunking_files_skipped_unchanged"] == 0
+
+    # A normal run afterward goes back to skipping -- force_full_rechunk
+    # doesn't permanently disable the manifest.
+    third_result = asyncio.run(_ingest(tmp_path))
+    assert call_count["n"] == 2
+    assert third_result["chunking_files_skipped_unchanged"] == 1
+
+
+def test_failed_chunking_is_retried_on_next_run_not_silently_skipped(tmp_path, fake_stores, monkeypatch):
+    """Mirrors tier 2's identically-named regression test: a file whose
+    chunking raises must not have its hash recorded, so it's attempted again
+    (not silently treated as unchanged/done) on the next run."""
+    import asyncio
+
+    _write(tmp_path, "Widget.java", _JAVA_TWO_METHODS)
+    real_chunk_file = ingest_code.chunk_file
+
+    def failing_chunk_file(path, repo):
+        raise ValueError("boom")
+
+    monkeypatch.setattr(ingest_code, "chunk_file", failing_chunk_file)
+    first_result = asyncio.run(_ingest(tmp_path))
+    assert first_result["files"] == [{"path": "Widget.java", "status": "error", "reason": "boom"}]
+
+    call_count = {"n": 0}
+
+    def counting_chunk_file(path, repo):
+        call_count["n"] += 1
+        return real_chunk_file(path, repo)
+
+    monkeypatch.setattr(ingest_code, "chunk_file", counting_chunk_file)
+    second_result = asyncio.run(_ingest(tmp_path))
+
+    assert call_count["n"] == 1  # retried, not silently skipped as "unchanged"
+    assert second_result["files"] == [{"path": "Widget.java", "status": "success"}]
+
+
+def test_skipped_unchanged_file_leaves_its_entities_collection_chunks_untouched(tmp_path, fake_stores):
+    import asyncio
+
+    _write(
+        tmp_path,
+        "Thing.java",
+        "package com.example;\n\n@Entity\npublic class Thing {\n    public void gamma() { int z = 3; }\n}\n",
+    )
+    asyncio.run(_ingest(tmp_path))
+    entities_before = dict(fake_stores["entities"].docs)
+    assert entities_before
+
+    asyncio.run(_ingest(tmp_path))  # unchanged -- should skip, not delete+recreate
+
+    assert fake_stores["entities"].docs.keys() == entities_before.keys()
+
+
+def test_chunking_manifest_is_persisted_under_its_own_namespace(tmp_path, fake_stores, monkeypatch):
+    import asyncio
+
+    from config import settings
+
+    jobs_dir = tmp_path / "jobs"
+    monkeypatch.setattr(settings, "JOBS_DIR", str(jobs_dir))
+    repo = tmp_path / "repo"
+    _write(repo, "Widget.java", _JAVA_TWO_METHODS)
+
+    asyncio.run(_ingest(repo))
+
+    manifests = list((jobs_dir / ".chunking-manifests").glob("*.json"))
+    assert len(manifests) == 1
+    assert not (jobs_dir / ".enrichment-manifests").exists()

@@ -40,8 +40,8 @@ from pathlib import Path
 from langchain_core.documents import Document
 
 from config import settings
-from ingestion import chroma_client
-from ingestion.enrichment import chunker, filter as enrichment_filter, manifest
+from ingestion import chroma_client, manifest
+from ingestion.enrichment import chunker, filter as enrichment_filter
 from ingestion.enrichment.agents.selector import AgentSelector, build_agents
 from ingestion.enrichment.models import Language, SourceFile
 

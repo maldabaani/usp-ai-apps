@@ -1,12 +1,14 @@
-"""Covers ingestion/enrichment/manifest.py, moved from codemind/manifest.py
-(originally ported from com.jslogicextractor.incremental.ManifestService),
-adapted for the unified ingestion pipeline: dropped the output_directory
-field (there's no per-job flat-JSON output directory to track anymore in the
-ChromaDB-backed model) and simplified compute_hashes(repo, [SourceFile]) to a
-plain per-file compute_hash(absolute_path), since enrich.py hashes files
-directly rather than through CodeMind's chunked-SourceFile abstraction.
+"""Covers ingestion/manifest.py, moved from codemind/manifest.py (originally
+ported from com.jslogicextractor.incremental.ManifestService), adapted for
+the unified ingestion pipeline: dropped the output_directory field (there's
+no per-job flat-JSON output directory to track anymore in the ChromaDB-backed
+model) and simplified compute_hashes(repo, [SourceFile]) to a plain per-file
+compute_hash(absolute_path), since callers hash files directly rather than
+through CodeMind's chunked-SourceFile abstraction. Shared by both of
+ingest_code.py's tiers (mechanical chunking and LLM-summary enrichment), each
+with its own manifest namespace -- see this module's own docstring.
 """
-from ingestion.enrichment import manifest
+from ingestion import manifest
 
 
 def test_returns_empty_when_no_manifest_exists(tmp_path):

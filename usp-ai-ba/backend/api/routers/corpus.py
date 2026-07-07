@@ -42,14 +42,16 @@ async def delete_corpus_source(request: DeleteSourceRequest, user: dict = Depend
     both collections, and its entities-collection chunks must never be left
     behind as an orphaned entry once "codebase" no longer has it).
 
-    Known v1 limitation: this does not touch enrichment's per-repo
-    content-hash manifest. If the source file still exists on disk and its
-    parent repo is later fully re-ingested without that file's content
-    changing, the enrichment tier's incremental-skip logic still treats it as
-    unchanged and will not regenerate its LLM-summary chunk -- only the
-    mechanical chunks (tier 1, which always reruns unconditionally) come
-    back. Not solved here: nothing in the corpus browser tracks which repo's
-    manifest a given "codebase" source belongs to.
+    Known v1 limitation: this does not touch either tier's per-repo
+    content-hash manifest (ingest_code.py's own chunking-skip manifest, nor
+    enrichment's separate summarization-skip manifest). If the source file
+    still exists on disk and its parent repo is later fully re-ingested
+    without that file's content changing, BOTH tiers' incremental-skip logic
+    still treats it as unchanged and neither the mechanical chunks nor the
+    LLM-summary chunk come back -- the source stays gone from the corpus
+    until either its content actually changes or that ingestion run passes
+    force_full_rechunk=true. Not solved here: nothing in the corpus browser
+    tracks which repo's manifests a given "codebase" source belongs to.
     """
     await delete_by_source(request.collection_key, request.source)
     if request.collection_key == "codebase":

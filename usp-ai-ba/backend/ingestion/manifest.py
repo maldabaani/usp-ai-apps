@@ -1,16 +1,21 @@
-"""Persists a per-repository content-hash manifest so enrichment can detect
-which source files changed between ingestion runs and skip re-summarizing
-(the LLM-cost tier) the ones that haven't.
+"""Persists a per-repository content-hash manifest so a tier can detect which
+source files changed between ingestion runs and skip re-processing the ones
+that haven't. Shared by both of ingest_code.py's tiers: tier 1 (mechanical
+chunking) uses its own manifest under `.chunking-manifests/` to skip
+re-chunking unchanged files, and tier 2 (ingestion/enrichment/enrich.py) uses
+a separate one under `.enrichment-manifests/` to skip re-summarizing them --
+same functions, two independent manifest namespaces, since "chunked" and
+"summarized" are different done-states that can legitimately drift apart
+(e.g. enrichment disabled for a run, or a forced re-chunk).
 
-Manifests are stored at <settings.JOBS_DIR>/.enrichment-manifests/<sha256(repo_root)>.json,
-keyed by a hash of the repository root path -- discoverable from the repo
-path alone, with no per-job output directory to track (unlike CodeMind's
-original version of this file, ported from
-com.jslogicextractor.incremental.ManifestService, which existed to support
-per-job incremental re-runs against a job's own flat-JSON output directory;
-that concept doesn't exist in the unified ChromaDB-backed model, so this
-version is keyed purely on repo_root and drops the output_directory field
-entirely).
+Manifests are stored at <manifests_root>/<sha256(repo_root)>.json, keyed by a
+hash of the repository root path -- discoverable from the repo path alone,
+with no per-job output directory to track (unlike CodeMind's original version
+of this file, ported from com.jslogicextractor.incremental.ManifestService,
+which existed to support per-job incremental re-runs against a job's own
+flat-JSON output directory; that concept doesn't exist in the unified
+ChromaDB-backed model, so this version is keyed purely on repo_root and drops
+the output_directory field entirely).
 """
 from __future__ import annotations
 
