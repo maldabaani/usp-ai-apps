@@ -8,6 +8,7 @@ convention.
 from __future__ import annotations
 
 import asyncio
+import re
 import uuid
 
 import pytest
@@ -85,6 +86,49 @@ class _RaisingAgent:
 
     async def extract(self, file) -> ExtractionResult:
         raise RuntimeError("credit balance too low")
+
+
+class _ConcurrencyTrackingAgent:
+    """Sleeps briefly on every call so overlapping calls actually coexist,
+    tracking the maximum number of calls in flight at once -- proves parts
+    of a single oversized file are summarized concurrently (bounded by
+    max_concurrency), not strictly one-at-a-time as before this fix."""
+
+    def __init__(self, delay: float = 0.05):
+        self.delay = delay
+        self.calls: list[str] = []
+        self._in_flight = 0
+        self.max_in_flight = 0
+
+    def name(self) -> str:
+        return "concurrency-tracking-agent"
+
+    async def extract(self, file) -> ExtractionResult:
+        self.calls.append(file.relative_path)
+        self._in_flight += 1
+        self.max_in_flight = max(self.max_in_flight, self._in_flight)
+        await asyncio.sleep(self.delay)
+        self._in_flight -= 1
+        return success_result(file, self.name(), f"summary for {file.relative_path}", 0, None, None)
+
+
+_PART_NUMBER_RE = re.compile(r"/part-(\d+)")
+
+
+class _OrderInvertingAgent:
+    """Completes later-arriving parts before earlier ones (sleeping longer
+    for lower part numbers), to prove enrich.py's concurrent-parts path
+    preserves original part order in the combined summary regardless of
+    which part's LLM call actually finishes first."""
+
+    def name(self) -> str:
+        return "order-inverting-agent"
+
+    async def extract(self, file) -> ExtractionResult:
+        match = _PART_NUMBER_RE.search(file.relative_path)
+        part_number = int(match.group(1)) if match else 0
+        await asyncio.sleep(0.05 * (10 - part_number))
+        return success_result(file, self.name(), f"summary-part-{part_number}", 0, None, None)
 
 
 def _write(repo, relative: str, content: str) -> None:
@@ -467,3 +511,81 @@ def test_enrichment_eta_seconds_computed_from_observed_rate(tmp_path, monkeypatc
     assert ticks[2] == (50.0, 10)
     # b.py done at t=20: everything finished, 0s remaining.
     assert ticks[3] == (100.0, 0)
+
+
+def test_oversized_file_parts_run_concurrently_bounded_by_max_concurrency(tmp_path, monkeypatch, fake_store):
+    # Regression test for the actual bug reported live: a single huge file's
+    # parts used to run strictly one-at-a-time regardless of max_concurrency,
+    # since the only semaphore in enrich_repository bounded concurrent
+    # *files*, not parts -- useless when there's only one file. This proves
+    # parts of one file now run concurrently, bounded by max_concurrency.
+    huge_content = "\n".join(f"line_{i} = {i}" for i in range(2000))  # 5 parts of 400 lines
+    _write(tmp_path, "big.py", huge_content)
+    agent = _ConcurrencyTrackingAgent(delay=0.05)
+    monkeypatch.setattr(enrich, "build_agents", lambda: [agent])
+
+    result = asyncio.run(
+        enrich.enrich_repository(
+            tmp_path,
+            [tmp_path / "big.py"],
+            enabled=True,
+            max_concurrency=3,
+            manifests_root=tmp_path / "manifests",
+        )
+    )
+
+    assert result["files_summarized"] == 1
+    assert len(agent.calls) == 5
+    assert agent.max_in_flight == 3
+
+
+def test_oversized_file_summary_preserves_part_order_despite_concurrent_completion(
+    tmp_path, monkeypatch, fake_store
+):
+    huge_content = "\n".join(f"line_{i} = {i}" for i in range(2000))  # 5 parts
+    _write(tmp_path, "big.py", huge_content)
+    agent = _OrderInvertingAgent()
+    monkeypatch.setattr(enrich, "build_agents", lambda: [agent])
+
+    asyncio.run(
+        enrich.enrich_repository(
+            tmp_path,
+            [tmp_path / "big.py"],
+            enabled=True,
+            manifests_root=tmp_path / "manifests",
+        )
+    )
+
+    doc = next(iter(fake_store.docs.values()))
+    positions = [doc.page_content.index(f"summary-part-{n}") for n in range(1, 6)]
+    # Original part order (1..5) must be preserved in the combined summary
+    # even though completion order was deliberately reversed (part 5
+    # finished first, part 1 last).
+    assert positions == sorted(positions)
+
+
+def test_llm_call_concurrency_is_shared_across_files_not_multiplied(tmp_path, monkeypatch, fake_store):
+    # Two oversized files, each split into several parts. Total concurrent
+    # LLM calls across BOTH files combined must stay bounded by
+    # max_concurrency -- not max_concurrency-per-file (which would let
+    # concurrency multiply with how many files happen to be enriching at
+    # once).
+    huge_content = "\n".join(f"line_{i} = {i}" for i in range(1600))  # 4 parts each
+    _write(tmp_path, "big_a.py", huge_content)
+    _write(tmp_path, "big_b.py", huge_content)
+    agent = _ConcurrencyTrackingAgent(delay=0.05)
+    monkeypatch.setattr(enrich, "build_agents", lambda: [agent])
+
+    result = asyncio.run(
+        enrich.enrich_repository(
+            tmp_path,
+            [tmp_path / "big_a.py", tmp_path / "big_b.py"],
+            enabled=True,
+            max_concurrency=3,
+            manifests_root=tmp_path / "manifests",
+        )
+    )
+
+    assert result["files_summarized"] == 2
+    assert len(agent.calls) == 8
+    assert agent.max_in_flight == 3

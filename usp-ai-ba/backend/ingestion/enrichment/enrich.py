@@ -15,8 +15,11 @@ Gated by settings.INGEST_LLM_SUMMARY_ENABLED (default on) plus a per-request
 override; degrades gracefully (skips the whole tier with a logged warning,
 never raises) when zero agents are configured -- unlike AgentSelector, which
 still raises for callers that genuinely require at least one agent to exist.
-Bounded by asyncio.Semaphore(max_concurrency), matching CodeMind's original
-per-file fan-out pattern. Incremental re-runs skip re-summarizing files whose
+Bounded by asyncio.Semaphore(max_concurrency) at both the file level and
+(for an oversized file split into multiple chunker.py parts) the individual
+part level, so a single huge file's parts run concurrently instead of
+strictly one-at-a-time -- see process_one()'s extract_part(). Incremental
+re-runs skip re-summarizing files whose
 content hasn't changed since the last run, via a per-repo content-hash
 manifest (see manifest.py) -- tier 1's mechanical chunking always re-runs
 (it's cheap); only tier 2's LLM cost is worth skipping.
@@ -156,6 +159,14 @@ async def enrich_repository(
     run_started_at = _monotonic()
 
     semaphore = asyncio.Semaphore(max_concurrency)
+    # Separate from `semaphore` above (which bounds concurrent *files*): this
+    # bounds concurrent LLM calls across every part of every file, so a
+    # single file split into hundreds of chunker.py parts still gets real
+    # concurrency instead of running its parts strictly one-at-a-time --
+    # `semaphore` alone never helps there, since there's only one file to
+    # admit. Both share max_concurrency as their limit; see process_one()'s
+    # extract_part() for how they nest.
+    llm_semaphore = asyncio.Semaphore(max_concurrency)
     files_summarized = 0
     files_skipped_unchanged = 0
     errors: list[str] = []
@@ -239,15 +250,44 @@ async def enrich_repository(
                 in_progress[relative_path] = {"done": 0, "total": len(parts)}
                 await _report_progress(done_count)
 
-                summaries: list[str] = []
-                for part_number, part in enumerate(parts, start=1):
-                    agent = selector.next()
-                    result = await agent.extract(part)
-                    if result.success and not result.skipped and result.content:
-                        summaries.append(result.content)
-                    if len(parts) > 1:
-                        in_progress[relative_path] = {"done": part_number, "total": len(parts)}
+                async def extract_part(part: SourceFile) -> str | None:
+                    # Gated by llm_semaphore (not `semaphore` above, which
+                    # only bounds concurrent files) -- this is what lets a
+                    # single file's many parts run at once instead of
+                    # strictly one-at-a-time.
+                    async with llm_semaphore:
+                        agent = selector.next()
+                        result = await agent.extract(part)
+                    return result.content if (result.success and not result.skipped and result.content) else None
+
+                if len(parts) == 1:
+                    # Common case (most files never need chunker.py's
+                    # split): await directly, no Task/gather overhead.
+                    extracted = await extract_part(parts[0])
+                    summaries = [extracted] if extracted else []
+                else:
+                    # Multi-part file: summarize every part concurrently.
+                    # Writing into `results` by index (not appending in
+                    # completion order) means the combined summary below
+                    # preserves original part order regardless of which
+                    # part's LLM call happens to finish first.
+                    results: list[str | None] = [None] * len(parts)
+                    parts_done = 0
+
+                    async def process_part(index: int, part: SourceFile) -> None:
+                        nonlocal parts_done
+                        results[index] = await extract_part(part)
+                        # asyncio's single-threaded cooperative scheduling
+                        # means this increment and the in_progress update
+                        # below can't interleave with another gathered
+                        # part's -- same guarantee process_and_report's
+                        # done_count already relies on.
+                        parts_done += 1
+                        in_progress[relative_path] = {"done": parts_done, "total": len(parts)}
                         await _report_progress(done_count)
+
+                    await asyncio.gather(*[process_part(i, part) for i, part in enumerate(parts)])
+                    summaries = [text for text in results if text]
 
                 if not summaries:
                     file_records.append({"path": relative_path, "status": "skipped", "reason": "no_summary_produced"})
