@@ -43,6 +43,27 @@ class _FakeVectorStore:
         return {"metadatas": [doc.metadata for doc in self.docs.values()]}
 
 
+class _BatchThenPoisonStore(_FakeVectorStore):
+    """A whole-batch add always fails (forcing ingest_code.py's one-at-a-time
+    fallback), and within that fallback, exactly the document containing
+    ``poison_marker`` fails too -- proving a single bad chunk doesn't take
+    the rest of the batch (or the whole multi-file ingestion run) down with
+    it, matching a real failure mode seen live: a batched Ollama /api/embed
+    call rejected outright with no per-chunk detail.
+    """
+
+    def __init__(self, poison_marker: str):
+        super().__init__()
+        self.poison_marker = poison_marker
+
+    async def aadd_documents(self, documents, ids=None):
+        if len(documents) > 1:
+            raise RuntimeError("simulated batch embedding failure")
+        if self.poison_marker in documents[0].page_content:
+            raise RuntimeError("simulated poisoned chunk")
+        return await super().aadd_documents(documents, ids=ids)
+
+
 @pytest.fixture
 def fake_stores(monkeypatch):
     stores = {"codebase": _FakeVectorStore(), "entities": _FakeVectorStore(), "manuals": _FakeVectorStore()}
@@ -120,6 +141,37 @@ def test_ingest_documents_reports_error_status_on_exception(tmp_path, fake_store
 
     assert result["files"] == [{"path": "manual.docx", "status": "error", "reason": "boom"}]
     assert result["errors"][0].endswith("boom")
+
+
+def test_ingest_code_isolates_a_single_bad_chunk_during_batch_embedding(tmp_path, fake_stores):
+    _write(
+        tmp_path,
+        "Alpha.java",
+        "package com.example;\n\n@Service\npublic class Alpha {\n    public void ok() { int x = 1; }\n}\n",
+    )
+    _write(
+        tmp_path,
+        "Beta.java",
+        "package com.example;\n\n@Service\npublic class Beta {\n    public void bad() { int POISON_MARKER_XYZ = 1; }\n}\n",
+    )
+
+    poisoned_store = _BatchThenPoisonStore("POISON_MARKER_XYZ")
+    fake_stores["codebase"] = poisoned_store
+
+    result = asyncio.run(ingest_code.ingest_code(str(tmp_path), enable_llm_summary=False))
+
+    # Chunking (parsing the files into Document objects) succeeded for both
+    # files regardless of the embedding-level failure below -- these are
+    # different concerns, and the run must not raise.
+    files_by_path = {f["path"]: f for f in result["files"]}
+    assert files_by_path["Alpha.java"]["status"] == "success"
+    assert files_by_path["Beta.java"]["status"] == "success"
+    # The poisoned chunk's embedding failure is captured, not silently lost.
+    assert any("embedding failed" in e for e in result["errors"])
+    # Every non-poisoned chunk (from both files) still made it into the
+    # store -- one bad chunk didn't sink the whole batch.
+    assert poisoned_store.docs
+    assert not any(poisoned_store.poison_marker in doc.page_content for doc in poisoned_store.docs.values())
 
 
 def test_ingest_code_progress_callback_reports_both_phases(tmp_path, fake_stores, monkeypatch):

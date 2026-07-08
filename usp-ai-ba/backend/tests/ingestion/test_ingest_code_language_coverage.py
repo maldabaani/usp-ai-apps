@@ -102,6 +102,22 @@ def test_tsx_still_uses_ts_chunker(tmp_path):
     assert result.documents[0].metadata["type"] == "angular_component"
 
 
+def test_make_documents_drops_blank_pieces():
+    # A blank/whitespace-only split piece would embed to zero real tokens,
+    # which some Ollama/llama.cpp server versions reject as a 400 -- these
+    # must never reach the embedding call at all.
+    assert ingest_code._make_documents("   \n\n  ", {"source": "x"}) == []
+    assert ingest_code._make_documents("", {"source": "x"}) == []
+
+
+def test_make_documents_keeps_non_blank_overflow_pieces(monkeypatch):
+    # A real overflow split can still legitimately produce more than one
+    # piece; only genuinely blank ones are dropped, not real content.
+    monkeypatch.setattr(ingest_code, "_split_overflow", lambda text: ["real content", "   ", "more content"])
+    docs = ingest_code._make_documents("irrelevant, patched above", {"source": "x"})
+    assert [doc.page_content for doc in docs] == ["real content", "more content"]
+
+
 def test_excluded_dir_names_widened_to_match_codemind(tmp_path):
     expected = {
         "node_modules", ".git", "dist", "build", "coverage",

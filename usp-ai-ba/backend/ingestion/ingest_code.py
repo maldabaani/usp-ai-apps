@@ -168,6 +168,14 @@ def _make_documents(
     ingested_at = time.time()
     docs = []
     for index, piece in enumerate(pieces):
+        # A blank/whitespace-only piece embeds to zero real tokens, which
+        # some Ollama/llama.cpp server versions reject outright as a 400 on
+        # /api/embed rather than returning an empty vector -- skip it here
+        # rather than letting it reach the embedding call at all. Overlap
+        # near a text's start/end (RecursiveCharacterTextSplitter) is the
+        # most likely source of one of these.
+        if not piece.strip():
+            continue
         metadata = dict(base_metadata)
         metadata["ingested_at"] = ingested_at
         if len(pieces) > 1:
@@ -501,17 +509,49 @@ async def ingest_code(
     errors: list[str] = []
     file_records: list[dict] = []
 
+    async def _add_batch(store, batch: list[Document]) -> int:
+        """Add a batch of documents, isolating a single bad document instead
+        of letting its embedding-call failure take down the entire (often
+        multi-thousand-file) ingestion run. The batch call is tried whole
+        first (the common, fast path); only on failure does it fall back to
+        one document at a time, so a single embedding-server rejection (seen
+        live: a 400 from Ollama's /api/embed with no accompanying "new
+        prompt" trace, i.e. rejected before tokenization -- not a token-count
+        overflow, since individual chunk sizes were already confirmed well
+        under the model's real ceiling) only costs that one document instead
+        of every file already queued behind it in this run.
+        """
+        ids = [_document_id(doc.metadata) for doc in batch]
+        try:
+            await store.aadd_documents(batch, ids=ids)
+            return len(batch)
+        except Exception:
+            logger.warning(
+                "Batch embed of %d documents failed; retrying one at a time to isolate the failing chunk",
+                len(batch),
+            )
+        indexed = 0
+        for doc, doc_id in zip(batch, ids):
+            try:
+                await store.aadd_documents([doc], ids=[doc_id])
+                indexed += 1
+            except Exception as exc:
+                source = doc.metadata.get("source", "<unknown>")
+                logger.exception(
+                    "Failed to embed a %d-char chunk from %s -- skipping this chunk",
+                    len(doc.page_content),
+                    source,
+                )
+                errors.append(f"{source}: embedding failed for a {len(doc.page_content)}-char chunk: {exc}")
+        return indexed
+
     async def flush(force: bool = False):
         nonlocal codebase_batch, entities_batch, chunks_indexed, entity_chunks_indexed
         if codebase_batch and (force or len(codebase_batch) >= BATCH_SIZE):
-            ids = [_document_id(doc.metadata) for doc in codebase_batch]
-            await codebase_store.aadd_documents(codebase_batch, ids=ids)
-            chunks_indexed += len(codebase_batch)
+            chunks_indexed += await _add_batch(codebase_store, codebase_batch)
             codebase_batch = []
         if entities_batch and (force or len(entities_batch) >= BATCH_SIZE):
-            ids = [_document_id(doc.metadata) for doc in entities_batch]
-            await entities_store.aadd_documents(entities_batch, ids=ids)
-            entity_chunks_indexed += len(entities_batch)
+            entity_chunks_indexed += await _add_batch(entities_store, entities_batch)
             entities_batch = []
 
     for index, path in enumerate(files, start=1):
