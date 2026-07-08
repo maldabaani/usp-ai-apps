@@ -121,6 +121,22 @@ async def enrich_repository(
     files_skipped_unchanged = 0
     errors: list[str] = []
     file_records: list[dict] = []
+    # Paths currently being summarized, keyed by relative path -- a short,
+    # human-readable note of what's happening (e.g. "part 3/12"). Reported
+    # to progress_callback alongside file_records (never merged into it: the
+    # final returned "files" list must only ever contain terminal statuses),
+    # so a long-running single-file enrichment shows live activity instead
+    # of the phase label going silent from the moment tier 2 starts until
+    # its first (and maybe only) file finishes.
+    in_progress: dict[str, str] = {}
+
+    async def _report_progress(done: int) -> None:
+        if not progress_callback:
+            return
+        combined = list(file_records) + [
+            {"path": path, "status": "in_progress", "reason": note} for path, note in in_progress.items()
+        ]
+        await progress_callback(done, len(files), phase="enrichment", partial_result={"enrichment_files": combined})
 
     async def process_one(path: Path) -> None:
         nonlocal files_summarized, files_skipped_unchanged
@@ -145,12 +161,18 @@ async def enrich_repository(
                 if content.count("\n") + 1 > MAX_LINES_BEFORE_SPLITTING:
                     parts = chunker.chunk(path, relative_path, content, MAX_LINES_PER_CHUNK)
 
+                in_progress[relative_path] = f"summarizing part 1/{len(parts)}" if len(parts) > 1 else "summarizing"
+                await _report_progress(done_count)
+
                 summaries: list[str] = []
-                for part in parts:
+                for index, part in enumerate(parts, start=1):
                     agent = selector.next()
                     result = await agent.extract(part)
                     if result.success and not result.skipped and result.content:
                         summaries.append(result.content)
+                    if len(parts) > 1:
+                        in_progress[relative_path] = f"summarizing part {index}/{len(parts)}"
+                        await _report_progress(done_count)
 
                 if not summaries:
                     file_records.append({"path": relative_path, "status": "skipped", "reason": "no_summary_produced"})
@@ -177,6 +199,12 @@ async def enrich_repository(
                 logger.exception("Enrichment failed for %s", relative_path)
                 errors.append(f"{relative_path}: {exc}")
                 file_records.append({"path": relative_path, "status": "error", "reason": str(exc)})
+            finally:
+                # Cleared unconditionally (pop with a default is a no-op if
+                # it was never added, e.g. the unchanged-since-last-run skip
+                # above returns before ever setting it) so a finished file
+                # never lingers as "in_progress" in the next reported tick.
+                in_progress.pop(relative_path, None)
 
     done_count = 0
 
@@ -190,10 +218,7 @@ async def enrich_repository(
         # guarantee files_summarized/files_skipped_unchanged above already
         # rely on. No asyncio.Lock needed.
         done_count += 1
-        if progress_callback:
-            await progress_callback(
-                done_count, len(files), phase="enrichment", partial_result={"enrichment_files": list(file_records)}
-            )
+        await _report_progress(done_count)
 
     await asyncio.gather(*[process_and_report(path) for path in files])
 

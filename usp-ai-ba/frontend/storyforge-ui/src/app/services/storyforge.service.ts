@@ -131,8 +131,12 @@ export interface IngestFileRecord {
   // Tier 2 (enrichment) reports a successful file as 'summarized', not
   // 'success' -- ingestion.component.ts's displayFiles() normalizes this to
   // 'success' for display (badges/counts/filter), so both raw values must be
-  // accepted here.
-  status: 'success' | 'summarized' | 'skipped' | 'error';
+  // accepted here. 'in_progress' is a live-only status: tier 2 reports it
+  // (with `reason` set to a short note like "summarizing part 3/12") while a
+  // file's LLM-summary call is still running, then replaces it with a
+  // terminal status once done -- it never appears in a finished job's
+  // persisted result.
+  status: 'success' | 'summarized' | 'skipped' | 'error' | 'in_progress';
   reason?: string;
   chunks?: number;
 }

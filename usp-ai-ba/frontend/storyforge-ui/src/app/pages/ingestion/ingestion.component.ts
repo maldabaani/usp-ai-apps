@@ -14,7 +14,7 @@ import { WatchService, WatchTarget } from '../../services/watch.service';
 
 const POLL_INTERVAL_MS = 2000;
 
-type FileStatusFilter = 'all' | 'success' | 'skipped' | 'error';
+type FileStatusFilter = 'all' | 'success' | 'skipped' | 'error' | 'in_progress';
 
 interface DisplayFileRecord extends IngestFileRecord {
   tier: 'mechanical' | 'enrichment';

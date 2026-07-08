@@ -265,7 +265,7 @@ def test_changed_file_content_is_resummarized(tmp_path, monkeypatch, fake_store)
     assert result["files_summarized"] == 1
 
 
-def test_progress_callback_fires_once_per_file_with_enrichment_phase(tmp_path, monkeypatch, fake_store):
+def test_progress_callback_reports_in_progress_then_completion_per_file(tmp_path, monkeypatch, fake_store):
     _write(tmp_path, "a.py", "def a(): pass\n")
     _write(tmp_path, "b.py", "def b(): pass\n")
     agent = _StubAgent()
@@ -286,13 +286,25 @@ def test_progress_callback_fires_once_per_file_with_enrichment_phase(tmp_path, m
         )
     )
 
-    assert len(calls) == 2
+    # Two ticks per file (an "in_progress" tick right before its LLM call,
+    # then a completion tick) -- not just once at the very end -- so the UI
+    # can show live activity instead of the phase label going silent for a
+    # file's entire (possibly long) summarization time.
+    assert len(calls) == 4
     assert all(phase == "enrichment" for _done, _total, phase, _partial in calls)
     assert all(total == 2 for _done, total, _phase, _partial in calls)
+    # At least one early tick shows a file actually marked in_progress --
+    # proving the live-activity signal fires, not just terminal statuses.
+    assert any(
+        any(f["status"] == "in_progress" for f in partial["enrichment_files"]) for _d, _t, _p, partial in calls
+    )
     # Completion order under the semaphore is nondeterministic, so assert
     # membership as a set of paths rather than a fixed order.
     last_partial = calls[-1][3]
     assert {f["path"] for f in last_partial["enrichment_files"]} == {"a.py", "b.py"}
+    # The final tick must show no lingering "in_progress" entries -- every
+    # file has reached a terminal status.
+    assert all(f["status"] != "in_progress" for f in last_partial["enrichment_files"])
     assert {f["path"] for f in result["files"]} == {"a.py", "b.py"}
 
 
@@ -310,3 +322,40 @@ def test_oversized_file_is_chunked_and_summaries_joined(tmp_path, monkeypatch, f
     assert len(agent.calls) > 1  # split into multiple chunker parts
     doc = next(iter(fake_store.docs.values()))
     assert doc.page_content.count("part summary") == len(agent.calls)
+
+
+def test_oversized_file_reports_progress_per_part(tmp_path, monkeypatch, fake_store):
+    # A single huge file dominating a whole run (the motivating case: a
+    # multi-thousand-line file split into many chunker parts, each its own
+    # slow LLM call) must show live per-part activity, not just one
+    # "in_progress"/"summarizing" note frozen for the file's entire duration.
+    huge_content = "\n".join(f"line_{i} = {i}" for i in range(1000))
+    _write(tmp_path, "big.py", huge_content)
+    agent = _StubAgent("part summary")
+    monkeypatch.setattr(enrich, "build_agents", lambda: [agent])
+
+    calls: list[tuple] = []
+
+    async def progress_callback(done, total, *, phase, partial_result):
+        calls.append((done, total, phase, partial_result))
+
+    asyncio.run(
+        enrich.enrich_repository(
+            tmp_path,
+            [tmp_path / "big.py"],
+            enabled=True,
+            manifests_root=tmp_path / "manifests",
+            progress_callback=progress_callback,
+        )
+    )
+
+    in_progress_notes = [
+        f["reason"]
+        for _d, _t, _p, partial in calls
+        for f in partial["enrichment_files"]
+        if f["status"] == "in_progress"
+    ]
+    # At least two distinct "part N/M" notes were reported over the course
+    # of the multi-part file, not just a single static "summarizing" note.
+    assert len(agent.calls) > 1
+    assert len({note for note in in_progress_notes if note.startswith("summarizing part")}) > 1

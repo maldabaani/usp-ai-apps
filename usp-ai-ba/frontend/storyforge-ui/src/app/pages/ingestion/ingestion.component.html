@@ -133,6 +133,9 @@
         <span class="sf-badge sf-badge-done">{{ statusCount(result, 'success') }} success</span>
         <span class="sf-badge sf-badge-pending">{{ statusCount(result, 'skipped') }} skipped</span>
         <span class="sf-badge sf-badge-error">{{ statusCount(result, 'error') }} error</span>
+        <span class="sf-badge sf-badge-running" *ngIf="statusCount(result, 'in_progress')">
+          {{ statusCount(result, 'in_progress') }} in progress
+        </span>
       </div>
       <div class="ing-file-filters">
         <select class="sf-select" [(ngModel)]="fileStatusFilter" name="fileStatusFilter">
@@ -140,6 +143,7 @@
           <option value="success">Success</option>
           <option value="skipped">Skipped</option>
           <option value="error">Error</option>
+          <option value="in_progress">In progress</option>
         </select>
         <input
           class="sf-input"
@@ -168,6 +172,7 @@
                 [class.sf-badge-done]="f.status === 'success'"
                 [class.sf-badge-pending]="f.status === 'skipped'"
                 [class.sf-badge-error]="f.status === 'error'"
+                [class.sf-badge-running]="f.status === 'in_progress'"
                 >{{ f.status }}</span
               >
             </td>
