@@ -42,7 +42,21 @@ logger = logging.getLogger(__name__)
 
 CHUNK_SIZE_TOKENS = 1500
 CHUNK_OVERLAP_TOKENS = 150
-CHARS_PER_TOKEN = 4
+# Ollama's real embedding context ceiling for nomic-embed-text is a fixed
+# 2048 tokens regardless of the num_ctx passed at request time (confirmed
+# live: `ollama show nomic-embed-text` reports "context length 2048" as the
+# model's actual architectural limit, and a full multi-thousand-request
+# ingestion run showed n_ctx_slot=2048 on every single request no matter
+# what OLLAMA_EMBED_NUM_CTX was configured to -- the setting simply isn't
+# honored for this model). The old CHARS_PER_TOKEN=4 assumed a generic
+# English-prose ratio; dense/minified JS tokenizes far worse than that --
+# the same live run showed "6000-char" chunks (1500 tokens * 4) actually
+# tokenizing all the way up to 2048 (the hard truncation/400 boundary),
+# i.e. a real ratio as low as ~2.9 chars/token for worst-case code. 3
+# keeps MAX_CHUNK_CHARS's worst-case real token count safely under 2048
+# with margin, without shrinking chunks so much that retrieval quality on
+# more typical code suffers.
+CHARS_PER_TOKEN = 3
 MAX_CHUNK_CHARS = CHUNK_SIZE_TOKENS * CHARS_PER_TOKEN
 OVERLAP_CHARS = CHUNK_OVERLAP_TOKENS * CHARS_PER_TOKEN
 

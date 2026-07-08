@@ -30,7 +30,14 @@ CHUNK_SIZE_TOKENS = 1500
 CHUNK_OVERLAP_TOKENS = 150
 # Approximate characters-per-token ratio used to translate the token-based
 # limits in the spec into character-based limits for the text splitter.
-CHARS_PER_TOKEN = 4
+# Tightened from 4 -- see ingest_code.py's CHARS_PER_TOKEN comment for the
+# full story: Ollama's nomic-embed-text has a real, unconfigurable 2048-token
+# embedding ceiling (num_ctx overrides aren't honored for this model), and a
+# live ingestion run showed "4x-sized" chunks tokenizing up to that boundary.
+# Prose chunks here are less likely to hit code's worst-case ratio, but using
+# the same conservative value keeps both ingestion paths under one shared,
+# easy-to-reason-about ceiling instead of two different unverified guesses.
+CHARS_PER_TOKEN = 3
 
 _splitter = RecursiveCharacterTextSplitter(
     chunk_size=CHUNK_SIZE_TOKENS * CHARS_PER_TOKEN,
