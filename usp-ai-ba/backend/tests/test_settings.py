@@ -100,6 +100,35 @@ def test_get_settings_includes_llm_request_timeout_and_it_is_not_restart_require
     assert "llm_request_timeout_seconds" not in body["restart_required_fields"]
 
 
+def test_get_settings_includes_ollama_embed_num_ctx_and_it_is_not_restart_required():
+    resp = client.get("/api/settings", headers={"Authorization": f"Bearer {_token('settings_test_user', 'user')}"})
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "ollama_embed_num_ctx" in body
+    assert "ollama_embed_num_ctx" not in body["restart_required_fields"]
+
+
+def test_put_settings_updates_ollama_embed_num_ctx():
+    original = settings.OLLAMA_EMBED_NUM_CTX
+    try:
+        resp = client.put(
+            "/api/settings",
+            json={"ollama_embed_num_ctx": 4096},
+            headers={"Authorization": f"Bearer {_token('settings_test_admin', 'admin')}"},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["ollama_embed_num_ctx"] == 4096
+
+        get_resp = client.get(
+            "/api/settings", headers={"Authorization": f"Bearer {_token('settings_test_admin', 'admin')}"}
+        )
+        assert get_resp.json()["ollama_embed_num_ctx"] == 4096
+    finally:
+        settings.apply_updates({"OLLAMA_EMBED_NUM_CTX": original})
+
+
 def test_put_settings_updates_llm_request_timeout_seconds():
     resp = client.put(
         "/api/settings",

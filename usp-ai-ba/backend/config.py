@@ -64,6 +64,24 @@ class Settings:
     # that much KV cache without a heavy slowdown.
     OLLAMA_NUM_CTX: int = int(os.getenv("OLLAMA_NUM_CTX", "32768"))
 
+    # get_embeddings()'s OllamaEmbeddings never set num_ctx before this field
+    # existed, so nomic-embed-text loaded with Ollama's own default context
+    # (2048 tokens) -- observed in production via the llama.cpp server's own
+    # log during a large-file code ingestion: several embedding requests
+    # showed task.n_tokens == 2048 exactly (the model's context ceiling),
+    # meaning those chunks were silently truncated before being embedded.
+    # ingest_code.py's chunk-size heuristic (CHARS_PER_TOKEN=4) targets
+    # ~1500 tokens per chunk, but that ratio is tuned loosely for prose --
+    # dense code (heavy punctuation, short identifiers) commonly tokenizes
+    # worse than 4 chars/token, so a "1500-token" code chunk can genuinely
+    # exceed 2048 real tokens. Rather than fight that with an ever-more-
+    # conservative char-to-token guess, explicitly raise the embedding
+    # model's own context window instead -- 8192 is nomic-embed-text's real
+    # supported max, comfortably covering every chunk size this app produces
+    # regardless of language/token-density. Lower this only if your hardware
+    # can't hold that much KV cache for the embedding model specifically.
+    OLLAMA_EMBED_NUM_CTX: int = int(os.getenv("OLLAMA_EMBED_NUM_CTX", "8192"))
+
     # ingestion/enrichment/'s optional per-file LLM-summary tier. INGEST_OLLAMA_MODEL
     # is deliberately separate from OLLAMA_LLM_MODEL above (StoryForge's own
     # story-generation model) -- the two could reasonably diverge (a

@@ -35,6 +35,18 @@
       </div>
 
       <div class="sf-field">
+        <label for="ollamaEmbedNumCtx">Embedding Context Window (tokens)</label>
+        <input id="ollamaEmbedNumCtx" class="sf-input" type="number" min="1" [(ngModel)]="ollamaEmbedNumCtx" placeholder="8192" />
+        <p class="sf-hint">
+          Context window for the embedding model specifically (separate from the LLM context
+          window above). Ollama defaults an unconfigured model to 2048 tokens -- too small for
+          some ingested code chunks, causing them to be silently truncated before embedding
+          (check the Ollama server log for embedding requests hitting exactly your configured
+          ceiling). 8192 is nomic-embed-text's real supported max.
+        </p>
+      </div>
+
+      <div class="sf-field">
         <label for="promptVariant">Prompt Variant</label>
         <select id="promptVariant" class="sf-select" [(ngModel)]="promptVariant">
           <option value="production">Production</option>

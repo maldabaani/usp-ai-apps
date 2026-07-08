@@ -50,6 +50,7 @@ def get_embeddings() -> OllamaEmbeddings:
         _embeddings = OllamaEmbeddings(
             base_url=settings.OLLAMA_BASE_URL,
             model=settings.OLLAMA_EMBED_MODEL,
+            num_ctx=settings.OLLAMA_EMBED_NUM_CTX,
         )
         _embeddings_generation = settings.settings_generation
     return _embeddings

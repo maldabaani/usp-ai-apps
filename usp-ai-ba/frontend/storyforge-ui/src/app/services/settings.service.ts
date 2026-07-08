@@ -9,6 +9,7 @@ export interface AppSettings {
   ollama_llm_model: string;
   ollama_embed_model: string;
   ollama_num_ctx: number;
+  ollama_embed_num_ctx: number;
   prompt_variant: string;
   output_mode: string;
   ado_organization: string;

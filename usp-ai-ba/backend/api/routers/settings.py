@@ -27,6 +27,7 @@ _FIELD_TO_ENV = {
     "ollama_llm_model": "OLLAMA_LLM_MODEL",
     "ollama_embed_model": "OLLAMA_EMBED_MODEL",
     "ollama_num_ctx": "OLLAMA_NUM_CTX",
+    "ollama_embed_num_ctx": "OLLAMA_EMBED_NUM_CTX",
     "prompt_variant": "PROMPT_VARIANT",
     "output_mode": "OUTPUT_MODE",
     "ado_organization": "ADO_ORGANIZATION",
@@ -74,6 +75,7 @@ class SettingsResponse(BaseModel):
     ollama_llm_model: str
     ollama_embed_model: str
     ollama_num_ctx: int
+    ollama_embed_num_ctx: int
     prompt_variant: str
     output_mode: str
     ado_organization: str
@@ -99,6 +101,7 @@ class SettingsUpdate(BaseModel):
     ollama_llm_model: Optional[str] = None
     ollama_embed_model: Optional[str] = None
     ollama_num_ctx: Optional[int] = None
+    ollama_embed_num_ctx: Optional[int] = None
     prompt_variant: Optional[str] = None
     output_mode: Optional[str] = None
     ado_organization: Optional[str] = None
@@ -127,6 +130,7 @@ def _current_settings() -> SettingsResponse:
         ollama_llm_model=settings.OLLAMA_LLM_MODEL,
         ollama_embed_model=settings.OLLAMA_EMBED_MODEL,
         ollama_num_ctx=settings.OLLAMA_NUM_CTX,
+        ollama_embed_num_ctx=settings.OLLAMA_EMBED_NUM_CTX,
         prompt_variant=settings.PROMPT_VARIANT,
         output_mode=settings.OUTPUT_MODE,
         ado_organization=settings.ADO_ORGANIZATION,

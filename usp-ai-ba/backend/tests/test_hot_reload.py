@@ -78,6 +78,23 @@ def test_chroma_embeddings_rebuild_only_when_generation_advances():
         settings.apply_updates({"OLLAMA_EMBED_MODEL": original_model})
 
 
+def test_chroma_embeddings_uses_configured_embed_num_ctx_not_hardcoded():
+    first = chroma_client.get_embeddings()
+    assert first.num_ctx == settings.OLLAMA_EMBED_NUM_CTX
+
+
+def test_chroma_embeddings_rebuilds_when_embed_num_ctx_changes():
+    first = chroma_client.get_embeddings()
+    original_num_ctx = settings.OLLAMA_EMBED_NUM_CTX
+    try:
+        settings.apply_updates({"OLLAMA_EMBED_NUM_CTX": 4096})
+        second = chroma_client.get_embeddings()
+        assert second is not first
+        assert second.num_ctx == 4096
+    finally:
+        settings.apply_updates({"OLLAMA_EMBED_NUM_CTX": original_num_ctx})
+
+
 def test_chroma_vector_store_cache_is_dropped_on_settings_change(tmp_path):
     # Redirect the persistent client to a throwaway directory before the
     # first call in this test -- get_chroma_client()'s underlying
