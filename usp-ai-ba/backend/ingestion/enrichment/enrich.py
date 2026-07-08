@@ -47,6 +47,13 @@ from ingestion.enrichment.models import Language, SourceFile
 
 logger = logging.getLogger(__name__)
 
+# A separate reference to time.monotonic(), so tests can patch just this
+# module's notion of elapsed time (for deterministic enrichment_eta_seconds
+# assertions) without also patching the real time.monotonic() that
+# asyncio's own event loop relies on internally for scheduling -- patching
+# `time.monotonic` itself broke asyncio's own timing and crashed the loop.
+_monotonic = time.monotonic
+
 DOC_TYPE = "llm_summary"
 DEFAULT_MAX_CONCURRENCY = 8
 # Matches codemind/orchestrator.py's MAX_LINES_PER_CHUNK -- above this many
@@ -116,6 +123,38 @@ async def enrich_repository(
     previous_hashes = manifest.load(manifests_root, repo) or {}
     current_hashes: dict[str, str] = {}
 
+    def _count_parts(path: Path) -> int:
+        """How many separate LLM calls this file will need: 0 for a file
+        that process_one() below will skip entirely (manifest-unchanged or
+        filter-excluded), 1 for a normal file, or however many parts
+        chunker.py splits an oversized file into. Mirrors process_one()'s
+        own skip/split decisions (duplicated rather than shared -- both are
+        cheap one-liners, not worth threading a shared helper through). Run
+        for every file upfront (below) so enrichment_percent/eta_seconds
+        have an exact total from the start instead of guessing at
+        not-yet-started files' sizes from an average of files seen so far
+        (which can make the percentage jump backwards if a later file turns
+        out much bigger than the running average predicted).
+        """
+        relative_path = str(path.relative_to(repo))
+        digest = manifest.compute_hash(path)
+        if digest is not None and previous_hashes.get(relative_path) == digest:
+            return 0
+        try:
+            content = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            return 0
+        source_file = SourceFile(path, relative_path, content, len(content.encode("utf-8")))
+        if enrichment_filter.skip_reason(source_file):
+            return 0
+        if content.count("\n") + 1 > MAX_LINES_BEFORE_SPLITTING:
+            return len(chunker.chunk(path, relative_path, content, MAX_LINES_PER_CHUNK))
+        return 1
+
+    total_parts_by_file = {str(path.relative_to(repo)): _count_parts(path) for path in files}
+    total_parts = sum(total_parts_by_file.values())
+    run_started_at = _monotonic()
+
     semaphore = asyncio.Semaphore(max_concurrency)
     files_summarized = 0
     files_skipped_unchanged = 0
@@ -137,26 +176,41 @@ async def enrich_repository(
             return
         combined = list(file_records)
         for path, progress in in_progress.items():
-            done_parts, total_parts = progress["done"], progress["total"]
-            if total_parts > 1:
-                percent = round(done_parts / total_parts * 100)
-                reason = f"summarizing part {done_parts + 1}/{total_parts} ({percent}%)"
+            file_done_parts, file_total_parts = progress["done"], progress["total"]
+            if file_total_parts > 1:
+                percent = round(file_done_parts / file_total_parts * 100)
+                reason = f"summarizing part {file_done_parts + 1}/{file_total_parts} ({percent}%)"
             else:
                 reason = "summarizing"
             combined.append({"path": path, "status": "in_progress", "reason": reason})
-        # Fractional credit for parts already completed within any
-        # still-in-flight file (0 for a single-part file, since one atomic
-        # LLM call has no meaningful sub-progress) -- lets the overall
-        # percentage below actually move during a single huge file's
-        # enrichment, rather than sitting at 0% until that one file's only
-        # "done" tick fires at the very end.
-        fractional_done = done + sum(p["done"] / p["total"] for p in in_progress.values())
-        percent = round((fractional_done / len(files)) * 100, 1) if files else 0.0
+
+        # Exact parts-done count: full credit for every file that's reached
+        # a terminal status (file_records), partial credit for parts already
+        # completed within any file still in flight. This is the real unit
+        # of LLM-call work, not a proxy -- unlike files, parts are uniform
+        # cost, so this percentage moves smoothly even for a single huge
+        # file split into many parts.
+        done_parts = sum(total_parts_by_file.get(record["path"], 0) for record in file_records) + sum(
+            progress["done"] for progress in in_progress.values()
+        )
+        percent = round((done_parts / total_parts) * 100, 1) if total_parts else 100.0
+
+        elapsed = _monotonic() - run_started_at
+        eta_seconds = None
+        if done_parts > 0 and elapsed > 0:
+            rate = done_parts / elapsed  # parts per second, observed so far
+            remaining_parts = max(total_parts - done_parts, 0)
+            eta_seconds = round(remaining_parts / rate)
+
         await progress_callback(
             done,
             len(files),
             phase="enrichment",
-            partial_result={"enrichment_files": combined, "enrichment_percent": percent},
+            partial_result={
+                "enrichment_files": combined,
+                "enrichment_percent": percent,
+                "enrichment_eta_seconds": eta_seconds,
+            },
         )
 
     async def process_one(path: Path) -> None:

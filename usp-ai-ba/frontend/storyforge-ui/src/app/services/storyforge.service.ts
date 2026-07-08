@@ -165,6 +165,11 @@ export interface IngestResult {
   // parts shows real, moving progress instead of sitting at 0% until its
   // one "file done" tick fires at the very end.
   enrichment_percent?: number;
+  // Estimated seconds remaining for tier 2, derived from the observed
+  // parts-per-second rate so far. null until at least one part has
+  // completed (no rate to estimate from yet) -- a genuinely unknown ETA,
+  // not zero.
+  enrichment_eta_seconds?: number | null;
 }
 
 export interface IngestStatus {

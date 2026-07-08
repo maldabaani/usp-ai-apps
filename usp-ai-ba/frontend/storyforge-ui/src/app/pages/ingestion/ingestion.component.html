@@ -122,7 +122,10 @@
       <div class="ing-progress-bar ing-progress-bar-enrichment">
         <div class="ing-progress-fill" [style.width.%]="enrichmentPercent(activeStatus)"></div>
       </div>
-      <p class="ing-muted">Summarizing: {{ enrichmentPercent(activeStatus) }}% complete</p>
+      <p class="ing-muted">
+        Summarizing: {{ enrichmentPercent(activeStatus) }}% complete
+        <span *ngIf="enrichmentEtaLabel(activeStatus)"> &middot; {{ enrichmentEtaLabel(activeStatus) }}</span>
+      </p>
     </ng-container>
 
     <button *ngIf="canCancel" class="sf-btn sf-btn-danger" [disabled]="cancelling" (click)="cancelActiveJob()">

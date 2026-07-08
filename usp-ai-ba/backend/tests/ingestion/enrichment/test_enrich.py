@@ -422,3 +422,48 @@ def test_single_part_file_percentage_jumps_from_zero_to_full_credit(tmp_path, mo
 
     assert percents[0] == 0.0
     assert percents[-1] == 100.0
+
+
+def test_enrichment_eta_seconds_computed_from_observed_rate(tmp_path, monkeypatch, fake_store):
+    # Two single-part files with no real async yield points anywhere in the
+    # stub agent/fake store means asyncio.gather runs them in strict
+    # creation order here (nothing ever actually suspends the event loop),
+    # so with a fully deterministic fake clock the exact sequence of
+    # enrichment_percent/enrichment_eta_seconds ticks is knowable: a.py
+    # starts and finishes, then b.py starts and finishes.
+    _write(tmp_path, "a.py", "def a(): pass\n")
+    _write(tmp_path, "b.py", "def b(): pass\n")
+    agent = _StubAgent()
+    monkeypatch.setattr(enrich, "build_agents", lambda: [agent])
+
+    # One call for run_started_at, then one per _report_progress tick (a.py
+    # start, a.py done, b.py start, b.py done) = 5 total.
+    fake_clock = iter([0, 0, 10, 10, 20])
+    monkeypatch.setattr(enrich, "_monotonic", lambda: next(fake_clock))
+
+    ticks: list[tuple] = []
+
+    async def progress_callback(done, total, *, phase, partial_result):
+        ticks.append((partial_result["enrichment_percent"], partial_result["enrichment_eta_seconds"]))
+
+    asyncio.run(
+        enrich.enrich_repository(
+            tmp_path,
+            [tmp_path / "a.py", tmp_path / "b.py"],
+            enabled=True,
+            manifests_root=tmp_path / "manifests",
+            progress_callback=progress_callback,
+        )
+    )
+
+    # a.py start: nothing done yet -- 0%, no ETA (can't estimate a rate with
+    # zero completed work).
+    assert ticks[0] == (0.0, None)
+    # a.py done at t=10 (elapsed 10s for 1 of 2 parts): rate = 0.1 parts/s,
+    # 1 part remaining -> 10s ETA.
+    assert ticks[1] == (50.0, 10)
+    # b.py start, still t=10: same observed rate/remaining as the previous
+    # tick (b.py's own part hasn't completed yet).
+    assert ticks[2] == (50.0, 10)
+    # b.py done at t=20: everything finished, 0s remaining.
+    assert ticks[3] == (100.0, 0)

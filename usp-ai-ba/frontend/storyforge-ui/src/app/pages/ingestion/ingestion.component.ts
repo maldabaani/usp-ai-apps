@@ -265,6 +265,18 @@ export class IngestionComponent implements OnInit, OnDestroy {
     return percent === undefined ? null : percent;
   }
 
+  enrichmentEtaLabel(status: IngestStatus | null): string {
+    const seconds = status?.result?.enrichment_eta_seconds;
+    if (seconds === undefined || seconds === null) return '';
+    if (seconds <= 0) return 'almost done';
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.round(seconds % 60);
+    if (mins < 1) return `~${secs}s remaining`;
+    if (mins < 60) return `~${mins}m ${secs}s remaining`;
+    const hrs = Math.floor(mins / 60);
+    return `~${hrs}h ${mins % 60}m remaining`;
+  }
+
   clearHistory(): void {
     if (!this.history.length || this.clearingHistory) return;
     if (!confirm('Permanently clear all ingestion history? This cannot be undone.')) return;
