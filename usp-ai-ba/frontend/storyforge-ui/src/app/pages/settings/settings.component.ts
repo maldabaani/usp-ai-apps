@@ -45,7 +45,7 @@ export class SettingsComponent implements OnInit {
   anthropicApiKeyInput = '';
   ingestOllamaEnabled = false;
   ingestOllamaModel = '';
-  askQaModel = 'claude';
+  askQaModel = 'ollama';
   llmRequestTimeoutSeconds = 300;
   restartRequiredFields: string[] = [];
 
