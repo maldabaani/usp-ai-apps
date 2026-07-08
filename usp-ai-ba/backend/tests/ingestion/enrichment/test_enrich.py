@@ -13,8 +13,8 @@ import uuid
 
 import pytest
 
-from ingestion import chroma_client
-from ingestion.enrichment import enrich
+from ingestion import chroma_client, manifest
+from ingestion.enrichment import chunker, enrich, part_progress
 from ingestion.enrichment.agents.base import ExtractionResult, failure_result, success_result
 
 
@@ -74,6 +74,27 @@ class _FailingAgent:
 
     async def extract(self, file) -> ExtractionResult:
         return failure_result(file, self.name(), "boom", 0)
+
+
+class _FlakyAgent:
+    """Succeeds for the first `succeed_count` calls (across the whole agent
+    instance's lifetime, not per-file), then returns a graceful
+    failure_result for every call after that -- simulates real Anthropic API
+    credits running out partway through a large file's chunker.py parts."""
+
+    def __init__(self, succeed_count: int, content: str = "part summary"):
+        self.succeed_count = succeed_count
+        self.content = content
+        self.calls: list[str] = []
+
+    def name(self) -> str:
+        return "flaky-agent"
+
+    async def extract(self, file) -> ExtractionResult:
+        self.calls.append(file.relative_path)
+        if len(self.calls) <= self.succeed_count:
+            return success_result(file, self.name(), self.content, 0, None, None)
+        return failure_result(file, self.name(), "credit balance too low", 0)
 
 
 class _RaisingAgent:
@@ -511,6 +532,142 @@ def test_enrichment_eta_seconds_computed_from_observed_rate(tmp_path, monkeypatc
     assert ticks[2] == (50.0, 10)
     # b.py done at t=20: everything finished, 0s remaining.
     assert ticks[3] == (100.0, 0)
+
+
+def _huge_content(lines: int = 2000) -> str:
+    # 2000 lines splits into exactly 5 chunker.py parts at the default
+    # MAX_LINES_PER_CHUNK=400 -- confirmed directly against chunker.chunk().
+    return "\n".join(f"line_{i} = {i}" for i in range(lines))
+
+
+def test_partial_failure_on_multi_part_file_persists_completed_parts_and_reports_error(
+    tmp_path, monkeypatch, fake_store
+):
+    _write(tmp_path, "big.py", _huge_content())
+    agent = _FlakyAgent(succeed_count=3)
+    monkeypatch.setattr(enrich, "build_agents", lambda: [agent])
+    progress_root = tmp_path / "part-progress"
+
+    result = asyncio.run(
+        enrich.enrich_repository(
+            tmp_path,
+            [tmp_path / "big.py"],
+            enabled=True,
+            manifests_root=tmp_path / "manifests",
+            progress_root=progress_root,
+        )
+    )
+
+    assert len(agent.calls) == 5  # every part attempted this run
+    assert result["files_summarized"] == 0  # incomplete -- never written
+    assert len(fake_store.docs) == 0
+    assert result["files"][0]["status"] == "error"
+    assert "3/5 parts summarized" in result["files"][0]["reason"]
+    assert any("3/5 parts summarized" in e for e in result["errors"])
+
+    digest = manifest.compute_hash(tmp_path / "big.py")
+    completed = part_progress.load(progress_root, tmp_path, "big.py", digest, 5)
+    assert len(completed) == 3  # the 3 that succeeded were persisted, not just the failure recorded
+
+
+def test_resumed_run_only_retries_missing_parts_not_all_of_them(tmp_path, monkeypatch, fake_store):
+    _write(tmp_path, "big.py", _huge_content())
+    manifests_root = tmp_path / "manifests"
+    progress_root = tmp_path / "part-progress"
+
+    flaky = _FlakyAgent(succeed_count=3)
+    monkeypatch.setattr(enrich, "build_agents", lambda: [flaky])
+    first = asyncio.run(
+        enrich.enrich_repository(
+            tmp_path,
+            [tmp_path / "big.py"],
+            enabled=True,
+            manifests_root=manifests_root,
+            progress_root=progress_root,
+        )
+    )
+    assert first["files_summarized"] == 0
+
+    # Credits "restored": a fresh agent that always succeeds. Only the 2
+    # parts that failed last time should ever reach it -- the 3 that already
+    # succeeded must be served from persisted progress, never re-billed.
+    resumed_agent = _StubAgent("resumed summary")
+    monkeypatch.setattr(enrich, "build_agents", lambda: [resumed_agent])
+    second = asyncio.run(
+        enrich.enrich_repository(
+            tmp_path,
+            [tmp_path / "big.py"],
+            enabled=True,
+            manifests_root=manifests_root,
+            progress_root=progress_root,
+        )
+    )
+
+    assert len(resumed_agent.calls) == 2  # only the previously-missing parts
+    assert second["files_summarized"] == 1
+    doc = next(iter(fake_store.docs.values()))
+    assert doc.page_content.count("part summary") == 3  # carried over from the first run
+    assert doc.page_content.count("resumed summary") == 2  # newly completed this run
+
+
+def test_full_completion_clears_partial_progress_file(tmp_path, monkeypatch, fake_store):
+    _write(tmp_path, "big.py", _huge_content())
+    agent = _StubAgent("part summary")
+    monkeypatch.setattr(enrich, "build_agents", lambda: [agent])
+    progress_root = tmp_path / "part-progress"
+
+    result = asyncio.run(
+        enrich.enrich_repository(
+            tmp_path,
+            [tmp_path / "big.py"],
+            enabled=True,
+            manifests_root=tmp_path / "manifests",
+            progress_root=progress_root,
+        )
+    )
+
+    assert result["files_summarized"] == 1
+    progress_file = part_progress._progress_path(progress_root, tmp_path, "big.py")
+    assert not progress_file.exists()
+
+
+def test_content_change_invalidates_stale_partial_progress(tmp_path, monkeypatch, fake_store):
+    _write(tmp_path, "big.py", _huge_content())
+    manifests_root = tmp_path / "manifests"
+    progress_root = tmp_path / "part-progress"
+
+    flaky = _FlakyAgent(succeed_count=3)
+    monkeypatch.setattr(enrich, "build_agents", lambda: [flaky])
+    asyncio.run(
+        enrich.enrich_repository(
+            tmp_path,
+            [tmp_path / "big.py"],
+            enabled=True,
+            manifests_root=manifests_root,
+            progress_root=progress_root,
+        )
+    )
+
+    # Content changes -- even though the relative path is the same, the old
+    # part summaries no longer correspond to the current text and must not
+    # be reused.
+    new_content = _huge_content(2001)
+    _write(tmp_path, "big.py", new_content)
+    expected_parts = len(chunker.chunk(tmp_path / "big.py", "big.py", new_content, enrich.MAX_LINES_PER_CHUNK))
+    fresh_agent = _StubAgent("fresh summary")
+    monkeypatch.setattr(enrich, "build_agents", lambda: [fresh_agent])
+    result = asyncio.run(
+        enrich.enrich_repository(
+            tmp_path,
+            [tmp_path / "big.py"],
+            enabled=True,
+            manifests_root=manifests_root,
+            progress_root=progress_root,
+        )
+    )
+
+    assert len(fresh_agent.calls) == expected_parts  # every part attempted fresh, none skipped
+    assert result["files_summarized"] == 1
 
 
 def test_oversized_file_parts_run_concurrently_bounded_by_max_concurrency(tmp_path, monkeypatch, fake_store):

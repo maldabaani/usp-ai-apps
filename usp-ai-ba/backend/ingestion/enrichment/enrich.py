@@ -24,6 +24,20 @@ content hasn't changed since the last run, via a per-repo content-hash
 manifest (see manifest.py) -- tier 1's mechanical chunking always re-runs
 (it's cheap); only tier 2's LLM cost is worth skipping.
 
+For a multi-part file specifically, every part that succeeds is also
+persisted immediately (see part_progress.py), independent of the
+whole-file manifest above. This is what makes an interrupted run of a
+single huge file resumable instead of a total loss: if a run stops partway
+through (a cancelled job, a crashed process, or -- the motivating case --
+Anthropic API credits running out after 200 of 412 parts), the next run
+loads whatever parts already succeeded and only pays to re-attempt the
+rest, rather than re-summarizing (and re-billing for) the whole file from
+scratch. A file only earns its whole-file manifest entry -- and only gets
+its combined summary written to Chroma -- once *every* part has succeeded;
+a run that ends with some parts still missing reports an "error" status
+naming how many parts are done so far and leaves the manifest untouched,
+so the file is retried (resuming, not restarting) on the next run.
+
 The returned dict's "files" list gives per-file visibility into every
 outcome this tier can produce: "summarized", or "skipped" (with a reason of
 "unchanged_since_last_run", one of filter.py's skip_reason() strings, or
@@ -44,7 +58,7 @@ from langchain_core.documents import Document
 
 from config import settings
 from ingestion import chroma_client, manifest
-from ingestion.enrichment import chunker, filter as enrichment_filter
+from ingestion.enrichment import chunker, filter as enrichment_filter, part_progress
 from ingestion.enrichment.agents.selector import AgentSelector, build_agents
 from ingestion.enrichment.models import Language, SourceFile
 
@@ -83,6 +97,7 @@ async def enrich_repository(
     enabled: bool,
     max_concurrency: int = DEFAULT_MAX_CONCURRENCY,
     manifests_root: Path | None = None,
+    progress_root: Path | None = None,
     progress_callback=None,
 ) -> dict:
     """Runs tier-2 LLM-summary enrichment across every file in `files`
@@ -123,6 +138,7 @@ async def enrich_repository(
     codebase_store = chroma_client.get_vector_store("codebase")
 
     manifests_root = manifests_root or (Path(settings.JOBS_DIR) / ".enrichment-manifests")
+    progress_root = progress_root or (Path(settings.JOBS_DIR) / ".enrichment-part-progress")
     previous_hashes = manifest.load(manifests_root, repo) or {}
     current_hashes: dict[str, str] = {}
 
@@ -247,9 +263,6 @@ async def enrich_repository(
                 if content.count("\n") + 1 > MAX_LINES_BEFORE_SPLITTING:
                     parts = chunker.chunk(path, relative_path, content, MAX_LINES_PER_CHUNK)
 
-                in_progress[relative_path] = {"done": 0, "total": len(parts)}
-                await _report_progress(done_count)
-
                 async def extract_part(part: SourceFile) -> str | None:
                     # Gated by llm_semaphore (not `semaphore` above, which
                     # only bounds concurrent files) -- this is what lets a
@@ -262,21 +275,47 @@ async def enrich_repository(
 
                 if len(parts) == 1:
                     # Common case (most files never need chunker.py's
-                    # split): await directly, no Task/gather overhead.
+                    # split): await directly, no Task/gather overhead, and
+                    # no part_progress bookkeeping -- a single-part file
+                    # either succeeds or doesn't, so there's nothing
+                    # meaningful to resume (a retry next run is identical
+                    # in cost to a resume).
+                    in_progress[relative_path] = {"done": 0, "total": 1}
+                    await _report_progress(done_count)
                     extracted = await extract_part(parts[0])
                     summaries = [extracted] if extracted else []
                 else:
-                    # Multi-part file: summarize every part concurrently.
-                    # Writing into `results` by index (not appending in
-                    # completion order) means the combined summary below
-                    # preserves original part order regardless of which
-                    # part's LLM call happens to finish first.
-                    results: list[str | None] = [None] * len(parts)
-                    parts_done = 0
+                    # Multi-part file: resume from whatever parts already
+                    # succeeded in a prior, interrupted run of this exact
+                    # file content (persisted incrementally below) instead
+                    # of re-attempting -- and re-paying for -- them. Empty
+                    # if there's no saved progress, the content changed, or
+                    # this file was re-split into a different part count.
+                    completed: dict[int, str] = (
+                        part_progress.load(progress_root, repo, relative_path, digest, len(parts))
+                        if digest is not None
+                        else {}
+                    )
+                    results: list[str | None] = [completed.get(i) for i in range(len(parts))]
+                    pending = [i for i in range(len(parts)) if results[i] is None]
+                    parts_done = len(parts) - len(pending)
+
+                    in_progress[relative_path] = {"done": parts_done, "total": len(parts)}
+                    await _report_progress(done_count)
 
                     async def process_part(index: int, part: SourceFile) -> None:
                         nonlocal parts_done
-                        results[index] = await extract_part(part)
+                        text = await extract_part(part)
+                        if text:
+                            results[index] = text
+                            completed[index] = text
+                            if digest is not None:
+                                # Saved after every success (not just at the
+                                # end) so a crash, cancellation, or a
+                                # mid-run credit exhaustion loses at most
+                                # the parts still in flight, never the ones
+                                # already done.
+                                part_progress.save(progress_root, repo, relative_path, digest, len(parts), completed)
                         # asyncio's single-threaded cooperative scheduling
                         # means this increment and the in_progress update
                         # below can't interleave with another gathered
@@ -286,7 +325,20 @@ async def enrich_repository(
                         in_progress[relative_path] = {"done": parts_done, "total": len(parts)}
                         await _report_progress(done_count)
 
-                    await asyncio.gather(*[process_part(i, part) for i, part in enumerate(parts)])
+                    await asyncio.gather(*[process_part(i, parts[i]) for i in pending])
+
+                    if any(text is None for text in results):
+                        done_now = sum(1 for text in results if text)
+                        message = (
+                            f"{done_now}/{len(parts)} parts summarized so far; the rest failed "
+                            "this run (e.g. a rate limit or exhausted API credits) -- already-"
+                            "completed parts are saved and will be skipped (not re-billed) on "
+                            "the next run"
+                        )
+                        errors.append(f"{relative_path}: {message}")
+                        file_records.append({"path": relative_path, "status": "error", "reason": message})
+                        return
+
                     summaries = [text for text in results if text]
 
                 if not summaries:
@@ -309,6 +361,8 @@ async def enrich_repository(
                 files_summarized += 1
                 if digest is not None:
                     current_hashes[relative_path] = digest
+                if len(parts) > 1:
+                    part_progress.clear(progress_root, repo, relative_path)
                 file_records.append({"path": relative_path, "status": "summarized"})
             except Exception as exc:  # noqa: BLE001 - per-file isolation
                 logger.exception("Enrichment failed for %s", relative_path)
