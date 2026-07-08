@@ -113,6 +113,18 @@
       {{ activeStatus.progress.done }} / {{ activeStatus.progress.total }} files
     </p>
 
+    <!-- A second, finer-grained bar shown only during enrichment: unlike the
+         file-count bar above (which only ticks once a whole file finishes),
+         this credits parts already completed within a still-in-flight file,
+         so a single huge file's progress actually moves instead of sitting
+         at 0% for its entire (possibly long) summarization. -->
+    <ng-container *ngIf="activeStatus.phase === 'enrichment' && enrichmentPercent(activeStatus) !== null">
+      <div class="ing-progress-bar ing-progress-bar-enrichment">
+        <div class="ing-progress-fill" [style.width.%]="enrichmentPercent(activeStatus)"></div>
+      </div>
+      <p class="ing-muted">Summarizing: {{ enrichmentPercent(activeStatus) }}% complete</p>
+    </ng-container>
+
     <button *ngIf="canCancel" class="sf-btn sf-btn-danger" [disabled]="cancelling" (click)="cancelActiveJob()">
       {{ cancelling ? 'Stopping…' : 'Stop Job' }}
     </button>

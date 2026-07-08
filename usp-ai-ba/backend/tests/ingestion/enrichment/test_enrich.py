@@ -359,3 +359,66 @@ def test_oversized_file_reports_progress_per_part(tmp_path, monkeypatch, fake_st
     # of the multi-part file, not just a single static "summarizing" note.
     assert len(agent.calls) > 1
     assert len({note for note in in_progress_notes if note.startswith("summarizing part")}) > 1
+
+
+def test_oversized_file_reports_a_moving_overall_percentage(tmp_path, monkeypatch, fake_store):
+    # A single-file job's overall progress must not sit frozen at 0% for the
+    # entire enrichment run just because "done" (whole files) only ticks
+    # once, at the very end -- it should credit partial progress from parts
+    # already completed within that one still-in-flight file.
+    huge_content = "\n".join(f"line_{i} = {i}" for i in range(1000))
+    _write(tmp_path, "big.py", huge_content)
+    agent = _StubAgent("part summary")
+    monkeypatch.setattr(enrich, "build_agents", lambda: [agent])
+
+    percents: list[float] = []
+
+    async def progress_callback(done, total, *, phase, partial_result):
+        percents.append(partial_result["enrichment_percent"])
+
+    asyncio.run(
+        enrich.enrich_repository(
+            tmp_path,
+            [tmp_path / "big.py"],
+            enabled=True,
+            manifests_root=tmp_path / "manifests",
+            progress_callback=progress_callback,
+        )
+    )
+
+    assert len(agent.calls) > 1
+    # Strictly increasing (or at least non-decreasing) across the run, ending
+    # at 100% -- not stuck at 0 until the last tick.
+    assert percents[0] == 0.0
+    assert percents[-1] == 100.0
+    assert any(0 < p < 100 for p in percents)
+    assert percents == sorted(percents)
+
+
+def test_single_part_file_percentage_jumps_from_zero_to_full_credit(tmp_path, monkeypatch, fake_store):
+    # A file too small to be split has no meaningful sub-progress -- its
+    # fractional credit stays 0 for the file's entire single LLM call, then
+    # jumps straight to full credit once it's actually done. Two files here
+    # so there's still an overall percentage besides 0/100.
+    _write(tmp_path, "a.py", "def a(): pass\n")
+    _write(tmp_path, "b.py", "def b(): pass\n")
+    agent = _StubAgent()
+    monkeypatch.setattr(enrich, "build_agents", lambda: [agent])
+
+    percents: list[float] = []
+
+    async def progress_callback(done, total, *, phase, partial_result):
+        percents.append(partial_result["enrichment_percent"])
+
+    asyncio.run(
+        enrich.enrich_repository(
+            tmp_path,
+            [tmp_path / "a.py", tmp_path / "b.py"],
+            enabled=True,
+            manifests_root=tmp_path / "manifests",
+            progress_callback=progress_callback,
+        )
+    )
+
+    assert percents[0] == 0.0
+    assert percents[-1] == 100.0

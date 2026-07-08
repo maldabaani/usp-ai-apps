@@ -260,6 +260,11 @@ export class IngestionComponent implements OnInit, OnDestroy {
     return status.phase === 'enrichment' ? 'Generating LLM summaries' : 'Chunking files';
   }
 
+  enrichmentPercent(status: IngestStatus | null): number | null {
+    const percent = status?.result?.enrichment_percent;
+    return percent === undefined ? null : percent;
+  }
+
   clearHistory(): void {
     if (!this.history.length || this.clearingHistory) return;
     if (!confirm('Permanently clear all ingestion history? This cannot be undone.')) return;

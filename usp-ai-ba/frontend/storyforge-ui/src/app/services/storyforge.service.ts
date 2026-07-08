@@ -158,6 +158,13 @@ export interface IngestResult {
   // Tier 2 (LLM-summary enrichment) per-file outcomes -- present for both
   // "code" and "documents" jobs.
   enrichment_files?: IngestFileRecord[];
+  // Live-only overall completion percentage for tier 2, reported while
+  // phase === 'enrichment' (absent otherwise). Not just wholesale-file
+  // count / total: it also credits parts already completed within any
+  // still-in-flight file, so a single huge file split into many chunker
+  // parts shows real, moving progress instead of sitting at 0% until its
+  // one "file done" tick fires at the very end.
+  enrichment_percent?: number;
 }
 
 export interface IngestStatus {

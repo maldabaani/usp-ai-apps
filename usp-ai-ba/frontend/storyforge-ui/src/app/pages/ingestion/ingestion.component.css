@@ -62,6 +62,13 @@
   transition: width 0.3s ease;
 }
 
+/* Distinguishes the enrichment-only percentage bar from the file-count bar
+   above it -- same shape, different fill color, so the two aren't mistaken
+   for duplicates of the same number. */
+.ing-progress-bar-enrichment .ing-progress-fill {
+  background: var(--sf-warning);
+}
+
 .ing-error-list {
   color: var(--sf-error);
   margin: 10px 0 0;

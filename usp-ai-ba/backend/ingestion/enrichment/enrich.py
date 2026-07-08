@@ -121,22 +121,43 @@ async def enrich_repository(
     files_skipped_unchanged = 0
     errors: list[str] = []
     file_records: list[dict] = []
-    # Paths currently being summarized, keyed by relative path -- a short,
-    # human-readable note of what's happening (e.g. "part 3/12"). Reported
-    # to progress_callback alongside file_records (never merged into it: the
+    # Files currently being summarized, keyed by relative path -> {"done":
+    # parts already completed, "total": parts this file was split into (1
+    # for a file small enough not to need chunker.py's split)}. Reported to
+    # progress_callback alongside file_records (never merged into it: the
     # final returned "files" list must only ever contain terminal statuses),
-    # so a long-running single-file enrichment shows live activity instead
-    # of the phase label going silent from the moment tier 2 starts until
-    # its first (and maybe only) file finishes.
-    in_progress: dict[str, str] = {}
+    # so a long-running single-file enrichment shows live, quantified
+    # activity instead of the phase label going silent -- and a percentage
+    # that actually moves as parts complete -- from the moment tier 2 starts
+    # until its first (and maybe only) file finishes.
+    in_progress: dict[str, dict] = {}
 
     async def _report_progress(done: int) -> None:
         if not progress_callback:
             return
-        combined = list(file_records) + [
-            {"path": path, "status": "in_progress", "reason": note} for path, note in in_progress.items()
-        ]
-        await progress_callback(done, len(files), phase="enrichment", partial_result={"enrichment_files": combined})
+        combined = list(file_records)
+        for path, progress in in_progress.items():
+            done_parts, total_parts = progress["done"], progress["total"]
+            if total_parts > 1:
+                percent = round(done_parts / total_parts * 100)
+                reason = f"summarizing part {done_parts + 1}/{total_parts} ({percent}%)"
+            else:
+                reason = "summarizing"
+            combined.append({"path": path, "status": "in_progress", "reason": reason})
+        # Fractional credit for parts already completed within any
+        # still-in-flight file (0 for a single-part file, since one atomic
+        # LLM call has no meaningful sub-progress) -- lets the overall
+        # percentage below actually move during a single huge file's
+        # enrichment, rather than sitting at 0% until that one file's only
+        # "done" tick fires at the very end.
+        fractional_done = done + sum(p["done"] / p["total"] for p in in_progress.values())
+        percent = round((fractional_done / len(files)) * 100, 1) if files else 0.0
+        await progress_callback(
+            done,
+            len(files),
+            phase="enrichment",
+            partial_result={"enrichment_files": combined, "enrichment_percent": percent},
+        )
 
     async def process_one(path: Path) -> None:
         nonlocal files_summarized, files_skipped_unchanged
@@ -161,17 +182,17 @@ async def enrich_repository(
                 if content.count("\n") + 1 > MAX_LINES_BEFORE_SPLITTING:
                     parts = chunker.chunk(path, relative_path, content, MAX_LINES_PER_CHUNK)
 
-                in_progress[relative_path] = f"summarizing part 1/{len(parts)}" if len(parts) > 1 else "summarizing"
+                in_progress[relative_path] = {"done": 0, "total": len(parts)}
                 await _report_progress(done_count)
 
                 summaries: list[str] = []
-                for index, part in enumerate(parts, start=1):
+                for part_number, part in enumerate(parts, start=1):
                     agent = selector.next()
                     result = await agent.extract(part)
                     if result.success and not result.skipped and result.content:
                         summaries.append(result.content)
                     if len(parts) > 1:
-                        in_progress[relative_path] = f"summarizing part {index}/{len(parts)}"
+                        in_progress[relative_path] = {"done": part_number, "total": len(parts)}
                         await _report_progress(done_count)
 
                 if not summaries:
