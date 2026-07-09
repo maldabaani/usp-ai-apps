@@ -24,7 +24,7 @@ class _FakeChat:
         self._responses = list(responses)
         self.ainvoke_calls = 0
 
-    def bind(self, **kwargs):
+    def model_copy(self, *, update=None):
         return self
 
     async def ainvoke(self, messages):

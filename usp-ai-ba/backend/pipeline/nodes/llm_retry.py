@@ -52,7 +52,7 @@ async def invoke_and_parse_with_retry(
         if attempt == 1 or not supports_seed:
             call_llm = llm
         else:
-            call_llm = llm.bind(seed=base_seed + attempt - 1)
+            call_llm = llm.model_copy(update={"seed": base_seed + attempt - 1})
         try:
             response = await call_llm.ainvoke(messages)
             raw_text = extract_text(response.content)
