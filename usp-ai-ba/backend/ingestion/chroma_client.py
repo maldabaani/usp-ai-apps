@@ -3,10 +3,17 @@
 - ``sf_user_manuals`` — chunks of User Manual PDFs
 - ``sf_codebase``     — chunks of the indexed codebase (all languages/layers)
 - ``sf_jpa_entities`` — JPA Entity classes only (used as the DB schema proxy)
+
+Also exposes ``keyword_search`` — a literal-substring search over a
+collection's chunks, unioned with vector search in ``ingestion/retrieval.py``
+to guarantee an exact identifier/term mentioned in a question surfaces even
+when it isn't semantically close enough to the question's phrasing to rank
+in the vector search's own top-k.
 """
 from __future__ import annotations
 
 import asyncio
+import re
 
 import chromadb
 from chromadb.config import Settings as ChromaSettings
@@ -14,6 +21,7 @@ from langchain_chroma import Chroma
 from langchain_ollama import OllamaEmbeddings
 
 from config import settings
+from ingestion import ingestion_generation
 
 COLLECTIONS = {
     "manuals": "sf_user_manuals",
@@ -191,6 +199,60 @@ def collection_counts() -> dict[str, int]:
     GET /status report an empty-corpus state (no ingestion has run yet)
     without needing a full retrieval call."""
     return {key: get_vector_store(key)._collection.count() for key in COLLECTIONS}
+
+
+KEYWORD_TOP_K_PER_COLLECTION = 5
+
+_IDENTIFIER_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{3,}")
+
+_keyword_doc_cache: dict[str, tuple[int, list[tuple[str, dict]]]] = {}
+
+
+async def _cached_documents(collection_key: str) -> list[tuple[str, dict]]:
+    """Every (content, metadata) pair currently in a collection, cached and
+    keyed by ingestion_generation.current() so a full collection pull only
+    happens once per ingestion run rather than once per Ask question --
+    mirrors api/ask_cache.py's own use of the same counter as an
+    invalidation signal, just for a different cache."""
+    generation = ingestion_generation.current()
+    cached = _keyword_doc_cache.get(collection_key)
+    if cached is not None and cached[0] == generation:
+        return cached[1]
+
+    vector_store = get_vector_store(collection_key)
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, lambda: vector_store.get(include=["metadatas", "documents"]))
+    documents = result.get("documents") or []
+    metadatas = result.get("metadatas") or []
+    docs = list(zip(documents, metadatas))
+    _keyword_doc_cache[collection_key] = (generation, docs)
+    return docs
+
+
+async def keyword_search(collection_key: str, query: str, limit: int = KEYWORD_TOP_K_PER_COLLECTION) -> list[dict]:
+    """Literal keyword/substring search over a collection's chunks, unioned
+    with vector search in ingestion/retrieval.py -- vector similarity alone
+    doesn't guarantee an exact identifier mentioned in the question (e.g. a
+    variable/function name) surfaces in the top-k results, since embedding-
+    space closeness to the question's phrasing is a different signal than
+    "this exact string is in the chunk." Not a real relevance ranking --
+    just enough scoring to prioritize an exact whole-query substring match
+    over a partial-token match, since this only needs to guarantee recall of
+    literal terms, not rank them well.
+    """
+    query_lower = query.lower()
+    tokens = {match.group(0).lower() for match in _IDENTIFIER_TOKEN_RE.finditer(query)}
+
+    scored: list[tuple[int, dict]] = []
+    for content, metadata in await _cached_documents(collection_key):
+        content_lower = (content or "").lower()
+        score = 10 if query_lower and query_lower in content_lower else 0
+        score += sum(1 for token in tokens if token in content_lower)
+        if score > 0:
+            scored.append((score, {"content": content, "metadata": metadata or {}}))
+
+    scored.sort(key=lambda pair: pair[0], reverse=True)
+    return [doc for _, doc in scored[:limit]]
 
 
 def reset_collection(collection_key: str) -> None:
