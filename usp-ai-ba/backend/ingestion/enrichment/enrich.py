@@ -41,10 +41,14 @@ so the file is retried (resuming, not restarting) on the next run.
 The returned dict's "files" list gives per-file visibility into every
 outcome this tier can produce: "summarized", or "skipped" (with a reason of
 "unchanged_since_last_run", one of filter.py's skip_reason() strings, or
-"no_summary_produced"), or "error" (with the exception message) -- surfaced
-end-to-end through ingest_code.py's own result, the job registries, and the
-ingestion screen's per-file breakdown, so a credit-exhaustion-style failure
-(previously indistinguishable from a deliberate skip) is now visible by name.
+"no_summary_produced" -- naming the real last error when a graceful,
+non-raising failure caused it), or "error" (naming either the raised
+exception's message, or, for a multi-part file, a deduped/counted summary of
+every distinct per-part failure message via _format_error_summary()) --
+surfaced end-to-end through ingest_code.py's own result, the job registries,
+and the ingestion screen's per-file breakdown, so a credit-exhaustion-style
+failure (previously indistinguishable from a deliberate skip, and previously
+reported only as a generic placeholder) is now visible by its real cause.
 """
 from __future__ import annotations
 
@@ -52,6 +56,7 @@ import asyncio
 import hashlib
 import logging
 import time
+from collections import Counter
 from pathlib import Path
 
 from langchain_core.documents import Document
@@ -59,6 +64,7 @@ from langchain_core.documents import Document
 from config import settings
 from ingestion import chroma_client, manifest
 from ingestion.enrichment import chunker, filter as enrichment_filter, part_progress
+from ingestion.enrichment.agents.base import ExtractionResult
 from ingestion.enrichment.agents.selector import AgentSelector, build_agents
 from ingestion.enrichment.models import Language, SourceFile
 
@@ -88,6 +94,22 @@ def _document_id(relative_path: str) -> str:
 def _module(relative_path: str) -> str:
     parts = relative_path.split("/")
     return parts[0] if parts else "root"
+
+
+def _format_error_summary(messages: list[str]) -> str:
+    """Deduplicates identical per-part failure messages and counts them,
+    capped to the 3 most common distinct messages. A real outage (exhausted
+    API credits, a rate limit, a crashed local Ollama server) almost always
+    fails every remaining part with the identical underlying message, so
+    this avoids a wall of repeated identical text while still surfacing the
+    real cause instead of a generic placeholder."""
+    counts = Counter(messages)
+    top = counts.most_common(3)
+    formatted = [f'"{message}" ({count})' for message, count in top]
+    remaining_distinct = len(counts) - len(top)
+    if remaining_distinct > 0:
+        formatted.append(f"and {remaining_distinct} more distinct error(s)")
+    return ", ".join(formatted)
 
 
 async def enrich_repository(
@@ -263,15 +285,22 @@ async def enrich_repository(
                 if content.count("\n") + 1 > MAX_LINES_BEFORE_SPLITTING:
                     parts = chunker.chunk(path, relative_path, content, MAX_LINES_PER_CHUNK)
 
-                async def extract_part(part: SourceFile) -> str | None:
+                async def extract_part(part: SourceFile) -> ExtractionResult:
                     # Gated by llm_semaphore (not `semaphore` above, which
                     # only bounds concurrent files) -- this is what lets a
                     # single file's many parts run at once instead of
-                    # strictly one-at-a-time.
+                    # strictly one-at-a-time. Returns the full result (not
+                    # just success/content) so callers can surface the real
+                    # error_message on a graceful failure instead of
+                    # discarding it.
                     async with llm_semaphore:
                         agent = selector.next()
-                        result = await agent.extract(part)
-                    return result.content if (result.success and not result.skipped and result.content) else None
+                        return await agent.extract(part)
+
+                # Set when a graceful (non-raising) failure carries a real
+                # error message, so the "no_summary_produced" skip below can
+                # name the actual cause instead of a bare generic reason.
+                part_error: str | None = None
 
                 if len(parts) == 1:
                     # Common case (most files never need chunker.py's
@@ -282,8 +311,12 @@ async def enrich_repository(
                     # in cost to a resume).
                     in_progress[relative_path] = {"done": 0, "total": 1}
                     await _report_progress(done_count)
-                    extracted = await extract_part(parts[0])
-                    summaries = [extracted] if extracted else []
+                    result = await extract_part(parts[0])
+                    if result.success and not result.skipped and result.content:
+                        summaries = [result.content]
+                    else:
+                        summaries = []
+                        part_error = result.error_message
                 else:
                     # Multi-part file: resume from whatever parts already
                     # succeeded in a prior, interrupted run of this exact
@@ -299,14 +332,20 @@ async def enrich_repository(
                     results: list[str | None] = [completed.get(i) for i in range(len(parts))]
                     pending = [i for i in range(len(parts)) if results[i] is None]
                     parts_done = len(parts) - len(pending)
+                    # Real error_message per still-failing part index, so an
+                    # incomplete run can name the actual cause (a rate limit,
+                    # exhausted credits, a local Ollama timeout/crash)
+                    # instead of a generic placeholder.
+                    part_errors: dict[int, str] = {}
 
                     in_progress[relative_path] = {"done": parts_done, "total": len(parts)}
                     await _report_progress(done_count)
 
                     async def process_part(index: int, part: SourceFile) -> None:
                         nonlocal parts_done
-                        text = await extract_part(part)
-                        if text:
+                        result = await extract_part(part)
+                        if result.success and not result.skipped and result.content:
+                            text = result.content
                             results[index] = text
                             completed[index] = text
                             if digest is not None:
@@ -316,6 +355,8 @@ async def enrich_repository(
                                 # the parts still in flight, never the ones
                                 # already done.
                                 part_progress.save(progress_root, repo, relative_path, digest, len(parts), completed)
+                        else:
+                            part_errors[index] = result.error_message or "no content returned"
                         # asyncio's single-threaded cooperative scheduling
                         # means this increment and the in_progress update
                         # below can't interleave with another gathered
@@ -329,11 +370,16 @@ async def enrich_repository(
 
                     if any(text is None for text in results):
                         done_now = sum(1 for text in results if text)
+                        failed_now = len(parts) - done_now
+                        error_summary = (
+                            _format_error_summary(list(part_errors.values()))
+                            if part_errors
+                            else "no error detail captured"
+                        )
                         message = (
-                            f"{done_now}/{len(parts)} parts summarized so far; the rest failed "
-                            "this run (e.g. a rate limit or exhausted API credits) -- already-"
-                            "completed parts are saved and will be skipped (not re-billed) on "
-                            "the next run"
+                            f"{done_now}/{len(parts)} parts summarized so far; {failed_now} failed "
+                            f"this run -- {error_summary} -- already-completed parts are saved and "
+                            "will be skipped (not re-billed) on the next run"
                         )
                         errors.append(f"{relative_path}: {message}")
                         file_records.append({"path": relative_path, "status": "error", "reason": message})
@@ -342,7 +388,10 @@ async def enrich_repository(
                     summaries = [text for text in results if text]
 
                 if not summaries:
-                    file_records.append({"path": relative_path, "status": "skipped", "reason": "no_summary_produced"})
+                    reason = "no_summary_produced"
+                    if part_error:
+                        reason = f"no_summary_produced (last error: '{part_error}')"
+                    file_records.append({"path": relative_path, "status": "skipped", "reason": reason})
                     return
 
                 combined = "\n\n---\n\n".join(summaries) if len(summaries) > 1 else summaries[0]

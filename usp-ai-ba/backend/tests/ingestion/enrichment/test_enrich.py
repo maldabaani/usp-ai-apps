@@ -249,7 +249,12 @@ def test_failed_extraction_is_not_written_and_recorded_in_errors_only_on_excepti
     assert result["files_summarized"] == 0
     assert result["errors"] == []
     assert len(fake_store.docs) == 0
-    assert result["files"] == [{"path": "app.py", "status": "skipped", "reason": "no_summary_produced"}]
+    # The real failure_result message ("boom") is named, not just the
+    # generic "no_summary_produced" -- a graceful failure previously
+    # discarded its own error_message entirely.
+    assert result["files"] == [
+        {"path": "app.py", "status": "skipped", "reason": "no_summary_produced (last error: 'boom')"}
+    ]
 
 
 def test_raised_exception_is_recorded_with_error_status_and_message(tmp_path, monkeypatch, fake_store):
@@ -562,12 +567,78 @@ def test_partial_failure_on_multi_part_file_persists_completed_parts_and_reports
     assert result["files_summarized"] == 0  # incomplete -- never written
     assert len(fake_store.docs) == 0
     assert result["files"][0]["status"] == "error"
-    assert "3/5 parts summarized" in result["files"][0]["reason"]
+    reason = result["files"][0]["reason"]
+    assert "3/5 parts summarized" in reason
+    # The real, deduped failure message (both failed parts hit the same
+    # cause) is named, not a generic "rate limit or exhausted credits"
+    # placeholder.
+    assert '"credit balance too low" (2)' in reason
     assert any("3/5 parts summarized" in e for e in result["errors"])
 
-    digest = manifest.compute_hash(tmp_path / "big.py")
-    completed = part_progress.load(progress_root, tmp_path, "big.py", digest, 5)
-    assert len(completed) == 3  # the 3 that succeeded were persisted, not just the failure recorded
+
+def test_multi_part_file_with_distinct_error_messages_are_each_counted(tmp_path, monkeypatch, fake_store):
+    class _MultiErrorAgent:
+        def __init__(self):
+            self.calls: list[str] = []
+
+        def name(self) -> str:
+            return "multi-error-agent"
+
+        async def extract(self, file):
+            self.calls.append(file.relative_path)
+            call_number = len(self.calls)
+            if call_number <= 2:
+                return success_result(file, self.name(), "part summary", 0, None, None)
+            if call_number == 3:
+                return failure_result(file, self.name(), "rate limit exceeded", 0)
+            return failure_result(file, self.name(), "connection refused", 0)
+
+    _write(tmp_path, "big.py", _huge_content())
+    monkeypatch.setattr(enrich, "build_agents", lambda: [_MultiErrorAgent()])
+
+    result = asyncio.run(
+        enrich.enrich_repository(
+            tmp_path,
+            [tmp_path / "big.py"],
+            enabled=True,
+            manifests_root=tmp_path / "manifests",
+            progress_root=tmp_path / "part-progress",
+        )
+    )
+
+    reason = result["files"][0]["reason"]
+    assert '"rate limit exceeded" (1)' in reason
+    assert '"connection refused" (2)' in reason
+
+
+def test_more_than_three_distinct_error_messages_are_truncated(tmp_path, monkeypatch, fake_store):
+    class _EveryPartDifferentErrorAgent:
+        def __init__(self):
+            self.calls: list[str] = []
+
+        def name(self) -> str:
+            return "every-part-different-error-agent"
+
+        async def extract(self, file):
+            self.calls.append(file.relative_path)
+            return failure_result(file, self.name(), f"error #{len(self.calls)}", 0)
+
+    huge_content = "\n".join(f"line_{i} = {i}" for i in range(3600))  # 9 chunker.py parts
+    _write(tmp_path, "big.py", huge_content)
+    monkeypatch.setattr(enrich, "build_agents", lambda: [_EveryPartDifferentErrorAgent()])
+
+    result = asyncio.run(
+        enrich.enrich_repository(
+            tmp_path,
+            [tmp_path / "big.py"],
+            enabled=True,
+            manifests_root=tmp_path / "manifests",
+            progress_root=tmp_path / "part-progress",
+        )
+    )
+
+    reason = result["files"][0]["reason"]
+    assert "and 6 more distinct error(s)" in reason  # 9 distinct messages, top 3 shown
 
 
 def test_resumed_run_only_retries_missing_parts_not_all_of_them(tmp_path, monkeypatch, fake_store):
