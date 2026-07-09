@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
-from pypdf import PdfReader
-
+from ingestion import ingest_documents
 from ingestion.retrieval import retrieve_all_collections
 from pipeline.state import StoryForgeState
 
@@ -15,19 +15,20 @@ logger = logging.getLogger(__name__)
 MAX_QUERY_CHARS = 8000
 
 
-def _extract_pdf_text(pdf_path: str) -> str:
-    reader = PdfReader(pdf_path)
-    pages_text = []
-    for page_number, page in enumerate(reader.pages, start=1):
-        text = page.extract_text() or ""
-        if text.strip():
-            pages_text.append(f"[Page {page_number}]\n{text}")
-    return "\n\n".join(pages_text)
-
-
 async def analyze_node(state: StoryForgeState) -> StoryForgeState:
     """Extract SDD text and run parallel RAG retrieval against all three collections."""
-    solution_doc_text = _extract_pdf_text(state["solution_doc_path"])
+    if state["solution_doc_path"]:
+        # PDF or DOCX upload -- dispatches on file extension via the same
+        # extraction helper the corpus-ingestion pipeline uses, instead of
+        # this node hand-rolling a second, separately-maintained PDF reader
+        # (this used to be a private _extract_pdf_text here; now shared).
+        solution_doc_text = ingest_documents._extract_text(Path(state["solution_doc_path"]))
+    else:
+        # Pasted-text submission (api/routers/assess.py's submit_assessment):
+        # no file was ever uploaded, so state["solution_doc_text"] was
+        # pre-seeded by new_state() with the user's text directly -- nothing
+        # to extract.
+        solution_doc_text = state["solution_doc_text"]
     query_text = solution_doc_text[:MAX_QUERY_CHARS]
 
     try:

@@ -54,3 +54,15 @@
 .sf-select:focus {
   border-color: var(--sf-primary);
 }
+
+.sf-toggle-group {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.sf-btn-active {
+  background: var(--sf-primary);
+  color: #fff;
+  border-color: var(--sf-primary);
+}

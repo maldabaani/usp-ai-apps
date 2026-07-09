@@ -18,8 +18,28 @@
     </div>
 
     <div class="sf-field">
-      <label>Solution Design Document (PDF)</label>
+      <label>Solution Design Document (PDF or Word)</label>
+      <div class="sf-toggle-group">
+        <button
+          type="button"
+          class="sf-btn sf-btn-secondary"
+          [class.sf-btn-active]="inputMode === 'file'"
+          (click)="inputMode = 'file'"
+        >
+          Upload file
+        </button>
+        <button
+          type="button"
+          class="sf-btn sf-btn-secondary"
+          [class.sf-btn-active]="inputMode === 'text'"
+          (click)="inputMode = 'text'"
+        >
+          Paste text
+        </button>
+      </div>
+
       <div
+        *ngIf="inputMode === 'file'"
         class="sf-dropzone"
         [class.sf-dropzone-active]="isDragOver"
         (dragover)="onDragOver($event)"
@@ -27,14 +47,27 @@
         (drop)="onDrop($event)"
       >
         <ng-container *ngIf="!selectedFile">
-          <p>Drag and drop a PDF here, or</p>
+          <p>Drag and drop a PDF or .docx here, or</p>
           <label class="sf-btn sf-btn-secondary sf-file-label">
             Browse files
-            <input type="file" accept="application/pdf" (change)="onFileSelected($event)" hidden />
+            <input
+              type="file"
+              accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              (change)="onFileSelected($event)"
+              hidden
+            />
           </label>
         </ng-container>
         <p *ngIf="selectedFile" class="sf-file-name">{{ selectedFile.name }}</p>
       </div>
+
+      <textarea
+        *ngIf="inputMode === 'text'"
+        class="sf-input sf-textarea"
+        rows="10"
+        [(ngModel)]="sddText"
+        placeholder="Paste or type the SDD's content here..."
+      ></textarea>
     </div>
 
     <div class="sf-field">

@@ -68,14 +68,18 @@ def new_state(
     solution_doc_path: str,
     review_mode: bool,
     output_mode: str,
+    solution_doc_text: str = "",
 ) -> StoryForgeState:
-    """Build a fresh StoryForgeState for a newly submitted assessment job."""
+    """Build a fresh StoryForgeState for a newly submitted assessment job.
+    solution_doc_text is pre-seeded only for a pasted-text submission (no
+    file at all, solution_doc_path == "") -- analyze_node skips extraction
+    when it finds text already present with no path to extract from."""
     return StoryForgeState(
         ppm_number=ppm_number,
         ppm_name=ppm_name,
         system_name=system_name,
         job_id=job_id,
-        solution_doc_text="",
+        solution_doc_text=solution_doc_text,
         solution_doc_path=solution_doc_path,
         retrieved_context={"manuals": [], "codebase": [], "entities": []},
         clarification_needed=False,

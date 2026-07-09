@@ -31,6 +31,13 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/assess", tags=["assess"])
 
+# Deliberately narrower than ingestion.ingest_documents.SUPPORTED_EXTENSIONS
+# (which also allows .md/.html for the unrelated corpus-ingestion feature) --
+# SDD assessment stays PDF/Word only. Legacy binary .doc is out of scope:
+# python-docx can't read it (a different, non-XML format), and adding a
+# reader for it would mean a new external tool dependency.
+_ALLOWED_SDD_EXTENSIONS = {".pdf", ".docx"}
+
 
 async def _run_assessment(initial_state: StoryForgeState) -> None:
     job_id = initial_state["job_id"]
@@ -49,7 +56,8 @@ async def _run_assessment(initial_state: StoryForgeState) -> None:
 
 @router.post("")
 async def submit_assessment(
-    file: UploadFile = File(...),
+    file: UploadFile | None = File(None),
+    solution_doc_text: str | None = Form(None),
     ppm_number: str = Form(...),
     ppm_name: str = Form(...),
     system_name: str = Form(...),
@@ -57,23 +65,44 @@ async def submit_assessment(
     output_mode: str = Form(default=None),
     user: dict = Depends(require_auth),
 ):
+    has_file = file is not None and bool(file.filename)
+    pasted_text = (solution_doc_text or "").strip()
+    if has_file and pasted_text:
+        raise HTTPException(status_code=400, detail="Provide either a file or pasted text, not both")
+    if not has_file and not pasted_text:
+        raise HTTPException(status_code=400, detail="Provide either a file or pasted text")
+
     job_id = str(uuid.uuid4())
     resolved_output_mode = output_mode or settings.OUTPUT_MODE
 
-    uploads_dir = Path(settings.UPLOADS_DIR)
-    uploads_dir.mkdir(parents=True, exist_ok=True)
-    solution_doc_path = uploads_dir / f"{job_id}.pdf"
-    solution_doc_path.write_bytes(await file.read())
-
-    initial_state = new_state(
-        job_id=job_id,
-        ppm_number=ppm_number,
-        ppm_name=ppm_name,
-        system_name=system_name,
-        solution_doc_path=str(solution_doc_path),
-        review_mode=review_mode,
-        output_mode=resolved_output_mode,
-    )
+    if has_file:
+        suffix = Path(file.filename or "").suffix.lower()
+        if suffix not in _ALLOWED_SDD_EXTENSIONS:
+            raise HTTPException(status_code=400, detail="Only .pdf and .docx files are supported")
+        uploads_dir = Path(settings.UPLOADS_DIR)
+        uploads_dir.mkdir(parents=True, exist_ok=True)
+        solution_doc_path = uploads_dir / f"{job_id}{suffix}"
+        solution_doc_path.write_bytes(await file.read())
+        initial_state = new_state(
+            job_id=job_id,
+            ppm_number=ppm_number,
+            ppm_name=ppm_name,
+            system_name=system_name,
+            solution_doc_path=str(solution_doc_path),
+            review_mode=review_mode,
+            output_mode=resolved_output_mode,
+        )
+    else:
+        initial_state = new_state(
+            job_id=job_id,
+            ppm_number=ppm_number,
+            ppm_name=ppm_name,
+            system_name=system_name,
+            solution_doc_path="",
+            review_mode=review_mode,
+            output_mode=resolved_output_mode,
+            solution_doc_text=pasted_text,
+        )
 
     register_assess_job(job_id, ppm_number, ppm_name, system_name, resolved_output_mode)
     run_tracked(job_id, _run_assessment(initial_state))
@@ -83,32 +112,46 @@ async def submit_assessment(
 
 @router.post("/rerun/{job_id}")
 async def rerun_assessment(job_id: str, user: dict = Depends(require_auth)):
-    """Create a new job using the stored PDF from a previous job."""
-    original = next((j for j in list_assess_jobs() if j["job_id"] == job_id), None)
+    """Create a new job re-using the original job's SDD -- a copy of its
+    uploaded file (preserving the real .pdf/.docx extension), or, for a
+    pasted-text original, the same text carried forward with no file at all."""
+    original = await get_job_state(job_id)
     if original is None:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    stored_pdf = Path(settings.UPLOADS_DIR) / f"{job_id}.pdf"
-    if not stored_pdf.exists():
-        raise HTTPException(status_code=404, detail="Original PDF no longer available for re-run")
-
     new_job_id = str(uuid.uuid4())
-    new_pdf = Path(settings.UPLOADS_DIR) / f"{new_job_id}.pdf"
-    shutil.copy2(stored_pdf, new_pdf)
+    original_path = original.get("solution_doc_path") or ""
 
     # Older registry rows predate output_mode; fall back to the current global
     # default so a re-run of one of those still works.
-    resolved_output_mode = original.get("output_mode") or settings.OUTPUT_MODE
+    resolved_output_mode = resolve_output_mode(original, settings.OUTPUT_MODE)
 
-    initial_state = new_state(
-        job_id=new_job_id,
-        ppm_number=original["ppm_number"],
-        ppm_name=original["ppm_name"],
-        system_name=original["system_name"],
-        solution_doc_path=str(new_pdf),
-        review_mode=False,
-        output_mode=resolved_output_mode,
-    )
+    if original_path:
+        stored_file = Path(original_path)
+        if not stored_file.exists():
+            raise HTTPException(status_code=404, detail="Original file no longer available for re-run")
+        new_file = Path(settings.UPLOADS_DIR) / f"{new_job_id}{stored_file.suffix}"
+        shutil.copy2(stored_file, new_file)
+        initial_state = new_state(
+            job_id=new_job_id,
+            ppm_number=original["ppm_number"],
+            ppm_name=original["ppm_name"],
+            system_name=original["system_name"],
+            solution_doc_path=str(new_file),
+            review_mode=False,
+            output_mode=resolved_output_mode,
+        )
+    else:
+        initial_state = new_state(
+            job_id=new_job_id,
+            ppm_number=original["ppm_number"],
+            ppm_name=original["ppm_name"],
+            system_name=original["system_name"],
+            solution_doc_path="",
+            review_mode=False,
+            output_mode=resolved_output_mode,
+            solution_doc_text=original.get("solution_doc_text") or "",
+        )
 
     register_assess_job(
         new_job_id,
@@ -233,8 +276,15 @@ async def delete_assessment(job_id: str, user: dict = Depends(require_auth)) -> 
     if not any(job["job_id"] == job_id for job in list_assess_jobs()):
         raise HTTPException(status_code=404, detail="Job not found")
 
+    # Capture the real uploaded-file path (if any) before delete_job() touches
+    # the checkpoint that state lives in -- a pasted-text job has none, and a
+    # .docx job's path won't match a hardcoded ".pdf" guess.
+    state = await get_job_state(job_id)
+    solution_doc_path = (state.get("solution_doc_path") if state else "") or ""
+
     await delete_job(job_id)
-    Path(settings.UPLOADS_DIR, f"{job_id}.pdf").unlink(missing_ok=True)
+    if solution_doc_path:
+        Path(solution_doc_path).unlink(missing_ok=True)
     delete_assess_job(job_id)
 
 

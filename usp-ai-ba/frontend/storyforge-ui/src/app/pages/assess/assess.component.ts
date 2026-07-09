@@ -20,11 +20,15 @@ export class AssessComponent implements OnInit {
   reviewMode = true;
   outputMode = 'document';
 
+  inputMode: 'file' | 'text' = 'file';
   selectedFile: File | null = null;
+  sddText = '';
   isDragOver = false;
 
   submitting = false;
   submitError = '';
+
+  private static readonly ALLOWED_EXTENSIONS = ['.pdf', '.docx'];
 
   constructor(
     private storyForgeService: StoryForgeService,
@@ -69,8 +73,14 @@ export class AssessComponent implements OnInit {
   }
 
   private setFile(file: File): void {
-    if (file.type !== 'application/pdf') {
-      this.submitError = 'Only PDF files are accepted.';
+    // Filename extension, not file.type -- MIME-type reporting for .docx is
+    // inconsistent across browsers/OSes, while the extension is reliable and
+    // matches the backend's own check (api/routers/assess.py's
+    // _ALLOWED_SDD_EXTENSIONS).
+    const name = file.name.toLowerCase();
+    const isAllowed = AssessComponent.ALLOWED_EXTENSIONS.some((ext) => name.endsWith(ext));
+    if (!isAllowed) {
+      this.submitError = 'Only .pdf and .docx files are accepted.';
       return;
     }
     this.submitError = '';
@@ -78,8 +88,9 @@ export class AssessComponent implements OnInit {
   }
 
   get canSubmit(): boolean {
+    const hasInput = this.inputMode === 'file' ? !!this.selectedFile : !!this.sddText.trim();
     return (
-      !!this.selectedFile &&
+      hasInput &&
       !!this.ppmNumber.trim() &&
       !!this.ppmName.trim() &&
       !!this.systemName.trim() &&
@@ -88,7 +99,7 @@ export class AssessComponent implements OnInit {
   }
 
   runAssessment(): void {
-    if (!this.selectedFile || !this.canSubmit) {
+    if (!this.canSubmit) {
       return;
     }
 
@@ -97,12 +108,13 @@ export class AssessComponent implements OnInit {
 
     this.storyForgeService
       .submitAssessment(
-        this.selectedFile,
+        this.inputMode === 'file' ? this.selectedFile : null,
         this.ppmNumber.trim(),
         this.ppmName.trim(),
         this.systemName.trim(),
         this.reviewMode,
-        this.outputMode
+        this.outputMode,
+        this.inputMode === 'text' ? this.sddText.trim() : undefined
       )
       .subscribe({
         next: ({ job_id }) => {

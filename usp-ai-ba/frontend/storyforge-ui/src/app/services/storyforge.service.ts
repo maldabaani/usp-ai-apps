@@ -243,15 +243,21 @@ export class StoryForgeService {
   }
 
   submitAssessment(
-    file: File,
+    file: File | null,
     ppmNumber: string,
     ppmName: string,
     systemName: string,
     reviewMode: boolean,
-    outputMode: string
+    outputMode: string,
+    solutionDocText?: string
   ): Observable<{ job_id: string }> {
     const formData = new FormData();
-    formData.append('file', file);
+    if (file) {
+      formData.append('file', file);
+    }
+    if (solutionDocText) {
+      formData.append('solution_doc_text', solutionDocText);
+    }
     formData.append('ppm_number', ppmNumber);
     formData.append('ppm_name', ppmName);
     formData.append('system_name', systemName);
