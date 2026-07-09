@@ -125,6 +125,22 @@
   flex: 1;
 }
 
+/* Technical Approach items can hold a multi-line illustrative code snippet
+   (see prompts/system_prompt.py) -- a plain single-line <input> can't display
+   embedded newlines at all, so this row uses a <textarea> instead and aligns
+   its remove button to the top rather than vertically centering it against a
+   tall box. */
+.sf-list-row-multiline {
+  align-items: flex-start;
+}
+
+.sf-textarea-code {
+  flex: 1;
+  font-family: 'SF Mono', Monaco, Consolas, monospace;
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+
 /* ── Buttons ─────────────────────────────────────────────────────────────── */
 .sf-add-btn {
   font-size: 12px;

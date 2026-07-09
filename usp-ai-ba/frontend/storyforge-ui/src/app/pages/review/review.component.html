@@ -105,8 +105,12 @@
                 <label>Technical Approach</label>
                 <button class="sf-add-btn-sm" (click)="addItem(task.technical_approach)">+ Add</button>
               </div>
-              <div class="sf-list-row" *ngFor="let _ of task.technical_approach; let ii = index">
-                <input class="sf-input" [(ngModel)]="task.technical_approach[ii]" />
+              <div class="sf-list-row sf-list-row-multiline" *ngFor="let _ of task.technical_approach; let ii = index">
+                <textarea
+                  class="sf-textarea sf-textarea-code"
+                  rows="3"
+                  [(ngModel)]="task.technical_approach[ii]"
+                ></textarea>
                 <button class="sf-icon-btn" (click)="removeItem(task.technical_approach, ii)">&#215;</button>
               </div>
             </div>
