@@ -817,3 +817,68 @@ def test_llm_call_concurrency_is_shared_across_files_not_multiplied(tmp_path, mo
     assert result["files_summarized"] == 2
     assert len(agent.calls) == 8
     assert agent.max_in_flight == 3
+
+
+def test_resumed_run_eta_is_not_inflated_by_free_resumed_parts(tmp_path, monkeypatch, fake_store):
+    # Regression test for a real bug: a resumed multi-part file's ETA was
+    # computed from *all* done parts (including ones loaded instantly from
+    # part_progress, costing this run zero time), wildly overstating the
+    # observed rate and understating time remaining. Pre-populate 3 of 5
+    # parts as already-done (as if resumed from a prior interrupted run),
+    # then confirm the rate/ETA reflects only the 2 genuinely-timed parts
+    # processed this run.
+    content = _huge_content()
+    _write(tmp_path, "big.py", content)
+    manifests_root = tmp_path / "manifests"
+    progress_root = tmp_path / "part-progress"
+    digest = manifest.compute_hash(tmp_path / "big.py")
+    part_progress.save(
+        progress_root,
+        tmp_path,
+        "big.py",
+        digest,
+        5,
+        {0: "old summary 0", 1: "old summary 1", 2: "old summary 2"},
+    )
+
+    agent = _StubAgent("new summary")
+    monkeypatch.setattr(enrich, "build_agents", lambda: [agent])
+
+    # No real yield points anywhere in the stub agent/fake store means
+    # asyncio.gather runs the 2 pending parts in strict creation order here
+    # (same determinism this file's existing ETA test already relies on) --
+    # so the exact sequence of _monotonic() calls is knowable: run_started_at,
+    # then one per _report_progress tick (pre-work, part 3 done, part 4 done,
+    # file fully finalized) = 5 total.
+    fake_clock = iter([0, 2, 12, 22, 22])
+    monkeypatch.setattr(enrich, "_monotonic", lambda: next(fake_clock))
+
+    etas: list[float | None] = []
+
+    async def progress_callback(done, total, *, phase, partial_result):
+        etas.append(partial_result["enrichment_eta_seconds"])
+
+    result = asyncio.run(
+        enrich.enrich_repository(
+            tmp_path,
+            [tmp_path / "big.py"],
+            enabled=True,
+            manifests_root=manifests_root,
+            progress_root=progress_root,
+            progress_callback=progress_callback,
+        )
+    )
+
+    assert len(agent.calls) == 2  # only the 2 missing parts, not all 5
+    assert result["files_summarized"] == 1
+    # Before any genuinely-new part completes this run: unknown, not a
+    # falsely-optimistic number computed from the 3 free resumed parts (the
+    # old bug would have reported 1 here, not None).
+    assert etas[0] is None
+    # After 1 of 2 new parts completes (elapsed 12s): rate = 1 part / 12s,
+    # 1 part remaining -> 12s. The old bug (rate from all 4 done parts over
+    # 12s) would have wrongly reported 3.
+    assert etas[1] == 12
+    # Both new parts done: nothing left.
+    assert etas[2] == 0
+    assert etas[3] == 0

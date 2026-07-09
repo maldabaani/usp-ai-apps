@@ -195,6 +195,13 @@ async def enrich_repository(
     total_parts_by_file = {str(path.relative_to(repo)): _count_parts(path) for path in files}
     total_parts = sum(total_parts_by_file.values())
     run_started_at = _monotonic()
+    # Parts genuinely processed (a real extract_part() call, success or
+    # failure) during *this* run only -- unlike `done_parts` below, this
+    # excludes parts credited from a resumed part_progress.load() (loaded
+    # instantly from disk, consuming none of this run's elapsed time). Used
+    # only for the rate/ETA estimate, so a resumed run's already-free parts
+    # don't inflate the observed rate and understate the time remaining.
+    work_done_this_run = 0
 
     semaphore = asyncio.Semaphore(max_concurrency)
     # Separate from `semaphore` above (which bounds concurrent *files*): this
@@ -246,8 +253,8 @@ async def enrich_repository(
 
         elapsed = _monotonic() - run_started_at
         eta_seconds = None
-        if done_parts > 0 and elapsed > 0:
-            rate = done_parts / elapsed  # parts per second, observed so far
+        if work_done_this_run > 0 and elapsed > 0:
+            rate = work_done_this_run / elapsed  # genuinely-timed parts/sec this run only
             remaining_parts = max(total_parts - done_parts, 0)
             eta_seconds = round(remaining_parts / rate)
 
@@ -263,7 +270,7 @@ async def enrich_repository(
         )
 
     async def process_one(path: Path) -> None:
-        nonlocal files_summarized, files_skipped_unchanged
+        nonlocal files_summarized, files_skipped_unchanged, work_done_this_run
         relative_path = str(path.relative_to(repo))
         digest = manifest.compute_hash(path)
         if digest is not None and previous_hashes.get(relative_path) == digest:
@@ -312,6 +319,7 @@ async def enrich_repository(
                     in_progress[relative_path] = {"done": 0, "total": 1}
                     await _report_progress(done_count)
                     result = await extract_part(parts[0])
+                    work_done_this_run += 1
                     if result.success and not result.skipped and result.content:
                         summaries = [result.content]
                     else:
@@ -342,8 +350,9 @@ async def enrich_repository(
                     await _report_progress(done_count)
 
                     async def process_part(index: int, part: SourceFile) -> None:
-                        nonlocal parts_done
+                        nonlocal parts_done, work_done_this_run
                         result = await extract_part(part)
+                        work_done_this_run += 1
                         if result.success and not result.skipped and result.content:
                             text = result.content
                             results[index] = text
