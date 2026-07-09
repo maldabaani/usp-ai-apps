@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 
+from ingestion import ingest_code
 from pipeline.nodes.context_budget import cap_context
 
 
@@ -65,7 +66,14 @@ def test_returns_all_original_keys_even_when_fully_truncated(caplog):
     assert result["entities"] == []
 
 
-def test_one_oversized_chunk_does_not_crash_and_still_gets_capped(caplog):
+def test_one_oversized_chunk_is_truncated_to_max_chunk_chars(caplog):
+    # Regression test: a still-stale (not yet re-ingested since a chunking
+    # fix shipped) or otherwise-misbehaving corpus can produce one single
+    # chunk large enough to blow the entire cumulative budget by itself --
+    # confirmed in production (a 656,961-token prompt from one oversized
+    # LLM-summary document). This per-chunk cap is the actual fix for that,
+    # independent of whether enrich.py's own size cap has been applied to
+    # already-ingested data yet.
     retrieved = {
         "manuals": [],
         "codebase": [_chunk("z" * 1_000_000, "huge.js")],
@@ -75,11 +83,22 @@ def test_one_oversized_chunk_does_not_crash_and_still_gets_capped(caplog):
     with caplog.at_level(logging.WARNING):
         result = cap_context(retrieved, "test_node", max_chars=120_000)
 
-    # The single oversized chunk is still included once (this guard trims
-    # future chunks after the budget is spent, not mid-chunk -- it can't
-    # retroactively un-include the one chunk that blew the budget) -- the
-    # real fix for oversized individual chunks is enrich.py's own size cap;
-    # this confirms cap_context degrades gracefully rather than erroring or
-    # infinite-looping when that upstream fix is somehow bypassed.
+    truncated_content = result["codebase"][0]["content"]
+    assert len(truncated_content) == ingest_code.MAX_CHUNK_CHARS + len("\n...[truncated]")
+    assert truncated_content.endswith("...[truncated]")
+    assert result["codebase"][0]["metadata"] == retrieved["codebase"][0]["metadata"]
+    assert any("1 chunk(s) individually truncated" in message for message in caplog.messages)
+
+
+def test_chunk_at_or_under_max_chunk_chars_is_left_unchanged(caplog):
+    retrieved = {
+        "manuals": [],
+        "codebase": [_chunk("y" * ingest_code.MAX_CHUNK_CHARS, "normal.js")],
+        "entities": [],
+    }
+
+    with caplog.at_level(logging.WARNING):
+        result = cap_context(retrieved, "test_node", max_chars=120_000)
+
     assert result["codebase"] == retrieved["codebase"]
     assert caplog.messages == []
