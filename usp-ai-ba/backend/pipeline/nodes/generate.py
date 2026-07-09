@@ -1,14 +1,18 @@
-"""Node 3: generate User Stories, Dev Tasks, and Unit Test Tasks via a local Ollama model."""
+"""Node 3: generate User Stories, Dev Tasks, and Unit Test Tasks -- via local
+Ollama by default, or Claude when settings.ASSESSMENT_MODEL == "claude" (with
+an automatic fallback to Ollama if Claude fails; see llm_retry.py)."""
 from __future__ import annotations
 
 import logging
 
+from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_ollama import ChatOllama
 
 from config import settings
+from pipeline.nodes import assessment_llm
 from pipeline.nodes.json_response import extract_json, extract_text
-from pipeline.nodes.llm_retry import invoke_and_parse_with_retry
+from pipeline.nodes.llm_retry import invoke_and_parse_with_fallback
 from pipeline.state import StoryForgeState
 from prompts.system_prompt import SYSTEM_PROMPT as PRODUCTION_SYSTEM_PROMPT
 from prompts.system_prompt_selftest import SYSTEM_PROMPT as SELFTEST_SYSTEM_PROMPT
@@ -18,36 +22,48 @@ logger = logging.getLogger(__name__)
 MAX_OUTPUT_TOKENS = 8192
 
 # temperature=0 + a fixed seed makes the same SDD produce the same epics/
-# stories on every run instead of a different set each time.
+# stories on every run instead of a different set each time (Ollama only --
+# Claude has no seed parameter; see llm_retry.py).
 BASE_SEED = 42
 
 SYSTEM_PROMPT = (
     SELFTEST_SYSTEM_PROMPT if settings.PROMPT_VARIANT == "selftest" else PRODUCTION_SYSTEM_PROMPT
 )
 
-_llm: ChatOllama | None = None
+_llm: ChatOllama | ChatAnthropic | None = None
 _llm_generation = -1
+_llm_model_kind: str | None = None
+
+_fallback_llm: ChatOllama | None = None
+_fallback_llm_generation = -1
 
 
-def _get_llm() -> ChatOllama:
+def _get_llm() -> ChatOllama | ChatAnthropic:
     """Rebuilds only when settings.settings_generation has advanced (i.e. the
-    settings screen changed OLLAMA_LLM_MODEL/OLLAMA_BASE_URL) rather than on
-    every call -- previously this was a module-level singleton built once at
-    import time, so a settings change silently had no effect until a process
-    restart."""
-    global _llm, _llm_generation
-    if _llm is None or _llm_generation != settings.settings_generation:
-        _llm = ChatOllama(
-            model=settings.OLLAMA_LLM_MODEL,
-            base_url=settings.OLLAMA_BASE_URL,
-            num_predict=MAX_OUTPUT_TOKENS,
-            num_ctx=settings.OLLAMA_NUM_CTX,
-            temperature=0,
-            seed=BASE_SEED,
-            timeout=settings.LLM_REQUEST_TIMEOUT_SECONDS,
+    settings screen changed OLLAMA_LLM_MODEL/OLLAMA_BASE_URL/ASSESSMENT_MODEL)
+    rather than on every call -- previously this was a module-level singleton
+    built once at import time, so a settings change silently had no effect
+    until a process restart."""
+    global _llm, _llm_generation, _llm_model_kind
+    model_kind = settings.ASSESSMENT_MODEL
+    if _llm is None or _llm_generation != settings.settings_generation or _llm_model_kind != model_kind:
+        _llm = assessment_llm.build_llm(
+            model_kind, ollama_num_predict=MAX_OUTPUT_TOKENS, claude_max_tokens=MAX_OUTPUT_TOKENS, seed=BASE_SEED
         )
         _llm_generation = settings.settings_generation
+        _llm_model_kind = model_kind
     return _llm
+
+
+def _get_ollama_fallback_llm() -> ChatOllama:
+    """A guaranteed-Ollama client for when ASSESSMENT_MODEL == "claude" and
+    the Claude call fails -- independent of _get_llm()'s own cache, which
+    tracks whichever model is currently configured as primary."""
+    global _fallback_llm, _fallback_llm_generation
+    if _fallback_llm is None or _fallback_llm_generation != settings.settings_generation:
+        _fallback_llm = assessment_llm.build_ollama_llm(num_predict=MAX_OUTPUT_TOKENS, seed=BASE_SEED)
+        _fallback_llm_generation = settings.settings_generation
+    return _fallback_llm
 
 
 def _format_chunks(chunks: list[dict]) -> str:
@@ -123,9 +139,11 @@ def _log_and_parse_stories(raw_text: str) -> list[dict]:
 
 async def generate_node(state: StoryForgeState) -> StoryForgeState:
     """Send the SDD + RAG context + clarification answers to the LLM and parse stories."""
+    fallback_llm = _get_ollama_fallback_llm() if settings.ASSESSMENT_MODEL == "claude" else None
     try:
-        stories = await invoke_and_parse_with_retry(
+        stories = await invoke_and_parse_with_fallback(
             _get_llm(),
+            fallback_llm,
             [
                 SystemMessage(content=SYSTEM_PROMPT),
                 HumanMessage(content=_build_user_message(state)),
@@ -134,6 +152,7 @@ async def generate_node(state: StoryForgeState) -> StoryForgeState:
             extract_text,
             base_seed=BASE_SEED,
             node_name="generate_node",
+            supports_seed=settings.ASSESSMENT_MODEL != "claude",
         )
     except Exception as exc:  # noqa: BLE001 - surfaced to caller via state errors
         logger.exception("generate_node failed after retries")

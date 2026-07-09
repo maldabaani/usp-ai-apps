@@ -239,16 +239,17 @@ All backend configuration is environment-variable driven (`backend/.env`, loaded
 
 | Variable | Default | Description |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | _(none)_ | Blank/opt-in by default — Claude is never used unless this is set to a real key. Not called anywhere in *this* pipeline (`clarify_node`/`generate_node` use `OLLAMA_LLM_MODEL` instead); when set, it enables Claude as an ingestion LLM-summary enrichment agent and as an `ASK_QA_MODEL=claude` option for Ask Technical/Business |
-| `CLAUDE_MODEL` | `claude-sonnet-4-6` | Not used by this pipeline; used by ingestion's enrichment tier and Ask Technical/Business (exposed as `anthropic_model` on the settings screen) when Claude is enabled |
+| `ANTHROPIC_API_KEY` | _(none)_ | Blank/opt-in by default — Claude is never used unless this is set to a real key. When set, it enables Claude as an ingestion LLM-summary enrichment agent, as an `ASK_QA_MODEL=claude` option for Ask Technical/Business, and as an `ASSESSMENT_MODEL=claude` option for StoryForge's `clarify_node`/`generate_node` |
+| `CLAUDE_MODEL` | `claude-sonnet-4-6` | Used by ingestion's enrichment tier, Ask Technical/Business, and StoryForge's `clarify_node`/`generate_node` (exposed as `anthropic_model` on the settings screen) when Claude is enabled |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL, shared by every local model (embeddings, clarify/generate, ingestion's enrichment agent, Ask's default Ollama mode) |
 | `OLLAMA_EMBED_MODEL` | `nomic-embed-text` | Embedding model name, used for all RAG retrieval |
 | `OLLAMA_EMBED_NUM_CTX` | `8192` | Context window (tokens) for the embedding model specifically, separate from `OLLAMA_NUM_CTX` below (the chat model's own window). Ollama defaults an unconfigured model to 2048 tokens — too small for some ingested code chunks (dense code tokenizes worse than prose, so a chunk sized to ~1500 tokens by `ingest_code.py`'s char-based heuristic can exceed 2048 real tokens), silently truncating them before embedding. 8192 is `nomic-embed-text`'s real supported max. Editable from `/settings` (hot-reloads, no restart needed) |
-| `OLLAMA_LLM_MODEL` | `qwen2.5:14b` | Chat model used by `clarify_node` and `generate_node`, both run at `temperature=0` with a fixed seed for reproducible output across runs of the same SDD |
+| `OLLAMA_LLM_MODEL` | `qwen2.5:14b` | Chat model used by `clarify_node` and `generate_node` when `ASSESSMENT_MODEL=ollama`, run at `temperature=0` with a fixed seed for reproducible output across runs of the same SDD |
 | `INGEST_OLLAMA_ENABLED` | `true` | Enables Ollama as an agent for ingestion's optional per-file LLM-summary enrichment tier (on by default; round-robins with Claude too if `ANTHROPIC_API_KEY` is also set) |
 | `INGEST_OLLAMA_MODEL` | `qwen2.5:14b` | Model name for the above |
 | `INGEST_LLM_SUMMARY_ENABLED` | `true` | Whether ingestion runs its optional per-file LLM-summary enrichment tier at all (mechanical chunking always runs regardless) |
 | `ASK_QA_MODEL` | `ollama` | `ollama` (default) or `claude` — which model answers Ask Technical/Business. `claude` requires a real `ANTHROPIC_API_KEY`. Editable from `/settings` (hot-reloads, no restart needed) |
+| `ASSESSMENT_MODEL` | `ollama` | `ollama` (default) or `claude` — which model StoryForge's `clarify_node`/`generate_node` use. `claude` requires a real `ANTHROPIC_API_KEY`; if a Claude call fails after its own retries, that node automatically falls back to local Ollama for the call (logged at WARNING) rather than failing the assessment. Editable from `/settings` (hot-reloads, no restart needed) |
 | `LLM_REQUEST_TIMEOUT_SECONDS` | `300` | Shared HTTP request timeout for every LLM call in this app (Ask, StoryForge's `generate_node`/`clarify_node`, ingestion's LLM-summary enrichment agents) — previously three separate hardcoded 120s constants that could kill a slow local Ollama response before it finished. Editable from `/settings` (hot-reloads, no restart needed) |
 | `CONVERSATION_HISTORY_CHAR_BUDGET` | `8000` | Character ceiling (not token — see `config.py`'s comment) for how much prior conversation history is folded into a follow-up Ask Technical/Business question; trimmed oldest-turn-first |
 | `CHROMA_PERSIST_PATH` | `./chroma_db` | On-disk path for the persistent ChromaDB store |
@@ -435,7 +436,7 @@ If `generate_node` or a create/export node fails outright (all its `llm_retry.py
 | `/ingestion` | Ingestion | Start code/PDF ingestion jobs, progress bar, cancel, history |
 | `/ask/technical` | Ask Technical | SSE Q&A chat grounded in the ingested corpus, cites source file paths |
 | `/ask/business` | Ask Business | Same corpus, plain-language answers, no file paths |
-| `/settings` | Settings | Ollama base URL/model/embed model, prompt variant, task-management-system fields, Anthropic key/model, ingestion's optional Ollama enrichment agent toggle — persisted to `backend/.env` and applied to the running backend immediately for most fields |
+| `/settings` | Settings | Ollama base URL/model/embed model, prompt variant, task-management-system fields, Anthropic key/model, Ask QA model, Assessment model (clarify/generate), ingestion's optional Ollama enrichment agent toggle — persisted to `backend/.env` and applied to the running backend immediately for most fields |
 | `/monitoring` | Monitoring | Error feed |
 | `**` | — | Redirects to `/` |
 

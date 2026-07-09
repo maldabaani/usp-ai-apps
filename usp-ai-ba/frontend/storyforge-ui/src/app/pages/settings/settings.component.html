@@ -151,6 +151,23 @@
     </div>
 
     <div class="sf-card">
+      <h2 class="sf-section-title">Assessment (Clarify + Generate)</h2>
+
+      <div class="sf-field">
+        <label for="assessmentModel">Model</label>
+        <select id="assessmentModel" class="sf-select" [(ngModel)]="assessmentModel">
+          <option value="claude">Claude (Anthropic API Key above)</option>
+          <option value="ollama">Ollama ({{ ollamaLlmModel || 'LLM Model above' }})</option>
+        </select>
+        <p class="sf-hint">
+          Which model StoryForge's clarification and story-generation steps use. Takes effect
+          immediately, no restart needed. When set to Claude, a failed Claude call automatically
+          falls back to Ollama for that step rather than failing the assessment.
+        </p>
+      </div>
+    </div>
+
+    <div class="sf-card">
       <h2 class="sf-section-title">LLM Request Timeout</h2>
       <div class="sf-field">
         <label for="llmRequestTimeoutSeconds">Timeout (seconds)</label>

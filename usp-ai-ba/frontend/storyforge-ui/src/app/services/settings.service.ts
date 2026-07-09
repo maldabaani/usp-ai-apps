@@ -26,6 +26,7 @@ export interface AppSettings {
   ingest_ollama_enabled: boolean;
   ingest_ollama_model: string;
   ask_qa_model: string;
+  assessment_model: string;
   llm_request_timeout_seconds: number;
   restart_required_fields: string[];
 }

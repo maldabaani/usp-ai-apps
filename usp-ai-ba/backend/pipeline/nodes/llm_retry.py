@@ -1,12 +1,19 @@
 """Shared resilience helper for the clarify/generate LLM call sites.
 
-Both nodes run their `ChatOllama` model at temperature=0 with a fixed seed so
-the same SDD produces the same clarifications/stories on every run. A retry
-that resent the exact same request would therefore just fail identically, so
-on failure this nudges the seed (base_seed + attempt - 1) before retrying --
-a different sample has a chance to succeed, while the first attempt (the one
-that runs on every normal, successful call) stays fully deterministic and
-reproducible across separate runs.
+Both nodes run their model at temperature=0. When the model supports it
+(Ollama), a fixed seed also makes the same SDD produce the same
+clarifications/stories on every run; a retry that resent the exact same
+request would therefore just fail identically, so on failure this nudges the
+seed (base_seed + attempt - 1) before retrying -- a different sample has a
+chance to succeed, while the first attempt (the one that runs on every
+normal, successful call) stays fully deterministic and reproducible across
+separate runs. Anthropic's API has no seed parameter at all, so callers pass
+`supports_seed=False` for a Claude client -- later attempts then just retry
+the same client unmodified (temperature=0 is the only determinism knob
+Claude offers). This is an explicit caller-supplied flag rather than an
+isinstance(llm, ChatOllama) check so this module stays decoupled from any
+specific LangChain client class, and so tests can exercise both branches
+with hand-mocked fake clients instead of constructing a real ChatOllama.
 """
 from __future__ import annotations
 
@@ -33,6 +40,7 @@ async def invoke_and_parse_with_retry(
     *,
     base_seed: int,
     node_name: str,
+    supports_seed: bool = True,
 ) -> T:
     """Invoke `llm`, extract its text, and parse it -- retrying on any failure.
 
@@ -41,7 +49,10 @@ async def invoke_and_parse_with_retry(
     """
     last_exc: Exception | None = None
     for attempt in range(1, MAX_ATTEMPTS + 1):
-        call_llm = llm if attempt == 1 else llm.bind(seed=base_seed + attempt - 1)
+        if attempt == 1 or not supports_seed:
+            call_llm = llm
+        else:
+            call_llm = llm.bind(seed=base_seed + attempt - 1)
         try:
             response = await call_llm.ainvoke(messages)
             raw_text = extract_text(response.content)
@@ -56,3 +67,48 @@ async def invoke_and_parse_with_retry(
 
     assert last_exc is not None
     raise last_exc
+
+
+async def invoke_and_parse_with_fallback(
+    llm: BaseChatModel,
+    fallback_llm: BaseChatModel | None,
+    messages: list[BaseMessage],
+    parse: Callable[[str], T],
+    extract_text: Callable[[object], str],
+    *,
+    base_seed: int,
+    node_name: str,
+    supports_seed: bool = True,
+) -> T:
+    """Runs invoke_and_parse_with_retry against `llm` (its own full
+    MAX_ATTEMPTS-attempt cycle); if that's completely exhausted and a
+    `fallback_llm` was provided (settings.ASSESSMENT_MODEL == "claude"; see
+    pipeline/nodes/generate.py and clarify.py), retries the same messages
+    against it too, getting its own full attempt cycle. `fallback_llm` is
+    always Ollama by construction (see assessment_llm.build_ollama_llm), so
+    its own retry cycle always runs with supports_seed=True regardless of
+    what the primary call used. Logged at WARNING so a Claude outage
+    silently degrading to local Ollama is still visible, not a silent
+    behavior change. Raises the fallback's failure (or the primary's, if no
+    fallback_llm was given) if that also fails."""
+    try:
+        return await invoke_and_parse_with_retry(
+            llm, messages, parse, extract_text, base_seed=base_seed, node_name=node_name, supports_seed=supports_seed
+        )
+    except Exception as primary_exc:  # noqa: BLE001 - re-raised below if no fallback applies
+        if fallback_llm is None:
+            raise
+        logger.warning(
+            "%s: Claude failed after %d attempts (%s), falling back to local Ollama",
+            node_name,
+            MAX_ATTEMPTS,
+            primary_exc,
+        )
+        return await invoke_and_parse_with_retry(
+            fallback_llm,
+            messages,
+            parse,
+            extract_text,
+            base_seed=base_seed,
+            node_name=f"{node_name} (ollama fallback)",
+        )

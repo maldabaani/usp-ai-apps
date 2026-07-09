@@ -102,6 +102,17 @@ class Settings:
     # needs a real key configured first.
     ASK_QA_MODEL: str = os.getenv("ASK_QA_MODEL", "ollama")
 
+    # pipeline/nodes/clarify.py's clarify_node and generate.py's generate_node
+    # -- StoryForge's assessment pipeline previously had no equivalent of
+    # ASK_QA_MODEL at all (both nodes hardcoded ChatOllama, no ChatAnthropic
+    # import anywhere); this brings assessment generation up to the same
+    # configurability Ask already had. One setting covers both nodes, same
+    # "ollama" (default) / "claude" values as ASK_QA_MODEL. When set to
+    # "claude", a Claude failure (after its own retries) falls back to local
+    # Ollama for that call rather than failing the whole node -- see
+    # pipeline/nodes/llm_retry.py's invoke_and_parse_with_fallback.
+    ASSESSMENT_MODEL: str = os.getenv("ASSESSMENT_MODEL", "ollama")
+
     # Shared HTTP request timeout for every LLM call in this app (Ask
     # Technical/Business's chat client, and ingestion/enrichment/'s Claude and
     # Ollama extraction agents) -- previously three separate hardcoded

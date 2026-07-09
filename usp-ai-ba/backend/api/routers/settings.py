@@ -42,6 +42,7 @@ _FIELD_TO_ENV = {
     "ingest_ollama_enabled": "INGEST_OLLAMA_ENABLED",
     "ingest_ollama_model": "INGEST_OLLAMA_MODEL",
     "ask_qa_model": "ASK_QA_MODEL",
+    "assessment_model": "ASSESSMENT_MODEL",
     "llm_request_timeout_seconds": "LLM_REQUEST_TIMEOUT_SECONDS",
 }
 
@@ -92,6 +93,7 @@ class SettingsResponse(BaseModel):
     ingest_ollama_enabled: bool
     ingest_ollama_model: str
     ask_qa_model: str
+    assessment_model: str
     llm_request_timeout_seconds: int
     restart_required_fields: set[str]
 
@@ -121,6 +123,7 @@ class SettingsUpdate(BaseModel):
     ingest_ollama_enabled: Optional[bool] = None
     ingest_ollama_model: Optional[str] = None
     ask_qa_model: Optional[str] = None
+    assessment_model: Optional[str] = None
     llm_request_timeout_seconds: Optional[int] = None
 
 
@@ -147,6 +150,7 @@ def _current_settings() -> SettingsResponse:
         ingest_ollama_enabled=settings.INGEST_OLLAMA_ENABLED,
         ingest_ollama_model=settings.INGEST_OLLAMA_MODEL,
         ask_qa_model=settings.ASK_QA_MODEL,
+        assessment_model=settings.ASSESSMENT_MODEL,
         llm_request_timeout_seconds=settings.LLM_REQUEST_TIMEOUT_SECONDS,
         restart_required_fields=RESTART_REQUIRED_FIELDS,
     )

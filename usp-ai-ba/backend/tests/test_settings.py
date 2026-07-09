@@ -91,6 +91,40 @@ def test_put_settings_updates_ask_qa_model():
     assert get_resp.json()["ask_qa_model"] == "ollama"
 
 
+def test_get_settings_includes_assessment_model_and_it_is_not_restart_required():
+    resp = client.get("/api/settings", headers={"Authorization": f"Bearer {_token('settings_test_user', 'user')}"})
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "assessment_model" in body
+    assert "assessment_model" not in body["restart_required_fields"]
+
+
+def test_put_settings_updates_assessment_model():
+    resp = client.put(
+        "/api/settings",
+        json={"assessment_model": "claude"},
+        headers={"Authorization": f"Bearer {_token('settings_test_admin', 'admin')}"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["assessment_model"] == "claude"
+
+    get_resp = client.get(
+        "/api/settings", headers={"Authorization": f"Bearer {_token('settings_test_admin', 'admin')}"}
+    )
+    assert get_resp.json()["assessment_model"] == "claude"
+
+    # Restore the default so later tests in this module/other modules don't
+    # inadvertently inherit "claude" from this test's mutation of the
+    # process-wide settings singleton.
+    client.put(
+        "/api/settings",
+        json={"assessment_model": "ollama"},
+        headers={"Authorization": f"Bearer {_token('settings_test_admin', 'admin')}"},
+    )
+
+
 def test_get_settings_includes_llm_request_timeout_and_it_is_not_restart_required():
     resp = client.get("/api/settings", headers={"Authorization": f"Bearer {_token('settings_test_user', 'user')}"})
 

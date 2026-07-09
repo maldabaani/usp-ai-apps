@@ -47,6 +47,7 @@ export class SettingsComponent implements OnInit {
   ingestOllamaEnabled = false;
   ingestOllamaModel = '';
   askQaModel = 'ollama';
+  assessmentModel = 'ollama';
   llmRequestTimeoutSeconds = 300;
   restartRequiredFields: string[] = [];
 
@@ -195,6 +196,7 @@ export class SettingsComponent implements OnInit {
     this.ingestOllamaEnabled = s.ingest_ollama_enabled;
     this.ingestOllamaModel = s.ingest_ollama_model;
     this.askQaModel = s.ask_qa_model;
+    this.assessmentModel = s.assessment_model;
     this.llmRequestTimeoutSeconds = s.llm_request_timeout_seconds;
     this.restartRequiredFields = s.restart_required_fields;
   }
@@ -228,6 +230,7 @@ export class SettingsComponent implements OnInit {
       ingest_ollama_enabled: this.ingestOllamaEnabled,
       ingest_ollama_model: this.ingestOllamaModel,
       ask_qa_model: this.askQaModel,
+      assessment_model: this.assessmentModel,
       llm_request_timeout_seconds: this.llmRequestTimeoutSeconds,
     };
     // Leaving a key input untouched (still showing the mask) means "keep
