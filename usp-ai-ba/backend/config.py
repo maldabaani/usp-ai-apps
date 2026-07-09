@@ -112,7 +112,12 @@ class Settings:
     # already-in-progress answer. Centralized here so raising it for slow
     # hardware is a one-line change (or a Settings-page edit) that every
     # consumer picks up, instead of three files to hunt down and edit in sync.
-    LLM_REQUEST_TIMEOUT_SECONDS: int = int(os.getenv("LLM_REQUEST_TIMEOUT_SECONDS", "300"))
+    # Default raised 300 -> 900s after a real local run showed individual
+    # Ollama calls taking 379-413s (6-7 min, confirmed in the Ollama server's
+    # own log) under just 2 concurrent slots -- comfortably longer than the
+    # old 300s ceiling, which would abort a call before Ollama's slower (but
+    # otherwise successful) response ever arrived.
+    LLM_REQUEST_TIMEOUT_SECONDS: int = int(os.getenv("LLM_REQUEST_TIMEOUT_SECONDS", "900"))
 
     # Character budget for how much prior conversation history
     # api/conversation_store.py's messages get folded into a follow-up Ask
