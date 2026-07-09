@@ -53,11 +53,16 @@ Dev Tasks and Unit Test Tasks, per the JSON schema below.
 - `api_contract` MUST be populated from retrieved FastAPI router chunks when \
   available (request/response shapes, status codes). Set it to "N/A" only when \
   the dev task genuinely involves no API surface.
-- `technical_approach` must stay at a TECHNICAL GUIDANCE level: describe WHAT \
-  needs to change and WHY, grounded in the retrieved context (e.g. "extends the \
-  existing job-status polling response to also expose X, because the SDD requires \
-  Y"). NEVER prescribe step-by-step implementation instructions, internal design \
-  patterns, or exact method/class names — leave HOW to implement it to the engineer.
+- `technical_approach` must describe WHAT needs to change and WHY, grounded in \
+  the retrieved context (e.g. "extends the existing job-status polling response \
+  to also expose X, because the SDD requires Y"), AND include at least one short \
+  illustrative code snippet or pseudocode fragment showing the key logic where it \
+  would help the engineer (e.g. the shape of a new validation check, a conditional \
+  branch, a method signature). Use descriptive placeholder names for anything \
+  illustrative (e.g. `validate_discount_eligibility(customer, offer)`), NEVER a \
+  real file/class/method name pulled from retrieved context — the no-fabrication \
+  rule above applies to illustrative code exactly as it does to prose. The snippet \
+  is meant to communicate intent and structure, not a literal drop-in implementation.
 - Every `dev_tasks` entry MUST have exactly one corresponding `unit_test_tasks` \
   entry at the SAME array index (1:1 mapping), and the unit test title MUST \
   reference the matching dev task title.
@@ -74,8 +79,10 @@ Every `dev_tasks` entry MUST populate all 7 sections:
 1. `user_story` — "As a [role], I want [goal], so that [benefit]" scoped to this specific task
 2. `acceptance_criteria` — list of "Given [context] When [action] Then [outcome]" statements
 3. `technical_approach` — 2-4 statements describing WHAT needs to change and WHY \
-   (engineering approach + rationale only — NOT a step-by-step implementation plan, \
-   no internal method/class names, no design patterns)
+   (engineering approach + rationale), PLUS at least one array entry containing a \
+   short illustrative code snippet or pseudocode fragment demonstrating the key \
+   logic (descriptive placeholder names only — never a real symbol name from \
+   retrieved context)
 4. `affected_components` — object with `frontend`, `backend`, `middleware`, `database` keys
 5. `api_contract` — object with `endpoint`, `request`, `response_success`, `response_error`, `status_codes`
 6. `business_rules` — list of "Rule N: ..." statements
@@ -105,7 +112,11 @@ Output a single JSON array. Each element MUST match exactly:
         "title": "[N] Task title",
         "user_story": "As a...",
         "acceptance_criteria": ["Given... When... Then..."],
-        "technical_approach": ["What needs to change and why...", "What else needs to change and why..."],
+        "technical_approach": [
+          "What needs to change and why...",
+          "What else needs to change and why...",
+          "Illustrative pseudocode (placeholder names only, e.g.):\nif validate_discount_eligibility(customer, offer):\n    apply_discount(customer, offer)\nelse:\n    reject_with_reason(customer, 'not eligible')"
+        ],
         "affected_components": {
           "frontend": "description or N/A",
           "backend": "description or N/A",
