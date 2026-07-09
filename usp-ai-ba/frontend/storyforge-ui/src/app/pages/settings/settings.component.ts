@@ -46,6 +46,7 @@ export class SettingsComponent implements OnInit {
   anthropicApiKeyInput = '';
   ingestOllamaEnabled = false;
   ingestOllamaModel = '';
+  ingestLlmModel = 'ollama';
   askQaModel = 'ollama';
   assessmentModel = 'ollama';
   llmRequestTimeoutSeconds = 300;
@@ -195,6 +196,7 @@ export class SettingsComponent implements OnInit {
     this.anthropicApiKeyInput = s.anthropic_api_key_masked;
     this.ingestOllamaEnabled = s.ingest_ollama_enabled;
     this.ingestOllamaModel = s.ingest_ollama_model;
+    this.ingestLlmModel = s.ingest_llm_model;
     this.askQaModel = s.ask_qa_model;
     this.assessmentModel = s.assessment_model;
     this.llmRequestTimeoutSeconds = s.llm_request_timeout_seconds;
@@ -229,6 +231,7 @@ export class SettingsComponent implements OnInit {
       anthropic_model: this.anthropicModel,
       ingest_ollama_enabled: this.ingestOllamaEnabled,
       ingest_ollama_model: this.ingestOllamaModel,
+      ingest_llm_model: this.ingestLlmModel,
       ask_qa_model: this.askQaModel,
       assessment_model: this.assessmentModel,
       llm_request_timeout_seconds: this.llmRequestTimeoutSeconds,

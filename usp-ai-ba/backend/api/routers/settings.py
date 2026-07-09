@@ -41,6 +41,7 @@ _FIELD_TO_ENV = {
     "anthropic_model": "CLAUDE_MODEL",
     "ingest_ollama_enabled": "INGEST_OLLAMA_ENABLED",
     "ingest_ollama_model": "INGEST_OLLAMA_MODEL",
+    "ingest_llm_model": "INGEST_LLM_MODEL",
     "ask_qa_model": "ASK_QA_MODEL",
     "assessment_model": "ASSESSMENT_MODEL",
     "llm_request_timeout_seconds": "LLM_REQUEST_TIMEOUT_SECONDS",
@@ -92,6 +93,7 @@ class SettingsResponse(BaseModel):
     anthropic_model: str
     ingest_ollama_enabled: bool
     ingest_ollama_model: str
+    ingest_llm_model: str
     ask_qa_model: str
     assessment_model: str
     llm_request_timeout_seconds: int
@@ -122,6 +124,7 @@ class SettingsUpdate(BaseModel):
     anthropic_model: Optional[str] = None
     ingest_ollama_enabled: Optional[bool] = None
     ingest_ollama_model: Optional[str] = None
+    ingest_llm_model: Optional[str] = None
     ask_qa_model: Optional[str] = None
     assessment_model: Optional[str] = None
     llm_request_timeout_seconds: Optional[int] = None
@@ -149,6 +152,7 @@ def _current_settings() -> SettingsResponse:
         anthropic_model=settings.CLAUDE_MODEL,
         ingest_ollama_enabled=settings.INGEST_OLLAMA_ENABLED,
         ingest_ollama_model=settings.INGEST_OLLAMA_MODEL,
+        ingest_llm_model=settings.INGEST_LLM_MODEL,
         ask_qa_model=settings.ASK_QA_MODEL,
         assessment_model=settings.ASSESSMENT_MODEL,
         llm_request_timeout_seconds=settings.LLM_REQUEST_TIMEOUT_SECONDS,

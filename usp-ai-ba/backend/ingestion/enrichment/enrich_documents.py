@@ -46,7 +46,7 @@ from langchain_core.documents import Document
 from config import settings
 from ingestion import chroma_client, manifest
 from ingestion.enrichment import doc_prompts
-from ingestion.enrichment.agents.selector import AgentSelector, build_agents
+from ingestion.enrichment.agents.selector import AgentRouter, build_agents
 from ingestion.enrichment.models import SourceFile
 from ingestion.ingest_documents import _FORMAT_BY_SUFFIX, _extract_text, _splitter
 
@@ -111,7 +111,7 @@ async def enrich_documents(
             ],
         }
 
-    selector = AgentSelector(agents)
+    router = AgentRouter(agents)
     manuals_store = chroma_client.get_vector_store("manuals")
 
     manifests_root = manifests_root or (Path(settings.JOBS_DIR) / ".document-enrichment-manifests")
@@ -153,8 +153,7 @@ async def enrich_documents(
 
                 summaries: list[str] = []
                 for part in parts:
-                    agent = selector.next()
-                    result = await agent.extract(part)
+                    result = await router.extract(part)
                     if result.success and not result.skipped and result.content:
                         summaries.append(result.content)
 

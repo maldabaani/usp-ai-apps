@@ -13,7 +13,7 @@ since the summary captures business-logic reasoning a raw code chunk doesn't.
 
 Gated by settings.INGEST_LLM_SUMMARY_ENABLED (default on) plus a per-request
 override; degrades gracefully (skips the whole tier with a logged warning,
-never raises) when zero agents are configured -- unlike AgentSelector, which
+never raises) when zero agents are configured -- unlike AgentRouter, which
 still raises for callers that genuinely require at least one agent to exist.
 Bounded by asyncio.Semaphore(max_concurrency) at both the file level and
 (for an oversized file split into multiple chunker.py parts) the individual
@@ -65,7 +65,7 @@ from config import settings
 from ingestion import chroma_client, manifest
 from ingestion.enrichment import chunker, filter as enrichment_filter, part_progress
 from ingestion.enrichment.agents.base import ExtractionResult
-from ingestion.enrichment.agents.selector import AgentSelector, build_agents
+from ingestion.enrichment.agents.selector import AgentRouter, build_agents
 from ingestion.enrichment.models import Language, SourceFile
 
 logger = logging.getLogger(__name__)
@@ -158,7 +158,7 @@ async def enrich_repository(
             ],
         }
 
-    selector = AgentSelector(agents)
+    router = AgentRouter(agents)
     codebase_store = chroma_client.get_vector_store("codebase")
 
     manifests_root = manifests_root or (Path(settings.JOBS_DIR) / ".enrichment-manifests")
@@ -303,8 +303,7 @@ async def enrich_repository(
                     # error_message on a graceful failure instead of
                     # discarding it.
                     async with llm_semaphore:
-                        agent = selector.next()
-                        return await agent.extract(part)
+                        return await router.extract(part)
 
                 # Set when a graceful (non-raising) failure carries a real
                 # error message, so the "no_summary_produced" skip below can

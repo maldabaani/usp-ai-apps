@@ -123,11 +123,30 @@
         <input id="anthropicModel" class="sf-input" type="text" [(ngModel)]="anthropicModel" placeholder="claude-sonnet-4-5-20250929" />
       </div>
 
+      <div class="sf-field">
+        <label for="ingestLlmModel">LLM-Summary Enrichment Model</label>
+        <select id="ingestLlmModel" class="sf-select" [(ngModel)]="ingestLlmModel">
+          <option value="ollama">Ollama ({{ ingestOllamaModel || 'model below' }})</option>
+          <option value="claude">Claude (Anthropic API Key above)</option>
+        </select>
+        <p class="sf-hint">
+          Which model ingestion's optional per-file LLM-summary enrichment tier uses for a whole
+          run. Takes effect on the next ingestion run, no restart needed. When set to Claude, Ollama
+          is always available as a fallback: if Claude fails once (e.g. exhausted API credits),
+          every remaining file for the rest of that run uses Ollama instead, with no further Claude
+          attempts -- Claude is retried fresh on the next run.
+        </p>
+      </div>
+
       <div class="sf-field sf-toggle-field">
         <label class="sf-toggle">
           <input type="checkbox" [(ngModel)]="ingestOllamaEnabled" />
-          <span>Enable Ollama as a second agent{{ isRestartRequired('ingest_ollama_enabled') ? ' (restart required)' : '' }}</span>
+          <span>Enable Ollama for ingestion{{ isRestartRequired('ingest_ollama_enabled') ? ' (restart required)' : '' }}</span>
         </label>
+        <p class="sf-hint" *ngIf="ingestLlmModel === 'claude'">
+          Only relevant when the model above is set to Ollama -- Claude's fallback to Ollama always
+          works regardless of this toggle.
+        </p>
       </div>
 
       <div class="sf-field" *ngIf="ingestOllamaEnabled">

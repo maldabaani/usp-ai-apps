@@ -25,6 +25,7 @@ export interface AppSettings {
   anthropic_model: string;
   ingest_ollama_enabled: boolean;
   ingest_ollama_model: string;
+  ingest_llm_model: string;
   ask_qa_model: string;
   assessment_model: string;
   llm_request_timeout_seconds: number;

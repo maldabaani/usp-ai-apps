@@ -96,6 +96,22 @@ class Settings:
     INGEST_OLLAMA_ENABLED: bool = os.getenv("INGEST_OLLAMA_ENABLED", "true").lower() == "true"
     INGEST_OLLAMA_MODEL: str = os.getenv("INGEST_OLLAMA_MODEL", "qwen2.5:14b")
 
+    # ingestion/enrichment/agents/selector.py's build_router(): which agent is
+    # the PRIMARY choice for a whole ingestion run's LLM-summary enrichment --
+    # "ollama" (default) or "claude". This replaces the old round-robin
+    # (registering both Claude and Ollama whenever both were configured, and
+    # alternating between them per file/part regardless of health -- so a
+    # Claude account with exhausted credits still got retried on every Nth
+    # part instead of a run-wide fallback). When set to "claude", Ollama is
+    # ALWAYS available as the sticky fallback (bypassing INGEST_OLLAMA_ENABLED,
+    # same precedent as pipeline/nodes/assessment_llm.build_ollama_llm's own
+    # "always Ollama regardless" fallback): once Claude fails once, every
+    # remaining file/part in that same run goes straight to Ollama with no
+    # further Claude attempts -- resets and retries Claude fresh on the next
+    # run. When set to "ollama", INGEST_OLLAMA_ENABLED still gates whether
+    # Ollama is actually available at all (no further fallback beyond it).
+    INGEST_LLM_MODEL: str = os.getenv("INGEST_LLM_MODEL", "ollama")
+
     # api/routers/ask.py's standing Ask Technical/Business endpoints: "ollama"
     # (default) uses OLLAMA_BASE_URL/OLLAMA_LLM_MODEL/OLLAMA_NUM_CTX, "claude"
     # uses ANTHROPIC_API_KEY/CLAUDE_MODEL above -- opt-in only, since Claude
