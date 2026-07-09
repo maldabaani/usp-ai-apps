@@ -13,7 +13,7 @@ import uuid
 
 import pytest
 
-from ingestion import chroma_client, manifest
+from ingestion import chroma_client, ingest_code, manifest
 from ingestion.enrichment import chunker, enrich, part_progress
 from ingestion.enrichment.agents.base import ExtractionResult, failure_result, success_result
 
@@ -392,6 +392,34 @@ def test_oversized_file_is_chunked_and_summaries_joined(tmp_path, monkeypatch, f
     assert len(agent.calls) > 1  # split into multiple chunker parts
     doc = next(iter(fake_store.docs.values()))
     assert doc.page_content.count("part summary") == len(agent.calls)
+
+
+def test_oversized_combined_summary_is_split_into_multiple_size_capped_documents(tmp_path, monkeypatch, fake_store):
+    # Regression test: a multi-part file's combined summary previously had
+    # no size ceiling at all, unlike ingest_code.py's mechanical chunks
+    # (always capped at MAX_CHUNK_CHARS) -- in production this produced one
+    # single Chroma document large enough to single-handedly balloon a
+    # downstream prompt to 656,961 tokens, which Ollama then silently
+    # truncated by 97%+.
+    huge_content = "\n".join(f"line_{i} = {i}" for i in range(1000))
+    _write(tmp_path, "big.py", huge_content)
+    agent = _StubAgent("x" * 2000)  # large enough per-part that 3+ parts exceed MAX_CHUNK_CHARS
+    monkeypatch.setattr(enrich, "build_agents", lambda: [agent])
+
+    result = asyncio.run(
+        enrich.enrich_repository(tmp_path, [tmp_path / "big.py"], enabled=True, manifests_root=tmp_path / "manifests")
+    )
+
+    assert result["files_summarized"] == 1
+    assert len(agent.calls) > 1
+    docs = [d for d in fake_store.docs.values() if d.metadata.get("source") == "big.py"]
+    assert len(docs) > 1  # split into multiple documents, not one unbounded blob
+    for doc in docs:
+        assert len(doc.page_content) <= ingest_code.MAX_CHUNK_CHARS + 200  # small header overhead
+    chunk_parts = sorted(doc.metadata["chunk_part"] for doc in docs)
+    assert chunk_parts == list(range(len(docs)))  # sequential, no gaps
+    ids = [id_ for id_, doc in fake_store.docs.items() if doc.metadata.get("source") == "big.py"]
+    assert len(set(ids)) == len(ids)  # every piece gets a distinct id
 
 
 def test_oversized_file_reports_progress_per_part(tmp_path, monkeypatch, fake_store):

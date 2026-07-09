@@ -6,6 +6,7 @@ from pathlib import Path
 
 from ingestion import ingest_documents
 from ingestion.retrieval import retrieve_all_collections
+from pipeline.nodes.context_budget import cap_context
 from pipeline.state import StoryForgeState
 
 logger = logging.getLogger(__name__)
@@ -42,9 +43,19 @@ async def analyze_node(state: StoryForgeState) -> StoryForgeState:
             "status": "error",
         }
 
+    retrieved = cap_context(retrieved, "analyze_node")
+
     return {
         **state,
         "solution_doc_text": solution_doc_text,
         "retrieved_context": retrieved,
-        "status": "analyzing",
+        # Named for the node about to run next (clarify_node), not this
+        # node's own name -- analyze_node's real work is already done by
+        # this point, so leaving this "analyzing" left the status frozen
+        # and misleading for the entire duration of clarify_node's own
+        # (often slow) LLM call. Deliberately distinct from "clarifying",
+        # which the frontend uses to mean "clarify_node finished and is
+        # genuinely paused waiting for human answers" -- reusing that value
+        # here would cause a premature redirect before any questions exist.
+        "status": "detecting_ambiguities",
     }

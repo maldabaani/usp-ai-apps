@@ -86,8 +86,10 @@ MAX_LINES_PER_CHUNK = 400
 MAX_LINES_BEFORE_SPLITTING = 400
 
 
-def _document_id(relative_path: str) -> str:
+def _document_id(relative_path: str, chunk_part: int | None = None) -> str:
     key = f"{relative_path}::{DOC_TYPE}"
+    if chunk_part is not None:
+        key = f"{key}::{chunk_part}"
     return hashlib.sha256(key.encode("utf-8")).hexdigest()[:40]
 
 
@@ -404,18 +406,49 @@ async def enrich_repository(
                     return
 
                 combined = "\n\n---\n\n".join(summaries) if len(summaries) > 1 else summaries[0]
-                document = Document(
-                    page_content=f"File: {relative_path}\n\n{combined}",
-                    metadata={
+
+                # Deferred import: ingest_code.py imports this module at its
+                # own top level (to reuse enrich_repository), so importing
+                # ingest_code back at enrich.py's top level would form a
+                # circular import that breaks whichever module happens to
+                # load first (confirmed directly -- ingest_code.py's own
+                # module-level default parameter referencing
+                # enrich.DEFAULT_MAX_CONCURRENCY would raise AttributeError
+                # on a partially-initialized module). By the time this
+                # function actually runs, both modules have long finished
+                # loading, so a local import here is safe.
+                from ingestion import ingest_code
+
+                # A multi-part file's combined summary has no size ceiling
+                # of its own (unlike ingest_code.py's mechanical chunks,
+                # always capped at MAX_CHUNK_CHARS) -- split it the same way
+                # so one file's LLM summary can't single-handedly balloon a
+                # downstream prompt into the hundreds of thousands of
+                # characters (confirmed in production: an unsplit combined
+                # summary for a large multi-part file produced a
+                # 656,961-token prompt that Ollama then silently truncated
+                # by 97%+, wasting minutes of compute on unusable output).
+                pieces = ingest_code._split_overflow(combined)
+                documents = []
+                ids = []
+                for index, piece in enumerate(pieces):
+                    header = f"File: {relative_path}"
+                    if len(pieces) > 1:
+                        header = f"{header} (part {index + 1}/{len(pieces)})"
+                    metadata = {
                         "source": relative_path,
                         "type": DOC_TYPE,
                         "module": _module(relative_path),
                         "language": Language.from_path(relative_path).code_fence,
                         "ingested_at": time.time(),
-                    },
-                )
+                    }
+                    if len(pieces) > 1:
+                        metadata["chunk_part"] = index
+                    documents.append(Document(page_content=f"{header}\n\n{piece}", metadata=metadata))
+                    ids.append(_document_id(relative_path, chunk_part=index if len(pieces) > 1 else None))
+
                 await chroma_client.delete_by_source_and_type("codebase", relative_path, DOC_TYPE)
-                await codebase_store.aadd_documents([document], ids=[_document_id(relative_path)])
+                await codebase_store.aadd_documents(documents, ids=ids)
                 files_summarized += 1
                 if digest is not None:
                     current_hashes[relative_path] = digest

@@ -50,7 +50,7 @@ def test_analyze_node_extracts_docx_via_shared_dispatcher(tmp_path):
     result = asyncio.run(analyze.analyze_node(state))
 
     assert "eligibility" in result["solution_doc_text"]
-    assert result["status"] == "analyzing"
+    assert result["status"] == "detecting_ambiguities"
 
 
 def test_analyze_node_pasted_text_skips_extraction_entirely(monkeypatch):
@@ -73,4 +73,4 @@ def test_analyze_node_pasted_text_skips_extraction_entirely(monkeypatch):
     result = asyncio.run(analyze.analyze_node(state))
 
     assert result["solution_doc_text"] == "The pasted SDD text, verbatim."
-    assert result["status"] == "analyzing"
+    assert result["status"] == "detecting_ambiguities"

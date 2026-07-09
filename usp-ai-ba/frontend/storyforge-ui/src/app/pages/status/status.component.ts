@@ -24,6 +24,7 @@ interface StepDef {
 
 const STEP_DEFS: StepDef[] = [
   { key: 'analyzing',  label: 'Analyzing Document',      activeDesc: 'Reading and parsing your solution design document…' },
+  { key: 'detecting_ambiguities', label: 'Detecting Ambiguities', activeDesc: 'Using the LLM to check for ambiguities before generating stories — this can take several minutes for large documents…' },
   { key: 'clarifying', label: 'Checking Clarifications', activeDesc: 'Identifying ambiguities before generating stories…' },
   { key: 'generating', label: 'Generating Stories',       activeDesc: 'Our AI LLM is writing user stories and tasks…' },
   { key: 'reviewing',  label: 'Awaiting Review',          activeDesc: 'Waiting for your approval of the generated stories…' },
