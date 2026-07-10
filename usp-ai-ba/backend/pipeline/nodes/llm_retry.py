@@ -14,6 +14,17 @@ Claude offers). This is an explicit caller-supplied flag rather than an
 isinstance(llm, ChatOllama) check so this module stays decoupled from any
 specific LangChain client class, and so tests can exercise both branches
 with hand-mocked fake clients instead of constructing a real ChatOllama.
+
+Also treats a response cut off by the output-token cap as a failure (see
+_is_truncated below) rather than letting it through to `parse` -- json_repair
+(used by generate_node/clarify_node's JSON parsing) is deliberately lenient
+about malformed JSON, which means a genuinely truncated array/object (e.g. a
+multi-epic story list cut off mid-way through the second epic) can still
+"successfully" parse into valid-looking JSON that's silently missing
+everything after the cutoff. Catching this here, before parsing, turns that
+into a retry (a different sample, same token budget, may finish in time) or
+-- if every attempt still gets cut off -- a genuine surfaced error instead of
+a quietly incomplete result.
 """
 from __future__ import annotations
 
@@ -30,6 +41,21 @@ T = TypeVar("T")
 
 MAX_ATTEMPTS = 3
 BASE_DELAY_SECONDS = 1.0
+
+
+def _is_truncated(response) -> bool:
+    """True when the model's own completion signal says the response was cut
+    off by the output-token cap (Ollama: response_metadata["done_reason"] ==
+    "length"; Claude: response_metadata["stop_reason"] == "max_tokens") --
+    checked before parsing so a truncated JSON array/object (which
+    json_repair's deliberately lenient repair can turn into syntactically
+    valid but silently INCOMPLETE JSON, e.g. dropping every story after the
+    one being written when the cap hit) is never accepted as a genuine
+    result. Duck-typed on response_metadata's keys rather than an
+    isinstance check, matching this module's existing provider-agnostic
+    design (see module docstring)."""
+    metadata = getattr(response, "response_metadata", None) or {}
+    return metadata.get("done_reason") == "length" or metadata.get("stop_reason") == "max_tokens"
 
 
 async def invoke_and_parse_with_retry(
@@ -55,6 +81,13 @@ async def invoke_and_parse_with_retry(
             call_llm = llm.model_copy(update={"seed": base_seed + attempt - 1})
         try:
             response = await call_llm.ainvoke(messages)
+            if _is_truncated(response):
+                raise RuntimeError(
+                    f"{node_name}: LLM response was truncated by the output token "
+                    "limit before it finished -- raw output is genuinely "
+                    "incomplete (e.g. missing epics/stories cut off mid-JSON), "
+                    "not a parse failure to paper over"
+                )
             raw_text = extract_text(response.content)
             return parse(raw_text)
         except Exception as exc:  # noqa: BLE001 - retried here, re-raised after final attempt

@@ -19,7 +19,16 @@ from prompts.system_prompt_selftest import SYSTEM_PROMPT as SELFTEST_SYSTEM_PROM
 
 logger = logging.getLogger(__name__)
 
-MAX_OUTPUT_TOKENS = 8192
+# 8192 was observed in production to be too small: the schema requires 7
+# populated sections per dev_task (incl. pseudocode) and 5 per unit_test_task,
+# so a single fully-detailed epic can consume most or all of this budget --
+# the model then gets cut off mid-array, and llm_retry.py's truncation check
+# (added alongside this bump) now makes that a genuine retry/error instead of
+# json_repair silently discarding every epic after the one being written.
+# 16384 gives real headroom for multiple epics; if OLLAMA_NUM_CTX is left at
+# its own default (32768), this leaves less room for RAG/SDD input context,
+# so raise OLLAMA_NUM_CTX too if truncated-*input*-prompt warnings appear.
+MAX_OUTPUT_TOKENS = 16384
 
 # temperature=0 + a fixed seed makes the same SDD produce the same epics/
 # stories on every run instead of a different set each time (Ollama only --

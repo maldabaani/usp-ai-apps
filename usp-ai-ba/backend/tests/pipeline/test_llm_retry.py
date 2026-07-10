@@ -16,8 +16,9 @@ _real_sleep = asyncio.sleep  # captured before any test monkeypatches asyncio.sl
 
 
 class _FakeResponse:
-    def __init__(self, content: str) -> None:
+    def __init__(self, content: str, response_metadata: dict | None = None) -> None:
         self.content = content
+        self.response_metadata = response_metadata or {}
 
 
 class _FakeChat:
@@ -43,6 +44,8 @@ class _FakeChat:
         response = self._responses.pop(0)
         if isinstance(response, Exception):
             raise response
+        if isinstance(response, _FakeResponse):
+            return response
         return _FakeResponse(response)
 
 
@@ -96,6 +99,72 @@ def test_retries_without_rebinding_seed_when_supports_seed_is_false(monkeypatch)
     assert chat.ainvoke_calls == 3
     # Never rebound a seed, even across multiple retries -- Claude has no seed param.
     assert chat.model_copy_calls == []
+
+
+def test_truncated_ollama_response_is_retried_not_silently_parsed(monkeypatch):
+    """Regression test for a real production bug: a response cut off by
+    Ollama's num_predict cap (done_reason == "length") could still contain a
+    syntactically-parseable-but-incomplete JSON prefix (e.g. one epic, with
+    every epic after it missing) -- json_repair's leniency would happily
+    "fix" that into valid JSON, silently dropping content instead of
+    failing. The truncated attempt must never reach `parse` at all."""
+    monkeypatch.setattr(asyncio, "sleep", lambda _: _real_sleep(0))
+    chat = _FakeChat(
+        [
+            _FakeResponse("[incomplete, cut off", response_metadata={"done_reason": "length"}),
+            "result",
+        ]
+    )
+
+    calls: list[str] = []
+
+    def recording_parse(raw_text: str) -> str:
+        calls.append(raw_text)
+        return raw_text
+
+    result = asyncio.run(
+        invoke_and_parse_with_retry(
+            chat, [], recording_parse, _extract_text, base_seed=42, node_name="test_node"
+        )
+    )
+
+    assert result == "result"
+    assert calls == ["result"]  # the truncated attempt's content never reached parse()
+
+
+def test_truncated_claude_response_detected_via_stop_reason(monkeypatch):
+    monkeypatch.setattr(asyncio, "sleep", lambda _: _real_sleep(0))
+    chat = _FakeChat(
+        [
+            _FakeResponse("[incomplete", response_metadata={"stop_reason": "max_tokens"}),
+            "result",
+        ]
+    )
+
+    result = asyncio.run(
+        invoke_and_parse_with_retry(chat, [], _parse, _extract_text, base_seed=42, node_name="test_node")
+    )
+
+    assert result == "result"
+    assert chat.ainvoke_calls == 2
+
+
+def test_all_attempts_truncated_raises_clear_error(monkeypatch):
+    monkeypatch.setattr(asyncio, "sleep", lambda _: _real_sleep(0))
+    chat = _FakeChat(
+        [
+            _FakeResponse("[a", response_metadata={"done_reason": "length"}),
+            _FakeResponse("[b", response_metadata={"done_reason": "length"}),
+            _FakeResponse("[c", response_metadata={"done_reason": "length"}),
+        ]
+    )
+
+    with pytest.raises(RuntimeError, match="truncated"):
+        asyncio.run(
+            invoke_and_parse_with_retry(chat, [], _parse, _extract_text, base_seed=42, node_name="test_node")
+        )
+
+    assert chat.ainvoke_calls == 3
 
 
 def test_raises_last_exception_after_all_attempts_fail(monkeypatch):
