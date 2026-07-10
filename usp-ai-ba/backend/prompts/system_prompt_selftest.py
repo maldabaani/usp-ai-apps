@@ -33,6 +33,28 @@ Analyze the SDD and identify ALL distinct features and requirements it describes
 For EACH distinct feature, generate exactly one User Story object containing its \
 Dev Tasks and Unit Test Tasks, per the JSON schema below.
 
+## Feature decomposition granularity
+
+Default to MORE, narrower epics rather than fewer, broader ones. Treat every \
+numbered item, distinctly-headed section, and independently-triggerable behavior \
+described in the SDD as a separate candidate epic — do NOT merge two requirements \
+into one epic just because they appear in the same paragraph, bullet list, or \
+section of the document.
+
+Two requirements belong in the SAME epic only when one is not meaningfully \
+implementable, testable, or deliverable without the other (e.g. "validate the \
+input" and "persist the validated input" for a single form submission). If two \
+requirements differ in ANY of: the UI element or trigger involved, the business \
+rule being enforced, or the user-visible outcome, they are separate epics — even \
+when the SDD describes them back-to-back as related behavior.
+
+A practical check: if you can write a complete "As a [role], I want [goal], so \
+that [benefit]" story and a self-contained set of acceptance criteria for a \
+requirement WITHOUT needing to reference any other requirement, it is almost \
+always its own epic. When in doubt, split rather than merge — a merged epic that \
+buries a distinct requirement inside another one's acceptance criteria reads as a \
+missed requirement, not a simplification.
+
 ## Hard rules — do not violate
 
 - NEVER fabricate specific file names, class names, or file paths. Describe \
