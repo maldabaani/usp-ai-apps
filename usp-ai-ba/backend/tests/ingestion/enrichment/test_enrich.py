@@ -12,6 +12,7 @@ import re
 import uuid
 
 import pytest
+from langchain_core.documents import Document
 
 from ingestion import chroma_client, ingest_code, manifest
 from ingestion.enrichment import chunker, enrich, part_progress
@@ -910,3 +911,118 @@ def test_resumed_run_eta_is_not_inflated_by_free_resumed_parts(tmp_path, monkeyp
     # Both new parts done: nothing left.
     assert etas[2] == 0
     assert etas[3] == 0
+
+
+def _docs(n: int) -> tuple[list[Document], list[str]]:
+    documents = [Document(page_content=f"content {i}", metadata={"source": "f.py"}) for i in range(n)]
+    ids = [f"id-{i}" for i in range(n)]
+    return documents, ids
+
+
+class _BatchTrackingStore:
+    def __init__(self):
+        self.add_calls: list[list[Document]] = []
+
+    async def aadd_documents(self, documents, ids=None):
+        self.add_calls.append(list(documents))
+        return ids
+
+
+class _FailFirstBatchStore:
+    """Fails the very first whole-batch call it receives, succeeds on every
+    single-document retry -- proves a bad batch is isolated to a one-at-a-
+    time fallback instead of losing the whole batch."""
+
+    def __init__(self):
+        self.batch_calls = 0
+        self.single_calls = 0
+
+    async def aadd_documents(self, documents, ids=None):
+        if len(documents) > 1:
+            self.batch_calls += 1
+            raise RuntimeError("batch embed rejected")
+        self.single_calls += 1
+        return ids
+
+
+class _AlwaysFailStore:
+    async def aadd_documents(self, documents, ids=None):
+        raise RuntimeError("embedding server unreachable")
+
+
+def test_add_documents_batched_splits_at_batch_size():
+    store = _BatchTrackingStore()
+    documents, ids = _docs(5)
+
+    indexed, errors = asyncio.run(enrich._add_documents_batched(store, documents, ids, batch_size=2))
+
+    assert indexed == 5
+    assert errors == []
+    assert [len(call) for call in store.add_calls] == [2, 2, 1]
+
+
+def test_add_documents_batched_isolates_a_failing_batch():
+    store = _FailFirstBatchStore()
+    documents, ids = _docs(3)
+
+    indexed, errors = asyncio.run(enrich._add_documents_batched(store, documents, ids, batch_size=3))
+
+    assert store.batch_calls == 1
+    assert store.single_calls == 3
+    assert indexed == 3
+    assert errors == []
+
+
+def test_add_documents_batched_reports_errors_when_every_attempt_fails():
+    store = _AlwaysFailStore()
+    documents, ids = _docs(2)
+
+    indexed, errors = asyncio.run(enrich._add_documents_batched(store, documents, ids, batch_size=2))
+
+    assert indexed == 0
+    assert len(errors) == 2
+    assert all("embedding server unreachable" in e for e in errors)
+
+
+def test_partial_embed_failure_marks_file_as_error_and_preserves_part_progress(tmp_path, monkeypatch, fake_store):
+    # Regression test: a real production concern -- a large multi-part
+    # file's split enrichment pieces are now written in batches (see
+    # _add_documents_batched), and a batch/embed failure must not silently
+    # mark the file "summarized" with only some of its pieces actually
+    # written, nor discard the already-paid-for LLM summaries.
+    huge_content = "\n".join(f"line_{i} = {i}" for i in range(1000))
+    _write(tmp_path, "big.py", huge_content)
+    agent = _StubAgent("x" * 2000)
+    monkeypatch.setattr(enrich, "build_agents", lambda: [agent])
+
+    async def failing_aadd_documents(documents, ids=None):
+        raise RuntimeError("embedding server unreachable")
+
+    monkeypatch.setattr(fake_store, "aadd_documents", failing_aadd_documents)
+
+    manifests_root = tmp_path / "manifests"
+    progress_root = tmp_path / "progress"
+    result = asyncio.run(
+        enrich.enrich_repository(
+            tmp_path,
+            [tmp_path / "big.py"],
+            enabled=True,
+            manifests_root=manifests_root,
+            progress_root=progress_root,
+        )
+    )
+
+    assert result["files_summarized"] == 0
+    record = next(r for r in result["files"] if r["path"] == "big.py")
+    assert record["status"] == "error"
+    assert "embedding server unreachable" in record["reason"]
+    # The manifest must NOT record this file as done -- it should be
+    # retried (not silently skipped as unchanged) on the next run.
+    assert manifest.load(manifests_root, tmp_path) in (None, {})
+    # The already-succeeded LLM part summaries must still be on disk --
+    # confirms the expensive LLM calls don't need to be redone, only the
+    # cheap embed/write step.
+    digest = manifest.compute_hash(tmp_path / "big.py")
+    parts = chunker.chunk(tmp_path / "big.py", "big.py", huge_content, enrich.MAX_LINES_PER_CHUNK)
+    saved = part_progress.load(progress_root, tmp_path, "big.py", digest, len(parts))
+    assert len(saved) == len(parts)

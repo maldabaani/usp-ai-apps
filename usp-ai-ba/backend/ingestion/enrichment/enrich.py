@@ -98,6 +98,47 @@ def _module(relative_path: str) -> str:
     return parts[0] if parts else "root"
 
 
+async def _add_documents_batched(store, documents: list, ids: list[str], batch_size: int) -> tuple[int, list[str]]:
+    """Writes documents in batches of `batch_size` (matching ingest_code.py's
+    own BATCH_SIZE=64 convention) instead of one unbounded call -- a single
+    huge Ollama embed request (confirmed directly: OllamaEmbeddings.
+    aembed_documents sends every text in one HTTP call with no internal
+    batching, and chroma_client.get_embeddings() sets no timeout at all)
+    risks a very slow, or effectively hung, write for a large multi-part
+    file's split-but-still-numerous pieces. Each batch is tried whole first
+    (the common, fast path); only on failure does it fall back to one
+    document at a time, so a single bad document doesn't cost the whole
+    batch -- mirrors ingest_code.py's own _add_batch helper.
+    """
+    indexed = 0
+    errors: list[str] = []
+    for start in range(0, len(documents), batch_size):
+        batch_docs = documents[start : start + batch_size]
+        batch_ids = ids[start : start + batch_size]
+        try:
+            await store.aadd_documents(batch_docs, ids=batch_ids)
+            indexed += len(batch_docs)
+            continue
+        except Exception:
+            logger.warning(
+                "Batch embed of %d enrichment documents failed; retrying one at a time to isolate the failing chunk",
+                len(batch_docs),
+            )
+        for doc, doc_id in zip(batch_docs, batch_ids):
+            try:
+                await store.aadd_documents([doc], ids=[doc_id])
+                indexed += 1
+            except Exception as exc:
+                source = doc.metadata.get("source", "<unknown>")
+                logger.exception(
+                    "Failed to embed a %d-char enrichment chunk from %s -- skipping this chunk",
+                    len(doc.page_content),
+                    source,
+                )
+                errors.append(f"{source}: embedding failed for a {len(doc.page_content)}-char chunk: {exc}")
+    return indexed, errors
+
+
 def _format_error_summary(messages: list[str]) -> str:
     """Deduplicates identical per-part failure messages and counts them,
     capped to the 3 most common distinct messages. A real outage (exhausted
@@ -447,7 +488,24 @@ async def enrich_repository(
                     ids.append(_document_id(relative_path, chunk_part=index if len(pieces) > 1 else None))
 
                 await chroma_client.delete_by_source_and_type("codebase", relative_path, DOC_TYPE)
-                await codebase_store.aadd_documents(documents, ids=ids)
+                indexed_count, write_errors = await _add_documents_batched(
+                    codebase_store, documents, ids, ingest_code.BATCH_SIZE
+                )
+                if indexed_count < len(documents):
+                    # All-or-nothing, matching this function's own
+                    # already-established per-part philosophy (a file only
+                    # earns its manifest entry once every part succeeds):
+                    # part_progress is deliberately left untouched here, so
+                    # the already-summarized parts (a real LLM cost already
+                    # paid) aren't lost -- only this cheap embed/write step
+                    # needs retrying on the next run, not the LLM calls.
+                    reason = (
+                        f"{indexed_count}/{len(documents)} enrichment chunks embedded -- "
+                        f"{'; '.join(write_errors) if write_errors else 'embedding failed for the rest'}"
+                    )
+                    errors.append(f"{relative_path}: {reason}")
+                    file_records.append({"path": relative_path, "status": "error", "reason": reason})
+                    return
                 files_summarized += 1
                 if digest is not None:
                     current_hashes[relative_path] = digest
