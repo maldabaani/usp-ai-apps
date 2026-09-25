@@ -64,6 +64,11 @@ class EventBus:
     def subscriber_count(self, run_id: str) -> int:
         return len(self._subscribers.get(run_id, ()))
 
+    async def replay(self, run_id: str, after_id: int = 0) -> AsyncGenerator[Event]:
+        """Persisted events after `after_id`, in order (no live events)."""
+        async for event in self._replay(run_id, after_id):
+            yield event
+
     async def _replay(self, run_id: str, after_id: int) -> AsyncGenerator[Event]:
         while True:
             page = await self._store.list_after(run_id, after_id, REPLAY_PAGE_SIZE)

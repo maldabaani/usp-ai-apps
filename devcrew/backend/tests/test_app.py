@@ -1,14 +1,17 @@
 from __future__ import annotations
 
-from typing import Any
+from pathlib import Path
+from typing import Any, cast
 
 import pytest
-from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app import main
 from app.api import health as health_api
 from app.config import Settings
+from app.container import Container
 from app.health import CheckResult, HealthReport
+from tests.api_harness import api
 
 
 def _report(ok: bool) -> HealthReport:
@@ -32,28 +35,53 @@ def _patch(monkeypatch: pytest.MonkeyPatch, ok: bool) -> None:
     monkeypatch.setattr(health_api, "run_health_checks", fake)
 
 
-def test_health_endpoint_green(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
-    _patch(monkeypatch, ok=True)
-    with TestClient(main.create_app(settings)) as client:
-        resp = client.get("/health")
-    assert resp.status_code == 200
-    assert resp.json()["ok"] is True
+@pytest.mark.parametrize(("ok", "code"), [(True, 200), (False, 503)])
+async def test_health_endpoint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ok: bool, code: int
+) -> None:
+    _patch(monkeypatch, ok=ok)
+    async with api(tmp_path) as a:
+        a.container.engine = cast(AsyncEngine, object())  # health checks run against "the DB"
+        resp = await a.client.get("/health")
+    assert resp.status_code == code
+    assert resp.json()["ok"] is ok
 
 
-def test_strict_startup_fails_fast(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_strict_startup_fails_fast_before_touching_the_db(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
     _patch(monkeypatch, ok=False)
-    with (
-        pytest.raises(main.StartupHealthError, match="ollama pull x"),
-        TestClient(main.create_app(settings)),
-    ):
-        pass
+
+    def must_not_open(*_: Any) -> Any:
+        raise AssertionError("container must not be opened when health fails")
+
+    monkeypatch.setattr(Container, "open", must_not_open)
+    app = main.create_app(settings)
+    with pytest.raises(main.StartupHealthError, match="ollama pull x"):
+        async with app.router.lifespan_context(app):
+            pass
 
 
-def test_non_strict_startup_reports_503(
+async def test_non_strict_startup_continues(
     settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _patch(monkeypatch, ok=False)
     settings.startup_health_strict = False
-    with TestClient(main.create_app(settings)) as client:
-        resp = client.get("/health")
-    assert resp.status_code == 503
+    opened: list[bool] = []
+
+    class FakeManager:
+        async def recover(self) -> list[str]:
+            return []
+
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def fake_open(*_: Any) -> Any:
+        opened.append(True)
+        yield type("C", (), {"manager": FakeManager()})()
+
+    monkeypatch.setattr(Container, "open", fake_open)
+    app = main.create_app(settings)
+    async with app.router.lifespan_context(app):
+        pass
+    assert opened == [True]

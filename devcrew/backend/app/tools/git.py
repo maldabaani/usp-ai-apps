@@ -79,6 +79,22 @@ class GitRepo:
             raise GitError(f"git {' '.join(args)} failed: {err.decode(errors='replace').strip()}")
         return out.decode(errors="replace")
 
+    async def run_bytes(self, *args: str) -> bytes:
+        """Like run(), but returns raw stdout (file contents may be binary)."""
+        proc = await asyncio.create_subprocess_exec(
+            "git",
+            *SAFE_CONFIG,
+            *args,
+            cwd=self.root,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env={"GIT_TERMINAL_PROMPT": "0", "PATH": "/usr/bin:/bin:/usr/local/bin"},
+        )
+        out, err = await proc.communicate()
+        if proc.returncode != 0:
+            raise GitError(f"git {' '.join(args)} failed: {err.decode(errors='replace').strip()}")
+        return out
+
     async def is_repo(self) -> bool:
         return (self.root / ".git").is_dir()
 

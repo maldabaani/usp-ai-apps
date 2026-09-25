@@ -24,7 +24,9 @@ robustness, **P3** = nice to have.
 
 - [ ] **BL-010** (P2, from P2) A run that fails on an infrastructure error (Ollama down, Docker
   error) is marked `failed` but is resumable from its checkpoint (`RunDriver.continue_run`).
-  Expose "retry" in the API/UI (Phase 6/7) and auto-continue non-terminal runs on backend start.
+  *P6: runs that were mid-flight when the backend stopped are now continued automatically on
+  startup.* Still open: a "retry" for runs already marked `failed` (not in the specified API;
+  would be `POST /runs/{id}/retry` + a UI button).
 - [ ] **BL-011** (P2, from P3) Installed-dependency tracking (`Sandbox._installed`) is in memory:
   after a backend restart the next command re-runs the install step once. Persist the manifest
   hash (e.g. in a marker file inside the dependency volume) if installs get slow.
@@ -74,6 +76,18 @@ robustness, **P3** = nice to have.
   flags `needs_human`, the Coordinator's routing rule sends it to the human. There is no
   separate Coordinator LLM call to pick the target (the Developer chooses architect/planner).
 
+## API / runtime
+
+- [ ] **BL-060** (P2, from P6) Cancelling a busy run cancels the asyncio drive immediately, but
+  work already handed to threads (a running `docker exec`, a git command) finishes in the
+  background; the run's containers are removed by the cleanup, which ends in-flight sandbox
+  commands. Consider explicit cancellation tokens if this causes surprises.
+- [ ] **BL-061** (P3, from P6) Event ids are global across runs, so per-run ids have gaps; SSE
+  clients must treat ids as opaque, increasing cursors (they do: `Last-Event-ID`).
+- [ ] **BL-062** (P3, from P6) One backend process only: background drives, the event bus and
+  repository locks are in-process. Running several backend replicas would need a job queue and
+  cross-process pub/sub (out of scope: single local user).
+
 ## Retrieval (RAG)
 
 - [ ] **BL-030** (P2, from P4) The index mirrors the integration branch only: code of in-flight
@@ -101,3 +115,8 @@ robustness, **P3** = nice to have.
   adds `wave`, `lane`, `worktree`, `conflict_rounds`, `coordinator_actions`; new task status
   `split`. Graph state stores the run status as a plain string, and tests run with
   `LANGGRAPH_STRICT_MSGPACK=true` so any non-JSON value in a checkpoint fails loudly.
+- [x] **BL-047** (from P6) API details beyond the spec: `GET /runs/{id}` includes graph state
+  excerpts and `pending` interrupts; `resume` accepts an optional `interrupt_id`; file/diff
+  `ref` values are limited to `integration`, `main` and `task:<id>`; `?last_event_id=` query
+  parameter as an alternative to the `Last-Event-ID` header; compose ports bound to
+  `127.0.0.1`.

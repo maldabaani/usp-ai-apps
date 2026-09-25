@@ -7,9 +7,10 @@ approvals for the plan, the design and the final result, then open a GitHub PR.
 
 All LLM calls go to a **local Ollama**. There are no cloud LLM calls anywhere.
 
-> Status: **Phase 5**: backbone graph with all five roles, parallel developers in git
-> worktrees, LLM Coordinator, agent Q&A, Docker sandboxes, runnable starter templates, per-run
-> RAG, `scripts/run_local.py`. API (6), UI (7) and GitHub delivery (8) come next.
+> Status: **Phase 6**: HTTP API with SSE replay, resume/cancel and restart recovery, on top of
+> the backbone graph (five roles, parallel developers in git worktrees, LLM Coordinator, agent
+> Q&A, Docker sandboxes, starter templates, per-run RAG). UI (7), GitHub delivery (8) and the
+> benchmark (9) come next.
 > Open issues and deferred work: [BACKLOG.md](BACKLOG.md).
 
 ## Architecture
@@ -30,6 +31,8 @@ All LLM calls go to a **local Ollama**. There are no cloud LLM calls anywhere.
 | `backend/app/tools/agents.py` | `ask_agent`: one-shot questions to the Architect / Planner, routed to the human when needed. |
 | `backend/app/graph/context_builder.py` | Scoped, token-budgeted context per role (never the run history, never raw full files). |
 | `backend/app/graph/runner.py` | `RunDriver`: start / resume / continue a run, mirror status to DB + events. |
+| `backend/app/services/run_manager.py` | Background drives per run, cancel, restart recovery (used by the API). |
+| `backend/app/api/` | FastAPI routers: runs (+ SSE), workspace files/diff, health. |
 | `backend/app/llm/structured.py` | Structured-output validator: JSON-schema decoding, 2 retries with the Pydantic error fed back, then JSON extraction from raw text. |
 | `backend/app/llm/agent.py` | Tool-calling loop: one corrective retry for malformed calls, then error → Coordinator; transcript compaction to fit `num_ctx`. |
 | `backend/prompts/*.md` | One prompt file per role. |
@@ -66,6 +69,34 @@ Design notes:
   summarizes failures for the Developer.
 - With `SANDBOX_ENABLED=false`, QA writes tests but they are not executed: results show
   `ran: false` and the task proceeds.
+
+## HTTP API (Phase 6)
+
+The backend runs on `http://localhost:8080`. docker-compose publishes every port on
+`127.0.0.1` only, because DevCrew has no authentication by design. Interactive docs are at
+`/docs`.
+
+| Method & path | Purpose |
+|---|---|
+| `POST /runs` `{request, repo_target, create_repo}` | Create a run and start it in the background → `201` run summary |
+| `GET /runs` | List runs (newest first) |
+| `GET /runs/{id}` | Run detail: status, plan, design, tasks (with `wave`/`lane`), Q&A log, integration results, errors, and **`pending`** (every interrupt waiting for input: `interrupt_id`, `kind`, `title`, `artifact`, `allowed_actions`, `data`, `error`) |
+| `GET /runs/{id}/events` | **SSE** stream of run events. Replays everything after `Last-Event-ID` (header, sent automatically by `EventSource` on reconnect) or `?last_event_id=`, then streams live. Sends keepalives every 15s and closes after the run reaches a terminal status. |
+| `POST /runs/{id}/resume` `{action, feedback?, artifact?, answer?, interrupt_id?}` | Answer the pending interrupt → `202`. `interrupt_id` is required when several questions are pending (parallel tasks). `409` if the run is busy, finished or not waiting; `422` if the action is not allowed for that interrupt or required fields are missing. |
+| `POST /runs/{id}/cancel` | Stop the run, mark it `cancelled`, and remove its containers, per-run volumes, worktrees and Chroma collection |
+| `GET /runs/{id}/files?ref=` | Files tracked on `integration` (default), `main` or `task:<id>` |
+| `GET /runs/{id}/files/{path}?ref=` | File content from git (binary-safe, size-capped, no path traversal, refs limited to the run's own branches) |
+| `GET /runs/{id}/diff?task_id=` | A task's changes (its branch vs. where it forked from integration), or the whole run's changes (integration vs. the scaffold on `main`) |
+| `GET /health` | DB, Chroma, Ollama, models, Docker, sandbox images, GitHub token |
+
+**Execution model.** `RunManager` runs at most one background drive per run (start, resume
+or continue); the API returns immediately and progress arrives over SSE.
+
+**Restarts.** The graph is checkpointed in Postgres. On startup the backend continues every
+run that was mid-flight (statuses `planning` … `delivering`) from its last checkpoint. Runs
+waiting for human input keep waiting, and their pending questions are still listed by
+`GET /runs/{id}`. Clients reconnect to `/events` with `Last-Event-ID` to replay what they
+missed. This has been tested by `kill -9` of the backend mid-run.
 
 ## Parallel execution, Coordinator and agent Q&A (Phase 5)
 

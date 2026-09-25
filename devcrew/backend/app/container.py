@@ -2,40 +2,81 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from typing import Any
 
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+from langgraph.checkpoint.base import BaseCheckpointSaver
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.config import Settings
-from app.db.repository import RunRepository
+from app.db.repository import RunRepository, RunStore
 from app.db.session import create_engine, create_sessionmaker
 from app.events.bus import EventBus
 from app.events.store import PostgresEventStore
-from app.graph.factory import build_llm
+from app.graph.backbone import build_graph
+from app.graph.checkpointer import postgres_checkpointer
+from app.graph.factory import build_deps, build_llm
+from app.graph.runner import RunDriver
+from app.graph.runtime import GraphDeps
 from app.llm.client import LLMGateway
+from app.services.run_manager import RunManager
 
 
 @dataclass
 class Container:
     settings: Settings
-    engine: AsyncEngine
-    sessionmaker: async_sessionmaker[AsyncSession]
-    runs: RunRepository
+    engine: AsyncEngine | None
+    runs: RunStore
     events: EventBus
     llm: LLMGateway
+    deps: GraphDeps
+    driver: RunDriver
+    manager: RunManager
 
     @classmethod
-    def build(cls, settings: Settings) -> Container:
-        engine = create_engine(settings.database_url)
-        sessionmaker = create_sessionmaker(engine)
+    def assemble(
+        cls,
+        settings: Settings,
+        *,
+        deps: GraphDeps,
+        runs: RunStore,
+        checkpointer: BaseCheckpointSaver[Any],
+        engine: AsyncEngine | None = None,
+    ) -> Container:
+        driver = RunDriver(build_graph(deps, checkpointer), deps.events, runs)
         return cls(
             settings=settings,
             engine=engine,
-            sessionmaker=sessionmaker,
-            runs=RunRepository(sessionmaker),
-            events=EventBus(PostgresEventStore(sessionmaker)),
-            llm=build_llm(settings),
+            runs=runs,
+            events=deps.events,
+            llm=deps.llm,
+            deps=deps,
+            driver=driver,
+            manager=RunManager(driver, runs, deps.events, deps),
         )
 
-    async def close(self) -> None:
-        await self.engine.dispose()
+    @classmethod
+    @asynccontextmanager
+    async def open(cls, settings: Settings, engine: AsyncEngine) -> AsyncIterator[Container]:
+        """Production wiring: Postgres app tables, event log and LangGraph checkpointer."""
+        sessionmaker = create_sessionmaker(engine)
+        events = EventBus(PostgresEventStore(sessionmaker))
+        deps = build_deps(settings, events, llm=build_llm(settings))
+        async with postgres_checkpointer(settings.database_url) as saver:
+            container = cls.assemble(
+                settings,
+                deps=deps,
+                runs=RunRepository(sessionmaker),
+                checkpointer=saver,
+                engine=engine,
+            )
+            try:
+                yield container
+            finally:
+                await container.manager.shutdown()
+
+
+def default_engine(settings: Settings) -> AsyncEngine:
+    return create_engine(settings.database_url)

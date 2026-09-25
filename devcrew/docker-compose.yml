@@ -10,7 +10,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:-devcrew}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -25,7 +25,7 @@ services:
       IS_PERSISTENT: "TRUE"
       ANONYMIZED_TELEMETRY: "FALSE"
     ports:
-      - "${CHROMA_PORT:-8000}:8000"
+      - "127.0.0.1:${CHROMA_PORT:-8000}:8000"
     volumes:
       - chromadata:/data
 
@@ -41,7 +41,7 @@ services:
       RULES_DIR: /devcrew/rules
       TEMPLATES_DIR: /devcrew/templates
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"  # no auth by design: never expose beyond localhost
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -64,7 +64,7 @@ services:
     profiles: ["ui"]
     build: ./frontend
     ports:
-      - "4200:4200"
+      - "127.0.0.1:4200:4200"
     depends_on:
       - backend
 

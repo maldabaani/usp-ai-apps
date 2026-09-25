@@ -15,7 +15,7 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command, Interrupt, StateSnapshot
 
 from app.db.models import RunStatus
-from app.db.repository import RunRepository
+from app.db.repository import RunStore
 from app.events.bus import EventBus
 from app.events.types import EventType
 from app.graph.backbone import initial_state
@@ -57,7 +57,7 @@ class RunDriver:
         self,
         graph: CompiledStateGraph[Any, Any, Any, Any],
         events: EventBus,
-        runs: RunRepository | None = None,
+        runs: RunStore | None = None,
     ) -> None:
         self.graph = graph
         self.events = events
