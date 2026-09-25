@@ -7,8 +7,8 @@ approvals for the plan, the design and the final result, then open a GitHub PR.
 
 All LLM calls go to a **local Ollama**. There are no cloud LLM calls anywhere.
 
-> Status: **Phase 3**: sequential backbone graph with all five roles, Docker sandboxes,
-> runnable starter templates, `scripts/run_local.py`. RAG (4), parallelism (5), API (6),
+> Status: **Phase 4**: sequential backbone graph with all five roles, Docker sandboxes,
+> runnable starter templates, per-run RAG, `scripts/run_local.py`. Parallelism (5), API (6),
 > UI (7) and GitHub delivery (8) come next.
 
 ## Architecture
@@ -104,6 +104,38 @@ How commands run (`backend/app/sandbox/`):
   (allowlist), and `cwd` must stay inside the project.
 - Tools: the Developer and QA get `run_command` (sandboxed). QA's pass/fail is the test
   command's exit code.
+
+## Code retrieval / RAG (Phase 4)
+
+`backend/app/rag/`: one ChromaDB collection per run, `run_<run_id>`.
+
+- **What is indexed**: the tracked files of the integration branch (template, `docs/design.md`,
+  every merged task), plus `rules/<stack>.md` for the stacks in the design. Lockfiles,
+  binaries, empty files and files over `RAG_MAX_FILE_BYTES` are skipped.
+- **Code-aware chunking**:
+  - Python is split with `ast` (functions and classes, decorators included; large classes
+    are split into their methods).
+  - Java, TypeScript and JavaScript are split by brace matching that ignores strings and
+    comments. Units are classes, methods, functions, consts, and Jasmine `describe`/`it`
+    blocks, with multi-line decorators such as `@Component({...})` kept with their class.
+  - Markdown is split by heading.
+  - Anything else, and any unit still longer than `RAG_CHUNK_MAX_LINES`, becomes line
+    windows with overlap.
+  - Metadata per chunk: `path`, `language`, line range, `symbol`, `commit_sha`,
+    `file_hash`, `source`.
+- **Incremental**: indexing runs at scaffold and again after every merge into the
+  integration branch. Only files whose content hash changed are re-embedded, and chunks of
+  deleted files are removed.
+- **Embeddings**: `nomic-embed-text` via Ollama, with its `search_document:` /
+  `search_query:` prefixes.
+- **`search_codebase(query, k, path_filter?)`** (Developer, Reviewer, QA): returns chunks with
+  path and line ranges. `path_filter` is a directory prefix (`app/`) or a glob
+  (`*.spec.ts`).
+- **Context builders** add retrieved chunks as a budgeted section, never whole files:
+  related code for the Developer and Reviewer, and existing tests (to copy fixtures and
+  style) for QA.
+- **No cross-run memory**: the collection is deleted when the run completes, fails or is
+  cancelled, together with the sandbox containers and volumes.
 
 ### Starter templates (`templates/<stack>/`)
 

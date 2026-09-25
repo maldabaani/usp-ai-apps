@@ -8,6 +8,8 @@ from app.graph.runtime import GraphDeps
 from app.llm.client import LLMGateway
 from app.llm.models_config import load_models_config
 from app.prompts import PromptLibrary
+from app.rag.embeddings import Embedder
+from app.rag.service import RagService, chroma_http_client
 from app.sandbox.docker_runner import DockerSandboxRunner
 from app.sandbox.service import Sandbox
 from app.tools.catalog import RulesCatalog, TemplatesCatalog
@@ -28,15 +30,28 @@ def build_deps(
     *,
     llm: LLMGateway | None = None,
     sandbox: Sandbox | None = None,
+    rag: RagService | None = None,
 ) -> GraphDeps:
     if sandbox is None and settings.sandbox_enabled:
         sandbox = Sandbox(DockerSandboxRunner(settings))
+    llm = llm or build_llm(settings)
+    if rag is None and settings.rag_enabled:
+        rag = RagService(
+            chroma_http_client(settings),
+            Embedder(
+                llm.embeddings(),
+                model_name=llm.models.embeddings.model,
+                batch_size=settings.rag_embed_batch_size,
+            ),
+            settings,
+        )
     return GraphDeps(
         settings=settings,
-        llm=llm or build_llm(settings),
+        llm=llm,
         events=events,
         prompts=PromptLibrary(settings.prompts_dir),
         rules=RulesCatalog(settings.rules_dir),
         templates=TemplatesCatalog(settings.templates_dir),
         sandbox=sandbox,
+        rag=rag,
     )

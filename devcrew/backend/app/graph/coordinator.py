@@ -15,7 +15,7 @@ from langgraph.types import Command
 
 from app.db.models import RunStatus
 from app.graph.interrupts import InterruptKind, InterruptRequest, ResumeAction, request_input
-from app.graph.runtime import GraphDeps, NodeFn
+from app.graph.runtime import GraphDeps, NodeFn, release_run_resources
 from app.graph.state import QAEntry, TaskState, TaskStatus, dump
 
 ESCALATION_ACTIONS = [ResumeAction.APPROVE, ResumeAction.ANSWER, ResumeAction.REJECT]
@@ -59,6 +59,7 @@ def make_run_coordinator(deps: GraphDeps) -> NodeFn:
             )
         )
         if payload.action is ResumeAction.REJECT:
+            await release_run_resources(deps, state["run_id"])
             return Command(
                 goto=END,
                 update={"status": RunStatus.FAILED, "escalation": None, "errors": [reason]},

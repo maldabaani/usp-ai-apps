@@ -8,8 +8,14 @@ from langgraph.types import Command
 
 from app.events.types import EventType
 from app.graph.context_builder import budget_for, qa_context, qa_report_context
-from app.graph.nodes.task_common import TaskCtx, load_task_ctx, to_coordinator
-from app.graph.runtime import GraphDeps, NodeFn
+from app.graph.nodes.task_common import (
+    TEST_GLOBS,
+    TaskCtx,
+    load_task_ctx,
+    task_query,
+    to_coordinator,
+)
+from app.graph.runtime import GraphDeps, NodeFn, retrieve
 from app.graph.state import QAReport, TaskStatus, TestResult
 from app.llm.agent import run_agent
 from app.llm.models_config import Role
@@ -17,6 +23,7 @@ from app.llm.structured import StructuredOutputError, generate_structured
 from app.llm.tokens import tail_text
 from app.tools.base import ToolError, ToolSpec
 from app.tools.sandbox import run_command_tool
+from app.tools.search import search_codebase_tool
 from app.tools.workspace import is_test_path, read_file_tool, write_file_tool
 
 NODE = "qa"
@@ -100,6 +107,8 @@ def qa_tools(deps: GraphDeps, ctx: TaskCtx) -> list[ToolSpec]:
         tools.append(
             run_command_tool(deps.sandbox, ctx.target, ctx.layout, default_cwd=ctx.project.path)
         )
+    if deps.rag is not None:
+        tools.append(search_codebase_tool(deps.rag, ctx.run_id))
     return tools
 
 
@@ -122,6 +131,12 @@ def make_qa(deps: GraphDeps) -> NodeFn:
             command,
             rules,
             budget_for(deps.llm.spec(Role.QA).prompt_budget, system),
+            existing_tests=await retrieve(
+                deps,
+                ctx.run_id,
+                f"tests for {task_query(ctx.task)}",
+                path_filter=TEST_GLOBS.get(ctx.task.stack),
+            ),
         )
         outcome = await run_agent(
             deps.llm,

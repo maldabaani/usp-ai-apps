@@ -11,7 +11,7 @@ from langgraph.types import Command
 from app.db.models import RunStatus
 from app.events.types import EventType
 from app.graph.layout import resolve_layout, sandbox_target
-from app.graph.runtime import GraphDeps, NodeFn
+from app.graph.runtime import GraphDeps, NodeFn, release_run_resources
 from app.graph.state import TaskState, TaskStatus, TestResult, dump, get_design
 from app.llm.tokens import tail_text
 from app.tools.git import GitRepo
@@ -93,9 +93,7 @@ def make_github_delivery(deps: GraphDeps) -> NodeFn:
 
 def make_done(deps: GraphDeps) -> NodeFn:
     async def done(state: dict[str, Any]) -> Command[str]:
-        if deps.sandbox is not None:
-            await deps.sandbox.cleanup_run(state["run_id"])
-        # Phase 4 also deletes the run's Chroma collection here.
+        await release_run_resources(deps, state["run_id"])
         return Command(goto=END, update={"status": RunStatus.COMPLETED})
 
     return done

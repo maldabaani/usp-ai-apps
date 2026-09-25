@@ -16,7 +16,7 @@ from langgraph.types import Command
 from app.db.models import RunStatus
 from app.events.types import EventType
 from app.graph.layout import resolve_layout, sandbox_target
-from app.graph.runtime import GraphDeps, NodeFn
+from app.graph.runtime import GraphDeps, NodeFn, reindex
 from app.graph.state import TaskState, dump, get_design, get_plan
 from app.llm.tokens import tail_text
 from app.tools.git import GitRepo
@@ -91,6 +91,18 @@ def make_scaffold(deps: GraphDeps) -> NodeFn:
                     skipped=outcome.skipped,
                     result="" if result is None else tail_text(result.output, 500),
                     message=None if ok else f"dependency install failed for {outcome.stack}",
+                )
+
+        if deps.rag is not None:
+            await reindex(deps, run_id, root, "scaffold")
+            try:
+                await deps.rag.sync_rules(run_id, deps.rules, layout.keys())
+            except Exception as exc:
+                await deps.emit(
+                    run_id,
+                    EventType.ERROR,
+                    node="scaffold",
+                    message=f"indexing rules failed: {exc}",
                 )
 
         existing = state.get("tasks") or {}

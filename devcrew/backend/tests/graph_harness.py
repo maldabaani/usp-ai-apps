@@ -19,9 +19,21 @@ from app.graph.interrupts import ResumePayload
 from app.graph.runner import RunDriver, RunOutcome
 from app.graph.runtime import GraphDeps
 from app.prompts import PromptLibrary
+from app.rag.embeddings import Embedder
+from app.rag.service import RagService
 from app.sandbox.service import Sandbox
 from app.tools.catalog import RulesCatalog, TemplatesCatalog
-from tests.fakes import Brain, Call, FakeRunner, final, gateway, tool_call, tool_results
+from tests.fakes import (
+    Brain,
+    Call,
+    FakeChroma,
+    FakeRunner,
+    HashEmbeddingModel,
+    final,
+    gateway,
+    tool_call,
+    tool_results,
+)
 
 PLAN: dict[str, Any] = {
     "summary": "TODO API",
@@ -162,6 +174,7 @@ def make_harness(
     brain: Brain | None = None,
     checkpointer: BaseCheckpointSaver[Any] | None = None,
     runner: FakeRunner | None = None,
+    chroma: FakeChroma | None = None,
     **settings: Any,
 ) -> Harness:
     brain = brain or default_brain()
@@ -182,6 +195,11 @@ def make_harness(
         rules=RulesCatalog(cfg.rules_dir),
         templates=TemplatesCatalog(cfg.templates_dir),
         sandbox=Sandbox(runner) if runner is not None else None,
+        rag=(
+            RagService(lambda: chroma, Embedder(HashEmbeddingModel(), model_name="nomic"), cfg)
+            if chroma is not None
+            else None
+        ),
     )
     saver = checkpointer or InMemorySaver()
     graph = build_graph(deps, saver)

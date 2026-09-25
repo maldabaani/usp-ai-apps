@@ -6,15 +6,16 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.types import Command
 
 from app.graph.context_builder import budget_for, reviewer_context
-from app.graph.nodes.task_common import load_task_ctx, to_coordinator
-from app.graph.runtime import GraphDeps, NodeFn
+from app.graph.nodes.task_common import TaskCtx, load_task_ctx, task_query, to_coordinator
+from app.graph.runtime import GraphDeps, NodeFn, retrieve
 from app.graph.state import ReviewIssue, ReviewResult, TaskStatus
 from app.llm.agent import run_agent
 from app.llm.models_config import Role
 from app.llm.structured import StructuredOutputError, generate_structured
-from app.tools.base import ToolError
+from app.tools.base import ToolError, ToolSpec
 from app.tools.catalog import read_rules_tool
 from app.tools.git import git_diff_tool
+from app.tools.search import search_codebase_tool
 from app.tools.workspace import read_file_tool
 
 NODE = "reviewer"
@@ -27,6 +28,18 @@ def render_feedback(review: ReviewResult) -> str:
         rule = f" [{issue.rule_ref}]" if issue.rule_ref else ""
         lines.append(f"- ({issue.severity}){rule} {where}: {issue.message}")
     return "\n".join(lines)
+
+
+def reviewer_tools(deps: GraphDeps, ctx: TaskCtx) -> list[ToolSpec]:
+    """Read-only by construction: no write_file, no run_command."""
+    tools = [
+        read_file_tool(ctx.workspace),
+        git_diff_tool(ctx.repo, ctx.integration_branch, ctx.branch),
+        read_rules_tool(deps.rules),
+    ]
+    if deps.rag is not None:
+        tools.append(search_codebase_tool(deps.rag, ctx.run_id))
+    return tools
 
 
 def make_reviewer(deps: GraphDeps) -> NodeFn:
@@ -60,16 +73,13 @@ def make_reviewer(deps: GraphDeps) -> NodeFn:
                 rules,
                 diff,
                 budget_for(deps.llm.spec(Role.REVIEWER).prompt_budget, system),
+                related_code=await retrieve(deps, ctx.run_id, task_query(ctx.task)),
             )
             outcome = await run_agent(
                 deps.llm,
                 Role.REVIEWER,
                 [SystemMessage(content=system), HumanMessage(content=context)],
-                [
-                    read_file_tool(ctx.workspace),
-                    git_diff_tool(ctx.repo, ctx.integration_branch, ctx.branch),
-                    read_rules_tool(deps.rules),
-                ],
+                reviewer_tools(deps, ctx),
                 max_steps=deps.settings.max_agent_steps,
                 on_tool_event=deps.tool_hook(ctx.run_id, NODE, ctx.task.id),
             )

@@ -32,6 +32,15 @@ class Settings(BaseSettings):
     chroma_host: str = "localhost"
     chroma_port: int = 8000
 
+    # --- RAG -------------------------------------------------------------------------------
+    rag_enabled: bool = True
+    rag_top_k: int = Field(default=6, ge=1, le=50)
+    rag_chunk_max_lines: int = Field(default=120, ge=10)
+    rag_window_lines: int = Field(default=60, ge=5)
+    rag_window_overlap: int = Field(default=10, ge=0)
+    rag_max_file_bytes: int = Field(default=200_000, ge=1_000)
+    rag_embed_batch_size: int = Field(default=32, ge=1)
+
     # --- Execution limits -------------------------------------------------------------------
     max_parallel_devs: int = Field(default=2, ge=1)
     max_dev_iterations: int = Field(default=3, ge=1)

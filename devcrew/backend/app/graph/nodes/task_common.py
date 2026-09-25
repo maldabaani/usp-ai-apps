@@ -49,6 +49,14 @@ class TaskCtx:
         return {"tasks": {self.task.id: dump(self.ts)}, **extra}
 
 
+TEST_GLOBS = {"python": "*tests/*", "java": "*src/test/*", "angular": "*.spec.ts"}
+
+
+def task_query(task: PlanTask) -> str:
+    """Retrieval query describing a task."""
+    return f"{task.title}\n{task.description}\n{' '.join(task.target_files)}"
+
+
 def task_branch(run_id: str, task_id: str) -> str:
     return f"devcrew/{run_id[:8]}/task-{task_id}"
 

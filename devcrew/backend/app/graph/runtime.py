@@ -7,6 +7,7 @@ import logging
 import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Literal
 
 from langchain_core.messages import (
@@ -26,6 +27,7 @@ from app.llm.agent import AgentOutcome, ToolEventHook, run_agent
 from app.llm.client import LLMGateway
 from app.llm.models_config import Role
 from app.prompts import PromptLibrary
+from app.rag.service import RagService
 from app.sandbox.service import Sandbox
 from app.tools.base import ToolSpec
 from app.tools.catalog import RulesCatalog, TemplatesCatalog
@@ -44,6 +46,7 @@ class GraphDeps:
     rules: RulesCatalog
     templates: TemplatesCatalog
     sandbox: Sandbox | None = None  # None: commands/tests are not executed
+    rag: RagService | None = None  # None: no retrieval
 
     async def emit(
         self,
@@ -63,6 +66,63 @@ class GraphDeps:
             )
 
         return hook
+
+
+async def release_run_resources(deps: GraphDeps, run_id: str) -> None:
+    """End of a run (completed, failed or cancelled): drop containers, volumes and the run's
+    Chroma collection. Nothing survives into the next run."""
+    if deps.sandbox is not None:
+        try:
+            await deps.sandbox.cleanup_run(run_id)
+        except Exception as exc:
+            logger.warning("sandbox cleanup failed for %s: %s", run_id, exc)
+    if deps.rag is not None:
+        try:
+            await deps.rag.delete(run_id)
+        except Exception as exc:
+            logger.warning("RAG cleanup failed for %s: %s", run_id, exc)
+
+
+async def retrieve(
+    deps: GraphDeps,
+    run_id: str,
+    query: str,
+    *,
+    k: int | None = None,
+    path_filter: str | None = None,
+) -> str:
+    """Retrieved chunks rendered for a context section ('' when RAG is off or fails)."""
+    if deps.rag is None:
+        return ""
+    try:
+        hits = await deps.rag.search(run_id, query, k, path_filter)
+    except Exception as exc:
+        logger.warning("retrieval failed for %s: %s", run_id, exc)
+        return ""
+    return "\n\n".join(h.render() for h in hits)
+
+
+async def reindex(deps: GraphDeps, run_id: str, root: Path, node: str) -> None:
+    """Incrementally re-index the checked-out integration branch; failures are reported, not
+    fatal (search then serves the previous index)."""
+    if deps.rag is None:
+        return
+    try:
+        stats = await deps.rag.sync_workspace(run_id, root)
+    except Exception as exc:
+        logger.warning("indexing failed for %s: %s", run_id, exc)
+        await deps.emit(run_id, EventType.ERROR, node=node, message=f"indexing failed: {exc}")
+        return
+    await deps.emit(
+        run_id,
+        EventType.TOOL_RESULT,
+        node=node,
+        tool="index_codebase",
+        ok=True,
+        result=f"+{len(stats.added)} ~{len(stats.updated)} -{len(stats.removed)} files, "
+        f"{stats.chunks} chunks embedded",
+        stats=stats.as_dict(),
+    )
 
 
 def instrument(deps: GraphDeps, name: str, fn: NodeFn) -> NodeFn:

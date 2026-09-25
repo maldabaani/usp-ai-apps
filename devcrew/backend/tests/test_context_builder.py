@@ -58,3 +58,21 @@ def test_developer_context_respects_small_budget() -> None:
         budget=800,
     )
     assert estimate_tokens(out) <= 800 and "id: T1" in out
+
+
+def test_retrieved_code_is_truncated_to_fit_budget() -> None:
+    plan = Plan.model_validate(PLAN)
+    chunk = "--- app/x.py:1-40  (def f)\n" + "code line\n" * 40
+    out = developer_context(
+        plan.task("T2"),
+        plan,
+        Design.model_validate(DESIGN),
+        TaskState(id="T2"),
+        "rules",
+        "app/main.py",
+        budget=900,
+        related_code="\n\n".join([chunk] * 50),
+    )
+    assert estimate_tokens(out) <= 900
+    assert "Relevant existing code" in out and "[truncated]" in out
+    assert "id: T2" in out

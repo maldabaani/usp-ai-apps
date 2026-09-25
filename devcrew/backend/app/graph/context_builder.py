@@ -4,8 +4,8 @@ Every node gets only the artifacts its role needs, never the run history. Sectio
 priorities; when the prompt would exceed its token budget, the lowest-priority sections are
 truncated first (whole lines, with a marker) and required sections are kept intact.
 
-Raw file contents are never inlined here: agents read files through tools, and Phase 4 adds
-retrieved RAG chunks as a budgeted section.
+Raw file contents are never inlined here: code arrives as retrieved RAG chunks (a budgeted,
+truncatable section) or through the agents' read_file / search_codebase tools.
 """
 
 from __future__ import annotations
@@ -189,6 +189,7 @@ def developer_context(
     budget: int,
     *,
     qa: Sequence[QAEntry] = (),
+    related_code: str = "",
 ) -> str:
     sections = [
         Section("Your task", render_task(task), priority=0, required=True),
@@ -199,6 +200,7 @@ def developer_context(
             priority=2,
         ),
         Section("Key design decisions", "\n".join(f"- {d}" for d in design.key_decisions), 4),
+        Section("Relevant existing code (retrieved; may be partial)", related_code, priority=3),
         Section(f"{task.stack} rules", rules, priority=5),
         Section("Project files", file_tree, priority=6),
     ]
@@ -224,6 +226,8 @@ def reviewer_context(
     rules: str,
     diff: str,
     budget: int,
+    *,
+    related_code: str = "",
 ) -> str:
     return fit_sections(
         [
@@ -232,6 +236,7 @@ def reviewer_context(
             Section("Design contracts", render_contracts(design, task.target_files), 2),
             Section("Diff (integration...task branch)", diff or "(no changes)", 3),
             Section(f"{task.stack} rules", rules, priority=4),
+            Section("Existing code the change interacts with (retrieved)", related_code, 5),
         ],
         budget,
     )
@@ -245,6 +250,8 @@ def qa_context(
     test_cmd: str,
     rules: str,
     budget: int,
+    *,
+    existing_tests: str = "",
 ) -> str:
     return fit_sections(
         [
@@ -253,6 +260,7 @@ def qa_context(
             Section("Files changed by the developer", "\n".join(changed_files) or "(none)", 1),
             Section("Design contracts", render_contracts(design, task.target_files), 3),
             Section("Test command (run for you after you finish)", test_cmd, 1),
+            Section("Existing tests (follow their fixtures and style)", existing_tests, 4),
             Section(f"{task.stack} testing rules", rules, priority=5),
         ],
         budget,

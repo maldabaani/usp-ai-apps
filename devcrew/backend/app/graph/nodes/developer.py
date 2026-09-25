@@ -5,7 +5,7 @@ from typing import Any
 from langgraph.types import Command
 
 from app.graph.context_builder import budget_for, developer_context
-from app.graph.nodes.task_common import TaskCtx, load_task_ctx, to_coordinator
+from app.graph.nodes.task_common import TaskCtx, load_task_ctx, task_query, to_coordinator
 from app.graph.runtime import (
     GraphDeps,
     NodeFn,
@@ -13,6 +13,7 @@ from app.graph.runtime import (
     pending_question,
     qa_entries,
     questions_asked,
+    retrieve,
     save_transcript,
 )
 from app.graph.state import TaskStatus, dump
@@ -21,6 +22,7 @@ from app.tools.base import ToolError, ToolSpec
 from app.tools.catalog import read_rules_tool
 from app.tools.human import ask_human_tool
 from app.tools.sandbox import run_command_tool
+from app.tools.search import search_codebase_tool
 from app.tools.workspace import list_dir_tool, read_file_tool, write_file_tool
 
 NODE = "developer"
@@ -38,6 +40,8 @@ def developer_tools(deps: GraphDeps, ctx: TaskCtx, asked: int) -> list[ToolSpec]
         tools.append(
             run_command_tool(deps.sandbox, ctx.target, ctx.layout, default_cwd=ctx.project.path)
         )
+    if deps.rag is not None:
+        tools.append(search_codebase_tool(deps.rag, ctx.run_id))
     return tools
 
 
@@ -57,11 +61,12 @@ def make_developer(deps: GraphDeps) -> NodeFn:
         asked = questions_asked(qa_log, NODE, ctx.task.id)
         system = deps.prompts.get(NODE)
 
-        def context() -> str:
+        async def context() -> str:
             try:
                 rules = deps.rules.read(ctx.task.stack)
             except ToolError:
                 rules = ""
+            related = await retrieve(deps, ctx.run_id, task_query(ctx.task))
             return developer_context(
                 ctx.task,
                 ctx.plan,
@@ -71,6 +76,7 @@ def make_developer(deps: GraphDeps) -> NodeFn:
                 "\n".join(ctx.workspace.list(".", depth=4)),
                 budget_for(deps.llm.spec(Role.DEVELOPER).prompt_budget, system),
                 qa=qa_entries(qa_log, task_id=ctx.task.id),
+                related_code=related,
             )
 
         outcome = await agent_turn(

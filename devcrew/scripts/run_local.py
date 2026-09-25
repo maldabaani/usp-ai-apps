@@ -58,6 +58,8 @@ def fmt_event(e: Event) -> str | None:
         case EventType.TOOL_CALL:
             args = json.dumps(p.get("args", {}))
             return f"      ↳ {p.get('tool')}({args[:100]}{'…' if len(args) > 100 else ''})"
+        case EventType.TOOL_RESULT if p.get("tool") in ("index_codebase", "install_dependencies"):
+            return f"      ✓ {p.get('tool')}: {str(p.get('result', ''))[:160]}"
         case EventType.TOOL_RESULT if not p.get("ok", True):
             return f"      ✗ {p.get('tool')}: {str(p.get('result', ''))[:160]}"
         case EventType.MERGE:

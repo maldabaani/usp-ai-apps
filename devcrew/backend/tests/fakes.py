@@ -156,3 +156,111 @@ class FakeRunner:
             for task, cmd, cwd, net, _ in self.calls
             if network is None or net == network
         ]
+
+
+class HashEmbeddingModel:
+    """Deterministic bag-of-words embeddings: related text -> similar vectors, no Ollama."""
+
+    DIM = 256
+
+    def __init__(self) -> None:
+        self.documents_embedded = 0
+
+    def _vec(self, text: str) -> list[float]:
+        import hashlib
+        import math
+        import re
+
+        vec = [0.0] * self.DIM
+        for token in re.findall(r"[a-z][a-z0-9]+", text.lower()):
+            if token in ("search_document", "search_query"):
+                continue
+            h = int(hashlib.md5(token.encode()).hexdigest(), 16)
+            vec[h % self.DIM] += 1.0
+        norm = math.sqrt(sum(v * v for v in vec)) or 1.0
+        return [v / norm for v in vec]
+
+    async def aembed_documents(self, texts: list[str]) -> list[list[float]]:
+        self.documents_embedded += len(texts)
+        return [self._vec(t) for t in texts]
+
+    async def aembed_query(self, text: str) -> list[float]:
+        return self._vec(text)
+
+
+def _where_match(meta: dict[str, Any], where: dict[str, Any] | None) -> bool:
+    if not where:
+        return True
+    if "$and" in where:
+        return all(_where_match(meta, w) for w in where["$and"])
+    for key, cond in where.items():
+        if isinstance(cond, dict):
+            if "$in" in cond and meta.get(key) not in cond["$in"]:
+                return False
+            if "$eq" in cond and meta.get(key) != cond["$eq"]:
+                return False
+        elif meta.get(key) != cond:
+            return False
+    return True
+
+
+class FakeCollection:
+    """In-memory subset of the Chroma collection API used by CodeIndex (cosine space)."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.rows: dict[str, tuple[list[float], str, dict[str, Any]]] = {}
+
+    def upsert(
+        self,
+        *,
+        ids: list[str],
+        embeddings: list[list[float]],
+        documents: list[str],
+        metadatas: list[dict[str, Any]],
+    ) -> None:
+        for i, e, d, m in zip(ids, embeddings, documents, metadatas, strict=True):
+            assert all(v is not None for v in m.values()), "chroma rejects None metadata"
+            self.rows[i] = (e, d, m)
+
+    def delete(self, *, where: dict[str, Any] | None = None) -> None:
+        for key in [k for k, (_, _, m) in self.rows.items() if _where_match(m, where)]:
+            del self.rows[key]
+
+    def get(self, *, where: dict[str, Any] | None = None, include: Any = None) -> dict[str, Any]:
+        rows = [(k, m) for k, (_, _, m) in self.rows.items() if _where_match(m, where)]
+        return {"ids": [k for k, _ in rows], "metadatas": [m for _, m in rows]}
+
+    def count(self) -> int:
+        return len(self.rows)
+
+    def query(
+        self, *, query_embeddings: list[list[float]], n_results: int, include: Any = None
+    ) -> dict[str, Any]:
+        q = query_embeddings[0]
+        scored = sorted(
+            (
+                (1.0 - sum(a * b for a, b in zip(q, e, strict=True)), d, m)
+                for e, d, m in self.rows.values()
+            ),
+            key=lambda t: t[0],
+        )[:n_results]
+        return {
+            "documents": [[d for _, d, _ in scored]],
+            "metadatas": [[m for _, _, m in scored]],
+            "distances": [[s for s, _, _ in scored]],
+        }
+
+
+class FakeChroma:
+    def __init__(self) -> None:
+        self.collections: dict[str, FakeCollection] = {}
+
+    def get_or_create_collection(self, name: str, **kwargs: Any) -> FakeCollection:
+        return self.collections.setdefault(name, FakeCollection(name))
+
+    def delete_collection(self, name: str) -> None:
+        del self.collections[name]
+
+    def list_collections(self) -> list[FakeCollection]:
+        return list(self.collections.values())

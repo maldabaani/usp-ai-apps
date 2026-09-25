@@ -25,7 +25,7 @@ from app.graph.nodes.human import make_ask_human
 from app.graph.nodes.qa import make_qa
 from app.graph.nodes.reviewer import make_reviewer
 from app.graph.nodes.task_common import load_task_ctx, task_branch, to_coordinator
-from app.graph.runtime import GraphDeps, NodeFn, instrument
+from app.graph.runtime import GraphDeps, NodeFn, instrument, reindex
 from app.graph.state import TaskStatus, TaskWorkerOutput, TaskWorkerState
 
 
@@ -59,6 +59,7 @@ def make_merge(deps: GraphDeps) -> NodeFn:
         ctx.ts.commit = result.commit
         if deps.sandbox is not None:
             await deps.sandbox.release(ctx.run_id, ctx.task.id)
+        await reindex(deps, ctx.run_id, ctx.workspace.root, "merge")
         await deps.emit(
             ctx.run_id,
             EventType.MERGE,
