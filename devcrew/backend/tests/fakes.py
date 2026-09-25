@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import itertools
 import json
 from collections.abc import Callable, Sequence
@@ -71,6 +72,9 @@ class Brain:
 
     responders: dict[str, Responder] = field(default_factory=dict)
     calls: list[Call] = field(default_factory=list)
+    delay: float = 0.0  # simulated model latency, to observe parallelism
+    active: dict[str, int] = field(default_factory=dict)
+    peak: dict[str, int] = field(default_factory=dict)
 
     def calls_for(self, role: str) -> list[Call]:
         return [c for c in self.calls if c.role == role]
@@ -94,7 +98,15 @@ class ScriptedChat:
     async def ainvoke(self, messages: list[BaseMessage], **kwargs: Any) -> AIMessage:
         names = tuple(sorted(t["function"]["name"] for t in self.tools or []))
         call = Call(role_of(messages), list(messages), bool(self.tools), kwargs, names)
-        return self.brain.respond(call)
+        brain = self.brain
+        brain.active[call.role] = brain.active.get(call.role, 0) + 1
+        brain.peak[call.role] = max(brain.peak.get(call.role, 0), brain.active[call.role])
+        try:
+            if brain.delay:
+                await asyncio.sleep(brain.delay)
+            return brain.respond(call)
+        finally:
+            brain.active[call.role] -= 1
 
 
 def gateway(

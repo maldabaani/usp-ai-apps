@@ -21,6 +21,10 @@ class PromptLibrary:
             raise FileNotFoundError(f"prompt file missing: {path}")
         return path.read_text(encoding="utf-8")
 
+    def role_brief(self, name: str) -> str:
+        """A role's prompt without its output-format section (for one-shot Q&A)."""
+        return self._raw(name).split("\n## Output", 1)[0].rstrip()
+
     def get(self, name: str, schema: type[BaseModel] | None = None) -> str:
         text = self._raw(name)
         if schema is not None:

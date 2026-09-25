@@ -106,8 +106,21 @@ class RunDriver:
         return values
 
     async def pending_interrupts(self, run_id: str) -> list[PendingInterrupt]:
+        """Interrupts still waiting for input.
+
+        With parallel tasks, a task that was already resumed and finished keeps its (answered)
+        interrupt in `snapshot.interrupts` until the whole wave completes. Such a task carries its
+        output as `result`; a task that is still waiting has no result (None, or {} when it
+        re-interrupted after a resume). Every interrupting node here finishes with a non-empty
+        update, so an empty result reliably means "still pending".
+        """
         snapshot = await self.graph.aget_state(self.config(run_id))
-        return [PendingInterrupt(i.id, dict(i.value)) for i in snapshot.interrupts]
+        return [
+            PendingInterrupt(i.id, dict(i.value))
+            for task in snapshot.tasks
+            if not task.result
+            for i in task.interrupts
+        ]
 
     async def _drive(self, run_id: str, graph_input: Any) -> RunOutcome:
         interrupts: list[Interrupt] = []

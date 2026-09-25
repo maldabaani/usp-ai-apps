@@ -373,7 +373,14 @@ async def test_each_role_gets_only_its_tools(tmp_path: Path) -> None:
     assert tools == {
         "planner": {"ask_human"},
         "architect": {"list_templates", "read_rules", "ask_human"},
-        "developer": {"read_file", "write_file", "list_dir", "read_rules", "ask_human"},
+        "developer": {
+            "read_file",
+            "write_file",
+            "list_dir",
+            "read_rules",
+            "ask_agent",
+            "ask_human",
+        },
         "reviewer": {"read_file", "git_diff", "read_rules"},
         "qa": {"read_file", "write_file"},
     }

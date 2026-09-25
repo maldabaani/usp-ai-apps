@@ -18,6 +18,7 @@ from app.graph.runtime import (
 )
 from app.graph.state import TaskStatus, dump
 from app.llm.models_config import Role
+from app.tools.agents import QuestionBudget, ask_agent_tool
 from app.tools.base import ToolError, ToolSpec
 from app.tools.catalog import read_rules_tool
 from app.tools.human import ask_human_tool
@@ -28,13 +29,22 @@ from app.tools.workspace import list_dir_tool, read_file_tool, write_file_tool
 NODE = "developer"
 
 
-def developer_tools(deps: GraphDeps, ctx: TaskCtx, asked: int) -> list[ToolSpec]:
+def developer_tools(deps: GraphDeps, ctx: TaskCtx, budget: QuestionBudget) -> list[ToolSpec]:
     tools = [
         read_file_tool(ctx.workspace),
         write_file_tool(ctx.workspace),
         list_dir_tool(ctx.workspace),
         read_rules_tool(deps.rules),
-        ask_human_tool(limit_reached=asked >= deps.settings.max_questions_per_task),
+        ask_agent_tool(
+            deps,
+            run_id=ctx.run_id,
+            asker=NODE,
+            task=ctx.task,
+            plan=ctx.plan,
+            design=ctx.design,
+            budget=budget,
+        ),
+        ask_human_tool(limit_reached=lambda: budget.exhausted),
     ]
     if deps.sandbox is not None:
         tools.append(
@@ -55,10 +65,13 @@ def make_developer(deps: GraphDeps) -> NodeFn:
                 ctx,
                 NODE,
                 f"reached MAX_DEV_ITERATIONS ({max_iter}) without passing review and tests",
+                kind="iteration_limit",
             )
-        await ctx.repo.checkout(ctx.branch)
         qa_log = state.get("qa_log", [])
-        asked = questions_asked(qa_log, NODE, ctx.task.id)
+        budget = QuestionBudget(
+            asked=questions_asked(qa_log, NODE, ctx.task.id),
+            limit=deps.settings.max_questions_per_task,
+        )
         system = deps.prompts.get(NODE)
 
         async def context() -> str:
@@ -87,9 +100,10 @@ def make_developer(deps: GraphDeps) -> NodeFn:
             task_id=ctx.task.id,
             system=system,
             build_context=context,
-            tools=developer_tools(deps, ctx, asked),
+            tools=developer_tools(deps, ctx, budget),
             saved=state.get("task_scratch", {}).get(NODE),
         )
+        asked_agents = [dump(e) for e in budget.log]  # ask_agent Q&A of this turn -> qa_log
         if outcome.kind == "ask_human":
             question = await pending_question(deps, ctx.run_id, NODE, ctx.task.id, outcome)
             return Command(
@@ -97,15 +111,35 @@ def make_developer(deps: GraphDeps) -> NodeFn:
                 update={
                     "task_scratch": {NODE: save_transcript(outcome.messages)},
                     "task_pending_question": dump(question),
+                    "qa_log": asked_agents,
                 },
             )
         if outcome.kind == "error":
-            return await to_coordinator(deps, ctx, NODE, outcome.error)
+            return await to_coordinator(
+                deps, ctx, NODE, outcome.error, extra={"qa_log": asked_agents}
+            )
 
         ctx.ts.iterations += 1
+        if ctx.ts.conflict_files:
+            left = ctx.repo.files_with_markers(ctx.ts.conflict_files)
+            if left:
+                # Never commit conflict markers: send the developer back (bounded by iterations).
+                ctx.ts.feedback = (
+                    "Merge conflict markers (<<<<<<< ======= >>>>>>>) are still present in: "
+                    + ", ".join(left)
+                    + ". Edit these files to keep both sides' intent, remove "
+                    "every marker, and write the complete files."
+                )
+                return Command(
+                    goto="developer",
+                    update=ctx.update(task_scratch={NODE: None}, qa_log=asked_agents),
+                )
+            ctx.ts.conflict_files = []
         await ctx.repo.commit_all(f"{ctx.task.id}: {ctx.task.title} (attempt {ctx.ts.iterations})")
         ctx.ts.status = TaskStatus.IN_REVIEW
         ctx.ts.feedback = None
-        return Command(goto="reviewer", update=ctx.update(task_scratch={NODE: None}))
+        return Command(
+            goto="reviewer", update=ctx.update(task_scratch={NODE: None}, qa_log=asked_agents)
+        )
 
     return developer

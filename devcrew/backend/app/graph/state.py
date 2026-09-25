@@ -9,13 +9,11 @@ from __future__ import annotations
 
 import operator
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from enum import StrEnum
 from typing import Annotated, Any, Literal, Self, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
-
-from app.db.models import RunStatus
 
 TASK_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$")
 
@@ -256,10 +254,11 @@ class TaskStatus(StrEnum):
     NEEDS_HUMAN = "needs_human"
     FAILED = "failed"
     BLOCKED = "blocked"
+    SPLIT = "split"  # replaced by subtasks (Coordinator)
 
     @property
     def is_final(self) -> bool:
-        return self in (TaskStatus.MERGED, TaskStatus.FAILED, TaskStatus.BLOCKED)
+        return self in (TaskStatus.MERGED, TaskStatus.FAILED, TaskStatus.BLOCKED, TaskStatus.SPLIT)
 
 
 class TaskState(BaseModel):
@@ -274,6 +273,13 @@ class TaskState(BaseModel):
     feedback: str | None = None  # what the Developer must address next
     commit: str | None = None
     error: str | None = None
+    worktree: str | None = None
+    wave: int | None = None  # scheduler wave that dispatched the task (UI lanes)
+    lane: int | None = None  # position within the wave
+    conflict_files: list[str] = Field(default_factory=list)  # unresolved merge conflicts
+    conflict_rounds: int = 0
+    coordinator_actions: int = 0  # automatic Coordinator decisions taken for this task
+    reset_branch: bool = False  # replanned: restart from the integration branch
 
 
 class QAEntry(BaseModel):
@@ -283,6 +289,71 @@ class QAEntry(BaseModel):
     target: str  # "human" or a role
     question: str
     answer: str
+
+
+class AgentAnswer(BaseModel):
+    """One-shot answer from another role (ask_agent)."""
+
+    answer: str = Field(description="Direct answer the asking developer can act on.")
+    needs_human: bool = Field(
+        default=False, description="True only if this needs a decision from the human user."
+    )
+    reason: str = Field(default="", description="Why the human is needed (if needs_human).")
+
+
+class RevisedTask(BaseModel):
+    title: str
+    description: str
+    target_files: list[str] = Field(default_factory=list)
+
+    @field_validator("target_files")
+    @classmethod
+    def _paths(cls, v: list[str]) -> list[str]:
+        return [_check_relative_path(p) for p in v]
+
+
+CoordinatorAction = Literal["retry", "replan", "split", "escalate"]
+
+
+class CoordinatorDecision(BaseModel):
+    """The Coordinator's exception-handling decision (LLM, validated)."""
+
+    action: CoordinatorAction
+    reason: str = Field(description="Why this action fixes the problem.")
+    guidance: str = Field(default="", description="Concrete instructions for the next attempt.")
+    revised_task: RevisedTask | None = Field(default=None, description="Required for replan.")
+    subtasks: list[PlanTask] = Field(default_factory=list, description="Required for split.")
+    question_for_human: str = Field(default="", description="Required for escalate.")
+
+    @model_validator(mode="after")
+    def _consistent(self, info: ValidationInfo) -> Self:
+        context = info.context or {}
+        allowed: Sequence[str] | None = context.get("allowed_actions")
+        if allowed is not None and self.action not in allowed:
+            raise ValueError(f"action must be one of {list(allowed)}")
+        if self.action == "retry" and not self.guidance.strip():
+            raise ValueError("retry needs guidance")
+        if self.action == "replan" and self.revised_task is None:
+            raise ValueError("replan needs revised_task")
+        if self.action == "escalate" and not self.question_for_human.strip():
+            raise ValueError("escalate needs question_for_human")
+        if self.action == "split":
+            if len(self.subtasks) < 2:
+                raise ValueError("split needs at least two subtasks")
+            existing: set[str] = set(context.get("existing_ids", ()))
+            ids = [t.id for t in self.subtasks]
+            clash = sorted((set(ids) & existing) | {i for i in ids if ids.count(i) > 1})
+            if clash:
+                raise ValueError(f"subtask ids must be new and unique; clashing: {clash}")
+            allowed_deps = set(ids) | set(context.get("task_depends_on", ()))
+            for t in self.subtasks:
+                bad = sorted(set(t.depends_on) - allowed_deps)
+                if bad:
+                    raise ValueError(
+                        f"subtask {t.id} may only depend on sibling subtasks or the original "
+                        f"task's dependencies; invalid: {bad}"
+                    )
+        return self
 
 
 class PendingQuestion(BaseModel):
@@ -312,7 +383,7 @@ class RunState(TypedDict, total=False):
     request: str
     repo_target: str
     create_repo: bool
-    status: RunStatus
+    status: str  # RunStatus value (plain str: checkpoints hold JSON-compatible data only)
 
     plan: dict[str, Any] | None
     plan_feedback: str | None
@@ -335,6 +406,13 @@ class RunState(TypedDict, total=False):
 
     pr_url: str | None
 
+    # Phase 5: waves of parallel tasks and Coordinator plan changes (replan/split), applied by
+    # the scheduler in order; `plan_changes_applied` counts how many were applied already.
+    wave: int
+    plan_changes: Annotated[list[dict[str, Any]], operator.add]
+    plan_changes_applied: int
+    coordinator_retries: Annotated[dict[str, Any], merge_dicts]
+
 
 class TaskWorkerState(TypedDict, total=False):
     run_id: str
@@ -349,12 +427,17 @@ class TaskWorkerState(TypedDict, total=False):
     task_scratch: Annotated[dict[str, list[dict[str, Any]]], merge_dicts]
     task_pending_question: dict[str, Any] | None
     escalation_reason: str | None
+    escalation_kind: str | None  # iteration_limit | agent_error | merge_conflict
+    escalation_node: str | None  # node to retry
+    escalation_question: str | None  # what the escalate node asks the human
+    plan_changes: Annotated[list[dict[str, Any]], operator.add]
 
 
 class TaskWorkerOutput(TypedDict, total=False):
     tasks: Annotated[dict[str, dict[str, Any]], merge_dicts]
     qa_log: Annotated[list[dict[str, Any]], operator.add]
     errors: Annotated[list[str], operator.add]
+    plan_changes: Annotated[list[dict[str, Any]], operator.add]
 
 
 def get_plan(state: Mapping[str, Any]) -> Plan:

@@ -79,7 +79,7 @@ def make_planner(deps: GraphDeps) -> NodeFn:
                 "plan": dump(result.value),
                 "plan_feedback": None,
                 "scratch": {NODE: None},
-                "status": RunStatus.AWAITING_PLAN_APPROVAL,
+                "status": RunStatus.AWAITING_PLAN_APPROVAL.value,
             },
         )
 

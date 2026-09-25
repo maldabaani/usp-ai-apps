@@ -113,7 +113,7 @@ def make_scaffold(deps: GraphDeps) -> NodeFn:
                 "workspace": str(root),
                 "integration_branch": branch,
                 "tasks": tasks,
-                "status": RunStatus.EXECUTING,
+                "status": RunStatus.EXECUTING.value,
             },
         )
 

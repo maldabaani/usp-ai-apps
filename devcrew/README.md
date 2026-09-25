@@ -7,9 +7,10 @@ approvals for the plan, the design and the final result, then open a GitHub PR.
 
 All LLM calls go to a **local Ollama**. There are no cloud LLM calls anywhere.
 
-> Status: **Phase 4**: sequential backbone graph with all five roles, Docker sandboxes,
-> runnable starter templates, per-run RAG, `scripts/run_local.py`. Parallelism (5), API (6),
-> UI (7) and GitHub delivery (8) come next.
+> Status: **Phase 5**: backbone graph with all five roles, parallel developers in git
+> worktrees, LLM Coordinator, agent Q&A, Docker sandboxes, runnable starter templates, per-run
+> RAG, `scripts/run_local.py`. API (6), UI (7) and GitHub delivery (8) come next.
+> Open issues and deferred work: [BACKLOG.md](BACKLOG.md).
 
 ## Architecture
 
@@ -24,7 +25,9 @@ All LLM calls go to a **local Ollama**. There are no cloud LLM calls anywhere.
 
 | `backend/app/graph/backbone.py` | Backbone graph (see below). |
 | `backend/app/graph/task_subgraph.py` | Per-task subgraph dispatched with the Send API: developer → reviewer → QA → merge. |
-| `backend/app/graph/coordinator.py` | Exception handler. Phase 2 escalates to the human deterministically; Phase 5 adds LLM decisions. |
+| `backend/app/graph/coordinator.py` | Exception handler: LLM decisions (retry / replan / split / escalate), deterministic conflict resolution, human escalation. |
+| `backend/app/graph/replan.py` | Applies Coordinator plan changes (replan / split) and re-validates the DAG. |
+| `backend/app/tools/agents.py` | `ask_agent`: one-shot questions to the Architect / Planner, routed to the human when needed. |
 | `backend/app/graph/context_builder.py` | Scoped, token-budgeted context per role (never the run history, never raw full files). |
 | `backend/app/graph/runner.py` | `RunDriver`: start / resume / continue a run, mirror status to DB + events. |
 | `backend/app/llm/structured.py` | Structured-output validator: JSON-schema decoding, 2 retries with the Pydantic error fed back, then JSON extraction from raw text. |
@@ -63,6 +66,58 @@ Design notes:
   summarizes failures for the Developer.
 - With `SANDBOX_ENABLED=false`, QA writes tests but they are not executed: results show
   `ran: false` and the task proceeds.
+
+## Parallel execution, Coordinator and agent Q&A (Phase 5)
+
+**Scheduling in waves.** The scheduler dispatches every task whose dependencies are merged, up
+to `MAX_PARALLEL_DEVS` at once, as parallel `task_worker` subgraphs (LangGraph `Send`). When
+the wave finishes, it applies Coordinator plan changes and dispatches the next wave. Each task
+records its `wave` and `lane` for the UI's parallel lanes. LLM calls are bounded by the same
+semaphore. Because a wave ends only when all of its tasks end, a task waiting on a human
+question delays the next wave (BL-050).
+
+**Worktrees.** Each task works in `WORKSPACES_DIR/<run_id>/worktrees/<task_id>` on its own
+branch `devcrew/<run>/task-<id>`, with its own sandbox container. The main repository
+(`<run_id>/repo`) stays on the integration branch. Worktree add/remove, merges and
+re-indexing are serialized with a per-repository lock. A worktree is removed after its task
+merges; the branch is kept.
+
+**Merges and conflicts.** Each task is squash-merged, so the integration branch gets one
+commit per task. On a conflict the merge is aborted, and the Coordinator merges the
+integration branch into the task's worktree and assigns the Developer to resolve the conflict
+there. The Developer is told which files conflict; commits containing conflict markers are
+refused. The resolved change then goes through review and QA again before re-merging. After
+`MAX_CONFLICT_ROUNDS` the Coordinator escalates to the human.
+
+**Coordinator.** It is not a persona, and it uses the LLM only for exceptions, through a
+validated `CoordinatorDecision`:
+
+| Exception | Allowed actions |
+|---|---|
+| Task hit `MAX_DEV_ITERATIONS` | `replan` (rewrite the task, restart from integration), `split` (2–4 subtasks; dependents are rewired to all subtasks), `escalate` |
+| Agent error (malformed tool calls after one retry, invalid structured output) | `retry` with guidance, `replan`, `escalate` |
+| Planner/Architect failure | `retry` with guidance, `escalate` |
+| Merge conflict | deterministic: a Developer resolves it (see above) |
+
+- Plan changes flow to the scheduler through an append-only `plan_changes` channel, so
+  parallel tasks never write the plan concurrently. The resulting plan is re-validated as a
+  DAG.
+- After `MAX_COORDINATOR_ACTIONS` automatic decisions, or when no valid decision can be
+  obtained, it escalates to the human.
+- The decision and the human interrupt are separate nodes (`coordinator` / `escalate`), so
+  the LLM decision never re-runs on resume.
+
+**Agent Q&A.**
+- `ask_agent(architect|planner, question)` (Developer) is a scoped one-shot structured call.
+  It sends the target role's prompt without its output section, the question, and only the
+  relevant artifacts (design contracts and doc for the Architect; stories and tasks for the
+  Planner). It does not run the target's node.
+- If the target answers `needs_human`, the question is routed to the human and the answer
+  resumes the Developer.
+- `ask_agent` and `ask_human` share `MAX_QUESTIONS_PER_TASK`. Every Q&A is logged to
+  `qa_log` and emitted as `question`/`answer` events.
+- Parallel tasks can have questions pending at the same time; each is resumed independently
+  with its interrupt id (`RunDriver.resume(..., interrupt_id)`), including after a restart.
 
 ## Sandbox (Phase 3)
 

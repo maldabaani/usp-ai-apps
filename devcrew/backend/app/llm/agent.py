@@ -23,7 +23,7 @@ from app.llm.client import LLMGateway
 from app.llm.models_config import Role
 from app.llm.structured import format_validation_error
 from app.llm.tokens import estimate_tokens, message_tokens, messages_tokens, truncate_to_tokens
-from app.tools.base import ToolError, ToolSpec
+from app.tools.base import PauseForHuman, ToolError, ToolSpec
 
 logger = logging.getLogger(__name__)
 
@@ -153,11 +153,11 @@ async def run_agent(
                 tool_calls=tool_calls_made,
             )
 
-        pause: tuple[str, BaseModel] | None = None
+        pause: tuple[str, str] | None = None
         for call_id, spec, args in valid:
             if spec.pauses_for_human:
                 if pause is None:
-                    pause = (call_id, args)
+                    pause = (call_id, str(getattr(args, "question", "")))
                 else:
                     transcript.append(
                         ToolMessage(
@@ -171,6 +171,12 @@ async def run_agent(
                 assert spec.handler is not None
                 result = await spec.handler(args)
                 ok = True
+            except PauseForHuman as exc:
+                if pause is None:
+                    pause = (call_id, exc.question)
+                    await emit("tool_result", {"tool": spec.name, "ok": True, "routed": "human"})
+                    continue
+                result, ok = "ERROR: ask one question at a time", False
             except ToolError as exc:
                 result, ok = f"ERROR: {exc}", False
             except Exception as exc:
@@ -181,11 +187,11 @@ async def run_agent(
             await emit("tool_result", {"tool": spec.name, "ok": ok, "result": result[:2000]})
 
         if pause is not None:
-            call_id, args = pause
+            call_id, question = pause
             return AgentOutcome(
                 kind="ask_human",
                 messages=transcript,
-                question=str(getattr(args, "question", "")),
+                question=question,
                 tool_call_id=call_id,
                 steps=step,
                 tool_calls=tool_calls_made,

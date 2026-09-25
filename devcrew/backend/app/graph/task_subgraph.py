@@ -1,17 +1,20 @@
 """Per-task subgraph: developer -> reviewer -> qa -> merge, with feedback loops.
 
     prepare -> developer -> reviewer --approve--> qa --pass--> merge -> END
-                  ^  |          |                  |
+                  ^  |          |                  |              |
                   |  |          +--changes---------+--fail--> developer
-                  |  +--> ask_human --> developer
-                  +--- coordinator <-- (iteration limit / agent errors / merge conflict)
+                  |  +--> ask_human --> developer                 |
+                  +--- coordinator <-- iteration limit / agent errors / merge conflict
+                        (retry | replan | split | escalate | resolve conflict)
 
-It is dispatched by the backbone scheduler with the Send API. Phase 2 runs one task at a time
-in the main workspace; Phase 5 runs up to MAX_PARALLEL_DEVS tasks in separate git worktrees.
+The backbone scheduler dispatches up to MAX_PARALLEL_DEVS of these at once with the Send API.
+Each runs in its own git worktree and branch; merges into the integration branch are
+serialized with a per-repository lock and squashed to one commit per task.
 """
 
 from __future__ import annotations
 
+import shutil
 from typing import Any, cast
 
 from langgraph.graph import END, START, StateGraph
@@ -19,26 +22,48 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
 from app.events.types import EventType
-from app.graph.coordinator import make_task_coordinator
+from app.graph.coordinator import make_task_coordinator, make_task_escalate
 from app.graph.nodes.developer import make_developer
 from app.graph.nodes.human import make_ask_human
 from app.graph.nodes.qa import make_qa
 from app.graph.nodes.reviewer import make_reviewer
-from app.graph.nodes.task_common import load_task_ctx, task_branch, to_coordinator
+from app.graph.nodes.task_common import (
+    load_task_ctx,
+    task_branch,
+    to_coordinator,
+    worktree_path,
+)
 from app.graph.runtime import GraphDeps, NodeFn, instrument, reindex
 from app.graph.state import TaskStatus, TaskWorkerOutput, TaskWorkerState
+from app.tools.git import repo_lock
 
 
 def make_prepare(deps: GraphDeps) -> NodeFn:
     async def prepare(state: dict[str, Any]) -> dict[str, Any]:
         ctx = load_task_ctx(deps, state)
         branch = task_branch(ctx.run_id, ctx.task.id)
-        # Idempotent: a re-run (e.g. after a crash) keeps the existing branch and its commits.
-        if await ctx.repo.branch_exists(branch):
-            await ctx.repo.checkout(branch)
-        else:
-            await ctx.repo.checkout(branch, create_from=ctx.integration_branch)
+        worktree = worktree_path(ctx.main_root, ctx.task.id)
+        async with repo_lock(ctx.main_root):
+            registered = worktree.exists() and await ctx.main_repo.is_worktree_of(
+                worktree, ctx.main_root
+            )
+            if registered and ctx.ts.reset_branch:
+                await ctx.main_repo.worktree_remove(worktree)
+                registered = False
+            if not registered:
+                if worktree.exists():  # stale directory from an interrupted attempt
+                    shutil.rmtree(worktree)
+                # Replanned tasks restart from the integration branch; otherwise a re-run after
+                # a crash keeps the existing branch and its commits.
+                base = (
+                    branch
+                    if await ctx.main_repo.branch_exists(branch) and not ctx.ts.reset_branch
+                    else ctx.integration_branch
+                )
+                await ctx.main_repo.worktree_add(worktree, branch, base)
         ctx.ts.branch = branch
+        ctx.ts.worktree = str(worktree)
+        ctx.ts.reset_branch = False
         ctx.ts.status = TaskStatus.IN_PROGRESS
         return ctx.update()
 
@@ -48,18 +73,27 @@ def make_prepare(deps: GraphDeps) -> NodeFn:
 def make_merge(deps: GraphDeps) -> NodeFn:
     async def merge(state: dict[str, Any]) -> Command[str]:
         ctx = load_task_ctx(deps, state)
-        result = await ctx.repo.squash_merge(
-            ctx.branch, ctx.integration_branch, f"{ctx.task.id}: {ctx.task.title}"
-        )
+        async with repo_lock(ctx.main_root):
+            result = await ctx.main_repo.squash_merge(
+                ctx.branch, ctx.integration_branch, f"{ctx.task.id}: {ctx.task.title}"
+            )
+            if result.ok:
+                # Index under the same lock so it always matches the integration HEAD.
+                await reindex(deps, ctx.run_id, ctx.main_root, "merge")
+                await ctx.main_repo.worktree_remove(ctx.worktree)
         if not result.ok:
             return await to_coordinator(
-                deps, ctx, "merge", f"merge conflict in {', '.join(result.conflicts)}"
+                deps,
+                ctx,
+                "merge",
+                f"merge conflict in {', '.join(result.conflicts)}",
+                kind="merge_conflict",
             )
         ctx.ts.status = TaskStatus.MERGED
         ctx.ts.commit = result.commit
+        ctx.ts.worktree = None
         if deps.sandbox is not None:
             await deps.sandbox.release(ctx.run_id, ctx.task.id)
-        await reindex(deps, ctx.run_id, ctx.workspace.root, "merge")
         await deps.emit(
             ctx.run_id,
             EventType.MERGE,
@@ -86,7 +120,11 @@ def build_task_subgraph(deps: GraphDeps) -> CompiledStateGraph[Any, Any, Any, An
         "reviewer": (make_reviewer(deps), ("developer", "qa", "coordinator")),
         "qa": (make_qa(deps), ("developer", "merge", "coordinator")),
         "merge": (make_merge(deps), ("coordinator", END)),
-        "coordinator": (make_task_coordinator(deps), ("developer", END)),
+        "coordinator": (
+            make_task_coordinator(deps),
+            ("developer", "reviewer", "qa", "escalate", END),
+        ),
+        "escalate": (make_task_escalate(deps), ("developer", "reviewer", "qa", "coordinator", END)),
     }
     for name, (fn, destinations) in nodes.items():
         g.add_node(name, cast(Any, instrument(deps, name, fn)), destinations=destinations or None)

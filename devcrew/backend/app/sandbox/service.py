@@ -7,6 +7,7 @@ agent-chosen command. It runs at scaffold time and again whenever a dependency m
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 from collections.abc import Mapping
@@ -50,6 +51,8 @@ class Sandbox:
         # (run_id, stack) -> manifest hash of the last SUCCESSFUL install. Dependency volumes are
         # per run, so one install serves every task of the run. Lost on restart -> reinstall.
         self._installed: dict[tuple[str, str], str] = {}
+        # Parallel tasks share the run's dependency volumes: one install per (run, stack) at a time.
+        self._install_locks: dict[tuple[str, str], asyncio.Lock] = {}
 
     async def ensure_dependencies(
         self, target: SandboxTarget, layout: Mapping[str, LayoutEntry]
@@ -58,15 +61,17 @@ class Sandbox:
         for entry in layout.values():
             key = (target.run_id, entry.stack)
             digest = manifest_hash(target, entry)
-            if self._installed.get(key) == digest:
-                outcomes.append(InstallOutcome(entry.stack, skipped=True))
-                continue
-            result = await self.runner.run(
-                target, entry.template.install_cmd, cwd=entry.path, network=True
-            )
-            if result.ok:
-                self._installed[key] = digest
-            else:
+            lock = self._install_locks.setdefault(key, asyncio.Lock())
+            async with lock:
+                if self._installed.get(key) == digest:
+                    outcomes.append(InstallOutcome(entry.stack, skipped=True))
+                    continue
+                result = await self.runner.run(
+                    target, entry.template.install_cmd, cwd=entry.path, network=True
+                )
+                if result.ok:
+                    self._installed[key] = digest
+            if not result.ok:
                 logger.warning(
                     "dependency install failed for %s: %s", entry.stack, result.output[-500:]
                 )

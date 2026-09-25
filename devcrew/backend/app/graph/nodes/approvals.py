@@ -40,11 +40,11 @@ def make_approve_plan(deps: GraphDeps) -> NodeFn:
                 )
             )
             if payload.action is ResumeAction.APPROVE:
-                return Command(goto="architect", update={"status": RunStatus.DESIGNING})
+                return Command(goto="architect", update={"status": RunStatus.DESIGNING.value})
             if payload.action is ResumeAction.REJECT:
                 return Command(
                     goto="planner",
-                    update={"plan_feedback": payload.feedback, "status": RunStatus.PLANNING},
+                    update={"plan_feedback": payload.feedback, "status": RunStatus.PLANNING.value},
                 )
             try:
                 edited = Plan.model_validate(payload.artifact)
@@ -52,7 +52,7 @@ def make_approve_plan(deps: GraphDeps) -> NodeFn:
                 error = f"edited plan is invalid: {exc}"
                 continue
             return Command(
-                goto="architect", update={"plan": dump(edited), "status": RunStatus.DESIGNING}
+                goto="architect", update={"plan": dump(edited), "status": RunStatus.DESIGNING.value}
             )
 
     return approve_plan
@@ -74,11 +74,14 @@ def make_approve_design(deps: GraphDeps) -> NodeFn:
                 )
             )
             if payload.action is ResumeAction.APPROVE:
-                return Command(goto="scaffold", update={"status": RunStatus.SCAFFOLDING})
+                return Command(goto="scaffold", update={"status": RunStatus.SCAFFOLDING.value})
             if payload.action is ResumeAction.REJECT:
                 return Command(
                     goto="architect",
-                    update={"design_feedback": payload.feedback, "status": RunStatus.DESIGNING},
+                    update={
+                        "design_feedback": payload.feedback,
+                        "status": RunStatus.DESIGNING.value,
+                    },
                 )
             try:
                 edited = Design.model_validate(
@@ -93,7 +96,7 @@ def make_approve_design(deps: GraphDeps) -> NodeFn:
                 continue
             return Command(
                 goto="scaffold",
-                update={"design": dump(edited), "status": RunStatus.SCAFFOLDING},
+                update={"design": dump(edited), "status": RunStatus.SCAFFOLDING.value},
             )
 
     return approve_design
@@ -128,7 +131,7 @@ def make_approve_final(deps: GraphDeps) -> NodeFn:
             )
         )
         if payload.action is ResumeAction.APPROVE:
-            return Command(goto="github_delivery", update={"status": RunStatus.DELIVERING})
+            return Command(goto="github_delivery", update={"status": RunStatus.DELIVERING.value})
         # Rejected: schedule a follow-up task carrying the feedback, then integrate again.
         number = state.get("followups", 0) + 1
         task = followup_task(plan, payload.feedback or "", number)
@@ -140,7 +143,7 @@ def make_approve_final(deps: GraphDeps) -> NodeFn:
                 "tasks": {task.id: dump(TaskState(id=task.id))},
                 "followups": number,
                 "final_feedback": payload.feedback,
-                "status": RunStatus.EXECUTING,
+                "status": RunStatus.EXECUTING.value,
             },
         )
 

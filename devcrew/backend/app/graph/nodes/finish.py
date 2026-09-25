@@ -14,7 +14,7 @@ from app.graph.layout import resolve_layout, sandbox_target
 from app.graph.runtime import GraphDeps, NodeFn, release_run_resources
 from app.graph.state import TaskState, TaskStatus, TestResult, dump, get_design
 from app.llm.tokens import tail_text
-from app.tools.git import GitRepo
+from app.tools.git import GitRepo, repo_lock
 
 NOT_RUN = "Sandbox disabled: tests were not executed."
 
@@ -68,7 +68,7 @@ def make_integration(deps: GraphDeps) -> NodeFn:
         }
         return Command(
             goto="approve_final",
-            update={"integration": summary, "status": RunStatus.AWAITING_FINAL_APPROVAL},
+            update={"integration": summary, "status": RunStatus.AWAITING_FINAL_APPROVAL.value},
         )
 
     return integration
@@ -94,6 +94,11 @@ def make_github_delivery(deps: GraphDeps) -> NodeFn:
 def make_done(deps: GraphDeps) -> NodeFn:
     async def done(state: dict[str, Any]) -> Command[str]:
         await release_run_resources(deps, state["run_id"])
-        return Command(goto=END, update={"status": RunStatus.COMPLETED})
+        main = Path(state["workspace"])
+        repo = GitRepo(main)
+        async with repo_lock(main):
+            for tree in (await repo.worktrees())[1:]:  # the first entry is the main worktree
+                await repo.worktree_remove(tree)
+        return Command(goto=END, update={"status": RunStatus.COMPLETED.value})
 
     return done

@@ -11,6 +11,14 @@ class ToolError(Exception):
     """An expected tool failure; its message is returned to the model as `ERROR: ...`."""
 
 
+class PauseForHuman(Exception):
+    """Raised by a tool handler to route a question to the human (e.g. ask_agent escalation)."""
+
+    def __init__(self, question: str) -> None:
+        super().__init__(question)
+        self.question = question
+
+
 Handler = Callable[[Any], Awaitable[str]]
 
 

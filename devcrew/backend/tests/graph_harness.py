@@ -78,6 +78,8 @@ DESIGN: dict[str, Any] = {
     "design_doc": "# Design\nTODO API",
 }
 
+ESCALATE = {"action": "escalate", "reason": "needs a human", "question_for_human": "What now?"}
+
 APPROVE = ResumePayload(action="approve")
 
 
@@ -121,6 +123,7 @@ def default_brain() -> Brain:
             "developer": default_developer,
             "reviewer": lambda c: final({"decision": "approve", "summary": "ok", "issues": []}),
             "qa": default_qa,
+            "coordinator": lambda c: final(ESCALATE),
         }
     )
 

@@ -7,6 +7,7 @@ fsmonitor is off for every invocation.
 from __future__ import annotations
 
 import asyncio
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -29,6 +30,23 @@ SAFE_CONFIG = (
     "init.defaultBranch=main",
 )
 MAX_DIFF_CHARS = 60_000
+
+
+CONFLICT_MARKER_RE = re.compile(r"^(<{7}|={7}|>{7})( |$)", re.MULTILINE)
+UNMERGED_CODES = ("UU", "AA", "DD", "AU", "UA", "DU", "UD")
+
+_repo_locks: dict[str, asyncio.Lock] = {}
+
+
+def repo_lock(root: Path) -> asyncio.Lock:
+    """Serializes operations that touch the shared repository state of a run: worktree
+    add/remove, merges into the integration branch, and re-indexing after a merge.
+    (Commits inside separate worktrees need no lock: each has its own index and branch.)"""
+    key = str(root.resolve())
+    lock = _repo_locks.get(key)
+    if lock is None:
+        lock = _repo_locks[key] = asyncio.Lock()
+    return lock
 
 
 class GitError(RuntimeError):
@@ -105,15 +123,57 @@ class GitRepo:
         out = await self.run("diff", "--name-only", f"{base}...{head}")
         return [line for line in out.splitlines() if line]
 
+    async def unmerged_files(self) -> list[str]:
+        return [
+            line[3:]
+            for line in (await self.run("status", "--porcelain")).splitlines()
+            if line[:2] in UNMERGED_CODES
+        ]
+
+    # ------------------------------------------------------------------ worktrees (Phase 5)
+    async def worktree_add(self, path: Path, branch: str, base: str) -> None:
+        """Create `path` as a worktree on a fresh `branch` starting at `base`."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        await self.run("worktree", "add", "-q", "-B", branch, str(path), base)
+
+    async def worktree_remove(self, path: Path) -> None:
+        await self.run("worktree", "remove", "--force", str(path), check=False)
+        await self.run("worktree", "prune", check=False)
+
+    async def worktrees(self) -> list[Path]:
+        out = await self.run("worktree", "list", "--porcelain")
+        return [Path(line[9:]) for line in out.splitlines() if line.startswith("worktree ")]
+
+    async def is_worktree_of(self, path: Path, main: Path) -> bool:
+        trees = await GitRepo(main).worktrees()
+        return await asyncio.to_thread(lambda: path.resolve() in {p.resolve() for p in trees})
+
+    async def merge_in(self, ref: str) -> list[str]:
+        """Merge `ref` into the current branch without committing. Returns conflicted files
+        (empty when the merge applied cleanly; the caller commits)."""
+        await self.run("merge", "--no-commit", "--no-ff", ref, check=False)
+        return await self.unmerged_files()
+
+    async def in_merge(self) -> bool:
+        return (
+            await self.run("rev-parse", "-q", "--verify", "MERGE_HEAD", check=False)
+        ).strip() != ""
+
+    def files_with_markers(self, paths: list[str]) -> list[str]:
+        found = []
+        for rel in paths:
+            file = self.root / rel
+            if file.is_file():
+                text = file.read_text(encoding="utf-8", errors="replace")
+                if CONFLICT_MARKER_RE.search(text):
+                    found.append(rel)
+        return found
+
     async def squash_merge(self, branch: str, into: str, message: str) -> MergeResult:
         """Merge `branch` into `into` as exactly one commit (one commit per task)."""
         await self.checkout(into)
         proc = await self.run("merge", "--squash", "--no-commit", branch, check=False)
-        conflicts = [
-            line[3:]
-            for line in (await self.run("status", "--porcelain")).splitlines()
-            if line[:2] in ("UU", "AA", "DD", "AU", "UA", "DU", "UD")
-        ]
+        conflicts = await self.unmerged_files()
         if conflicts or "CONFLICT" in proc:
             await self.run("reset", "-q", "--hard", "HEAD")
             return MergeResult(ok=False, commit=None, conflicts=conflicts)

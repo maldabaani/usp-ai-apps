@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import os
+
+# Fail loudly if anything but JSON-compatible data ends up in a checkpoint.
+os.environ.setdefault("LANGGRAPH_STRICT_MSGPACK", "true")
 from collections.abc import AsyncIterator
 
 import pytest

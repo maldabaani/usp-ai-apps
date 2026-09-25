@@ -115,7 +115,6 @@ def qa_tools(deps: GraphDeps, ctx: TaskCtx) -> list[ToolSpec]:
 def make_qa(deps: GraphDeps) -> NodeFn:
     async def qa(state: dict[str, Any]) -> Command[str]:
         ctx = load_task_ctx(deps, state)
-        await ctx.repo.checkout(ctx.branch)
         command = ctx.project.template.test_cmd
         changed = await ctx.repo.changed_files(ctx.integration_branch, ctx.branch)
         try:

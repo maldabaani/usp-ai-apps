@@ -90,7 +90,7 @@ def make_architect(deps: GraphDeps) -> NodeFn:
                 "design": dump(result.value),
                 "design_feedback": None,
                 "scratch": {NODE: None},
-                "status": RunStatus.AWAITING_DESIGN_APPROVAL,
+                "status": RunStatus.AWAITING_DESIGN_APPROVAL.value,
             },
         )
 

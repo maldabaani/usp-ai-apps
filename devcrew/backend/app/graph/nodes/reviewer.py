@@ -45,7 +45,6 @@ def reviewer_tools(deps: GraphDeps, ctx: TaskCtx) -> list[ToolSpec]:
 def make_reviewer(deps: GraphDeps) -> NodeFn:
     async def reviewer(state: dict[str, Any]) -> Command[str]:
         ctx = load_task_ctx(deps, state)
-        await ctx.repo.checkout(ctx.branch)
         diff = await ctx.repo.diff(ctx.integration_branch, ctx.branch)
 
         if not diff.strip():
