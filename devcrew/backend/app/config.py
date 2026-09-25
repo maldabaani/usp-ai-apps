@@ -46,8 +46,14 @@ class Settings(BaseSettings):
     # --- Workspaces / sandbox ---------------------------------------------------------------
     workspaces_dir: Path = Path("/tmp/devcrew/workspaces")
     sandbox_command_timeout_s: int = Field(default=300, ge=1)
+    sandbox_install_timeout_s: int = Field(default=900, ge=1)
     sandbox_cpus: float = Field(default=2.0, gt=0)
     sandbox_memory: str = "4g"
+    sandbox_pids_limit: int = Field(default=1024, ge=64)
+    sandbox_image_prefix: str = "devcrew-sandbox"
+    sandbox_enabled: bool = Field(
+        default=True, description="Run tests/commands in Docker. Off = tests are not executed."
+    )
 
     # --- GitHub -----------------------------------------------------------------------------
     github_token: SecretStr | None = None

@@ -8,7 +8,8 @@ from app.graph.runtime import GraphDeps
 from app.llm.client import LLMGateway
 from app.llm.models_config import load_models_config
 from app.prompts import PromptLibrary
-from app.sandbox.runner import CommandRunner
+from app.sandbox.docker_runner import DockerSandboxRunner
+from app.sandbox.service import Sandbox
 from app.tools.catalog import RulesCatalog, TemplatesCatalog
 
 
@@ -26,8 +27,10 @@ def build_deps(
     events: EventBus,
     *,
     llm: LLMGateway | None = None,
-    runner: CommandRunner | None = None,
+    sandbox: Sandbox | None = None,
 ) -> GraphDeps:
+    if sandbox is None and settings.sandbox_enabled:
+        sandbox = Sandbox(DockerSandboxRunner(settings))
     return GraphDeps(
         settings=settings,
         llm=llm or build_llm(settings),
@@ -35,5 +38,5 @@ def build_deps(
         prompts=PromptLibrary(settings.prompts_dir),
         rules=RulesCatalog(settings.rules_dir),
         templates=TemplatesCatalog(settings.templates_dir),
-        runner=runner,
+        sandbox=sandbox,
     )

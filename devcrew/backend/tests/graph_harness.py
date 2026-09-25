@@ -19,8 +19,9 @@ from app.graph.interrupts import ResumePayload
 from app.graph.runner import RunDriver, RunOutcome
 from app.graph.runtime import GraphDeps
 from app.prompts import PromptLibrary
+from app.sandbox.service import Sandbox
 from app.tools.catalog import RulesCatalog, TemplatesCatalog
-from tests.fakes import Brain, Call, final, gateway, tool_call, tool_results
+from tests.fakes import Brain, Call, FakeRunner, final, gateway, tool_call, tool_results
 
 PLAN: dict[str, Any] = {
     "summary": "TODO API",
@@ -116,9 +117,19 @@ def make_templates(root: Path) -> Path:
     tpl = root / "templates" / "python"
     (tpl / "app").mkdir(parents=True)
     (tpl / "template.yaml").write_text(
-        "id: python-fastapi\nstack: python\ndescription: d\nbuild_cmd: b\ntest_cmd: pytest -q\n"
+        "id: python-fastapi\nstack: python\ndescription: d\ninstall_cmd: pip install -e .\n"
+        "build_cmd: b\ntest_cmd: pytest -q\n"
     )
     (tpl / "app" / "main.py").write_text("app = None\n")
+    (tpl / "pyproject.toml").write_text("[project]\nname = 'app'\n")
+    ng = root / "templates" / "angular"
+    (ng / "src").mkdir(parents=True)
+    (ng / "template.yaml").write_text(
+        "id: angular-standalone\nstack: angular\ndescription: d\ninstall_cmd: npm install\n"
+        "build_cmd: b\ntest_cmd: npx ng test --watch=false --browsers=ChromeHeadless\n"
+    )
+    (ng / "package.json").write_text("{}\n")
+    (ng / "src" / "main.ts").write_text("// app\n")
     return root / "templates"
 
 
@@ -150,6 +161,7 @@ def make_harness(
     tmp_path: Path,
     brain: Brain | None = None,
     checkpointer: BaseCheckpointSaver[Any] | None = None,
+    runner: FakeRunner | None = None,
     **settings: Any,
 ) -> Harness:
     brain = brain or default_brain()
@@ -169,6 +181,7 @@ def make_harness(
         prompts=PromptLibrary(cfg.prompts_dir),
         rules=RulesCatalog(cfg.rules_dir),
         templates=TemplatesCatalog(cfg.templates_dir),
+        sandbox=Sandbox(runner) if runner is not None else None,
     )
     saver = checkpointer or InMemorySaver()
     graph = build_graph(deps, saver)

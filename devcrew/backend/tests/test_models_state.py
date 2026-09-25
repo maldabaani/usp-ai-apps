@@ -49,14 +49,84 @@ def test_invalid_plans(tasks: list[dict[str, object]], message: str) -> None:
         Plan.model_validate(_plan(tasks))
 
 
+TEMPLATES = {
+    "python-fastapi": "python",
+    "java-spring-boot": "java",
+    "angular-standalone": "angular",
+}
+MIXED = {
+    **DESIGN,
+    "stack": "mixed",
+    "template_id": "python-fastapi",
+    "components": [
+        {"template_id": "python-fastapi", "path": "backend"},
+        {"template_id": "angular-standalone", "path": "frontend/"},
+    ],
+}
+
+
 def test_design_template_validation() -> None:
-    ctx = {"templates": {"python-fastapi": "python", "java-spring-boot": "java"}}
+    ctx = {"templates": TEMPLATES}
     Design.model_validate(DESIGN, context=ctx)
     with pytest.raises(ValidationError, match="is for java"):
         Design.model_validate({**DESIGN, "template_id": "java-spring-boot"}, context=ctx)
-    Design.model_validate(
-        {**DESIGN, "stack": "mixed", "template_id": "java-spring-boot"}, context=ctx
-    )
+    with pytest.raises(ValidationError, match="unknown"):
+        Design.model_validate({**DESIGN, "template_id": "nope"}, context=ctx)
+
+
+def test_mixed_design_components() -> None:
+    ctx = {"templates": TEMPLATES, "task_stacks": {"python", "angular"}}
+    design = Design.model_validate(MIXED, context=ctx)
+    assert [c.path for c in design.components] == ["backend", "frontend"]
+    assert design.stacks(TEMPLATES) == ["python", "angular"]
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        ({"components": []}, "at least two components"),
+        (
+            {
+                "components": [
+                    {"template_id": "python-fastapi", "path": "."},
+                    {"template_id": "angular-standalone", "path": "web"},
+                ]
+            },
+            "sub-directory",
+        ),
+        (
+            {
+                "components": [
+                    {"template_id": "python-fastapi", "path": "a"},
+                    {"template_id": "angular-standalone", "path": "a"},
+                ]
+            },
+            "distinct",
+        ),
+        (
+            {
+                "components": [
+                    {"template_id": "python-fastapi", "path": "a"},
+                    {"template_id": "python-fastapi", "path": "b"},
+                ]
+            },
+            "different stack",
+        ),
+        ({"template_id": "java-spring-boot"}, "one of the components"),
+    ],
+)
+def test_invalid_mixed_designs(change: dict[str, object], message: str) -> None:
+    with pytest.raises(ValidationError, match=message):
+        Design.model_validate({**MIXED, **change}, context={"templates": TEMPLATES})
+
+
+def test_design_must_cover_task_stacks() -> None:
+    with pytest.raises(ValidationError, match=r"\['angular'\] tasks"):
+        Design.model_validate(
+            DESIGN, context={"templates": TEMPLATES, "task_stacks": {"python", "angular"}}
+        )
+    with pytest.raises(ValidationError, match="only used when stack is 'mixed'"):
+        Design.model_validate({**DESIGN, "components": MIXED["components"]})
 
 
 def test_review_consistency() -> None:

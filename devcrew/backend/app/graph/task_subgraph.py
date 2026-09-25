@@ -31,7 +31,7 @@ from app.graph.state import TaskStatus, TaskWorkerOutput, TaskWorkerState
 
 def make_prepare(deps: GraphDeps) -> NodeFn:
     async def prepare(state: dict[str, Any]) -> dict[str, Any]:
-        ctx = load_task_ctx(state)
+        ctx = load_task_ctx(deps, state)
         branch = task_branch(ctx.run_id, ctx.task.id)
         # Idempotent: a re-run (e.g. after a crash) keeps the existing branch and its commits.
         if await ctx.repo.branch_exists(branch):
@@ -47,7 +47,7 @@ def make_prepare(deps: GraphDeps) -> NodeFn:
 
 def make_merge(deps: GraphDeps) -> NodeFn:
     async def merge(state: dict[str, Any]) -> Command[str]:
-        ctx = load_task_ctx(state)
+        ctx = load_task_ctx(deps, state)
         result = await ctx.repo.squash_merge(
             ctx.branch, ctx.integration_branch, f"{ctx.task.id}: {ctx.task.title}"
         )
@@ -57,6 +57,8 @@ def make_merge(deps: GraphDeps) -> NodeFn:
             )
         ctx.ts.status = TaskStatus.MERGED
         ctx.ts.commit = result.commit
+        if deps.sandbox is not None:
+            await deps.sandbox.release(ctx.run_id, ctx.task.id)
         await deps.emit(
             ctx.run_id,
             EventType.MERGE,

@@ -26,20 +26,13 @@ from app.llm.agent import AgentOutcome, ToolEventHook, run_agent
 from app.llm.client import LLMGateway
 from app.llm.models_config import Role
 from app.prompts import PromptLibrary
-from app.sandbox.runner import CommandRunner
+from app.sandbox.service import Sandbox
 from app.tools.base import ToolSpec
 from app.tools.catalog import RulesCatalog, TemplatesCatalog
 
 logger = logging.getLogger(__name__)
 
 NodeFn = Callable[[Any], Awaitable[Any]]
-
-# Test commands by stack (run inside the sandbox).
-TEST_COMMANDS: dict[str, str] = {
-    "python": "pytest -q",
-    "java": "mvn -q test",
-    "angular": "npx ng test --watch=false --browsers=ChromeHeadless",
-}
 
 
 @dataclass
@@ -50,7 +43,7 @@ class GraphDeps:
     prompts: PromptLibrary
     rules: RulesCatalog
     templates: TemplatesCatalog
-    runner: CommandRunner | None = None  # Phase 3: Docker sandbox
+    sandbox: Sandbox | None = None  # None: commands/tests are not executed
 
     async def emit(
         self,

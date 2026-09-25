@@ -43,7 +43,7 @@ from app.graph.checkpointer import postgres_checkpointer
 from app.graph.factory import build_deps, build_llm
 from app.graph.interrupts import ResumePayload
 from app.graph.runner import PendingInterrupt, RunDriver, RunOutcome
-from app.health import fetch_ollama_models, missing_models
+from app.health import check_sandbox_images, fetch_ollama_models, missing_models
 
 AUTO_ANSWER = "Use your best judgment and document the assumption."
 
@@ -167,6 +167,14 @@ async def preflight(settings: Settings) -> None:
     missing = missing_models(llm.models.required_models(), available)
     if missing:
         sys.exit("Missing models. Run: " + " && ".join(f"ollama pull {m}" for m in missing))
+    if settings.sandbox_enabled:
+        try:
+            await check_sandbox_images(settings)
+        except Exception as exc:
+            sys.exit(
+                f"Sandbox not ready: {exc}. Run scripts/build_sandbox_images.sh "
+                "(or set SANDBOX_ENABLED=false to skip executing tests)."
+            )
 
 
 @contextlib.asynccontextmanager

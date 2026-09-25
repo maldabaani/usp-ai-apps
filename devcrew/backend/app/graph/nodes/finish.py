@@ -10,10 +10,13 @@ from langgraph.types import Command
 
 from app.db.models import RunStatus
 from app.events.types import EventType
-from app.graph.runtime import TEST_COMMANDS, GraphDeps, NodeFn
-from app.graph.state import TaskState, TaskStatus, TestResult, dump, get_plan
+from app.graph.layout import resolve_layout, sandbox_target
+from app.graph.runtime import GraphDeps, NodeFn
+from app.graph.state import TaskState, TaskStatus, TestResult, dump, get_design
 from app.llm.tokens import tail_text
 from app.tools.git import GitRepo
+
+NOT_RUN = "Sandbox disabled: tests were not executed."
 
 
 def make_integration(deps: GraphDeps) -> NodeFn:
@@ -21,29 +24,40 @@ def make_integration(deps: GraphDeps) -> NodeFn:
         run_id = state["run_id"]
         root = Path(state["workspace"])
         await GitRepo(root).checkout(state["integration_branch"])
-        plan = get_plan(state)
+        design = get_design(state)
+        layout = resolve_layout(design, deps.templates)
+        target = sandbox_target(run_id, None, root, design, layout)
         tasks = {tid: TaskState.model_validate(t) for tid, t in state["tasks"].items()}
 
         results: dict[str, Any] = {}
-        for stack in sorted({t.stack for t in plan.tasks}):
-            command = TEST_COMMANDS[stack]
-            if deps.runner is None:
-                result = TestResult(
-                    ran=False,
-                    passed=True,
-                    command=command,
-                    logs_excerpt="Sandbox runner not configured.",
-                )
+        for stack, entry in layout.items():
+            command = entry.template.test_cmd
+            await deps.emit(
+                run_id,
+                EventType.TOOL_CALL,
+                node="integration",
+                tool="run_tests",
+                args={"command": command, "cwd": entry.path},
+            )
+            if deps.sandbox is None:
+                result = TestResult(ran=False, passed=True, command=command, logs_excerpt=NOT_RUN)
             else:
-                out = await deps.runner.run(
-                    run_id=run_id, task_id=None, workdir=root, command=command, stack=stack
-                )
+                out = await deps.sandbox.exec(target, layout, command, cwd=entry.path)
                 result = TestResult(
                     ran=True,
                     passed=out.ok,
                     command=command,
                     logs_excerpt=tail_text(out.output, 800),
                 )
+            await deps.emit(
+                run_id,
+                EventType.TOOL_RESULT,
+                node="integration",
+                tool="run_tests",
+                ok=result.passed,
+                skipped=not result.ran,
+                result=result.logs_excerpt[-2000:],
+            )
             results[stack] = dump(result)
 
         summary = {
@@ -79,7 +93,9 @@ def make_github_delivery(deps: GraphDeps) -> NodeFn:
 
 def make_done(deps: GraphDeps) -> NodeFn:
     async def done(state: dict[str, Any]) -> Command[str]:
-        # Phase 4 deletes the run's Chroma collection here.
+        if deps.sandbox is not None:
+            await deps.sandbox.cleanup_run(state["run_id"])
+        # Phase 4 also deletes the run's Chroma collection here.
         return Command(goto=END, update={"status": RunStatus.COMPLETED})
 
     return done

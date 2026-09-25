@@ -9,13 +9,14 @@ from langgraph.types import Command
 from app.events.types import EventType
 from app.graph.context_builder import budget_for, qa_context, qa_report_context
 from app.graph.nodes.task_common import TaskCtx, load_task_ctx, to_coordinator
-from app.graph.runtime import TEST_COMMANDS, GraphDeps, NodeFn
+from app.graph.runtime import GraphDeps, NodeFn
 from app.graph.state import QAReport, TaskStatus, TestResult
 from app.llm.agent import run_agent
 from app.llm.models_config import Role
 from app.llm.structured import StructuredOutputError, generate_structured
 from app.llm.tokens import tail_text
-from app.tools.base import ToolError
+from app.tools.base import ToolError, ToolSpec
+from app.tools.sandbox import run_command_tool
 from app.tools.workspace import is_test_path, read_file_tool, write_file_tool
 
 NODE = "qa"
@@ -33,7 +34,7 @@ async def run_tests(deps: GraphDeps, ctx: TaskCtx, command: str) -> TestResult:
         tool="run_tests",
         args={"command": command},
     )
-    if deps.runner is None:
+    if deps.sandbox is None:
         await deps.emit(
             ctx.run_id,
             EventType.TOOL_RESULT,
@@ -46,13 +47,7 @@ async def run_tests(deps: GraphDeps, ctx: TaskCtx, command: str) -> TestResult:
         )
         return TestResult(ran=False, passed=True, logs_excerpt=NOT_RUN_NOTE, command=command)
 
-    result = await deps.runner.run(
-        run_id=ctx.run_id,
-        task_id=ctx.task.id,
-        workdir=ctx.workspace.root,
-        command=command,
-        stack=ctx.task.stack,
-    )
+    result = await deps.sandbox.exec(ctx.target, ctx.layout, command, cwd=ctx.project.path)
     logs = tail_text(result.output, LOG_TAIL_TOKENS)
     await deps.emit(
         ctx.run_id,
@@ -92,11 +87,27 @@ async def run_tests(deps: GraphDeps, ctx: TaskCtx, command: str) -> TestResult:
     )
 
 
+def qa_tools(deps: GraphDeps, ctx: TaskCtx) -> list[ToolSpec]:
+    tools = [
+        read_file_tool(ctx.workspace),
+        write_file_tool(
+            ctx.workspace,
+            partial(lambda stack, p: is_test_path(p, [stack]), ctx.task.stack),
+            note=f"QA may only write {ctx.task.stack} test files.",
+        ),
+    ]
+    if deps.sandbox is not None:
+        tools.append(
+            run_command_tool(deps.sandbox, ctx.target, ctx.layout, default_cwd=ctx.project.path)
+        )
+    return tools
+
+
 def make_qa(deps: GraphDeps) -> NodeFn:
     async def qa(state: dict[str, Any]) -> Command[str]:
-        ctx = load_task_ctx(state)
+        ctx = load_task_ctx(deps, state)
         await ctx.repo.checkout(ctx.branch)
-        command = TEST_COMMANDS[ctx.task.stack]
+        command = ctx.project.template.test_cmd
         changed = await ctx.repo.changed_files(ctx.integration_branch, ctx.branch)
         try:
             rules = deps.rules.read(ctx.task.stack)
@@ -116,14 +127,7 @@ def make_qa(deps: GraphDeps) -> NodeFn:
             deps.llm,
             Role.QA,
             [SystemMessage(content=system), HumanMessage(content=context)],
-            [
-                read_file_tool(ctx.workspace),
-                write_file_tool(
-                    ctx.workspace,
-                    partial(lambda stack, p: is_test_path(p, [stack]), ctx.task.stack),
-                    note=f"QA may only write {ctx.task.stack} test files.",
-                ),
-            ],
+            qa_tools(deps, ctx),
             max_steps=deps.settings.max_agent_steps,
             on_tool_event=deps.tool_hook(ctx.run_id, NODE, ctx.task.id),
         )

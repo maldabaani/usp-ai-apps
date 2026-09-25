@@ -76,7 +76,10 @@ def make_architect(deps: GraphDeps) -> NodeFn:
                 Role.ARCHITECT,
                 outcome.messages[:-1],
                 Design,
-                context={"templates": deps.templates.ids_by_stack()},
+                context={
+                    "templates": deps.templates.ids_by_stack(),
+                    "task_stacks": {t.stack for t in plan.tasks},
+                },
                 first_response=outcome.final_text,
             )
         except StructuredOutputError as exc:

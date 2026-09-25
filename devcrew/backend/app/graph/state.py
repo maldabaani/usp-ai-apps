@@ -124,29 +124,75 @@ class ModuleContract(BaseModel):
     interface: str = Field(description="Public signatures, endpoints or DTOs other modules use.")
 
 
+class Component(BaseModel):
+    """One sub-project of a mixed-stack design, scaffolded from its own template."""
+
+    template_id: str
+    path: str = Field(description="Sub-directory, e.g. backend or frontend.")
+
+    @field_validator("path")
+    @classmethod
+    def _path(cls, v: str) -> str:
+        p = _check_relative_path(v).strip("/")
+        if p in ("", "."):
+            raise ValueError("component path must be a sub-directory, not the project root")
+        return p
+
+
 class Design(BaseModel):
     stack: Stack
     template_id: str
+    components: list[Component] = Field(
+        default_factory=list,
+        description="Only for stack=mixed: one template per sub-project (e.g. backend/, "
+        "frontend/). Leave empty for single-stack projects.",
+    )
     project_structure: list[str] = Field(description="Key paths of the final project.")
     modules: list[ModuleContract] = Field(min_length=1)
     key_decisions: list[str] = Field(default_factory=list)
     design_doc: str = Field(description="Markdown design document.")
 
     @model_validator(mode="after")
-    def _template_matches(self, info: ValidationInfo) -> Self:
-        templates: Mapping[str, str] | None = (info.context or {}).get("templates")
-        if templates is None:
-            return self
-        if self.template_id not in templates:
-            raise ValueError(
-                f"template_id '{self.template_id}' is unknown; choose one of {sorted(templates)}"
-            )
-        template_stack = templates[self.template_id]
-        if self.stack is not Stack.MIXED and template_stack != self.stack.value:
-            raise ValueError(
-                f"template '{self.template_id}' is for {template_stack}, but stack is {self.stack}"
-            )
+    def _layout_is_valid(self, info: ValidationInfo) -> Self:
+        context = info.context or {}
+        if self.stack is Stack.MIXED:
+            if len(self.components) < 2:
+                raise ValueError("stack 'mixed' needs at least two components (template + path)")
+            paths = [c.path for c in self.components]
+            if len(set(paths)) != len(paths):
+                raise ValueError("component paths must be distinct")
+            if self.template_id not in {c.template_id for c in self.components}:
+                raise ValueError("template_id must be one of the components' template ids")
+        elif self.components:
+            raise ValueError("components are only used when stack is 'mixed'")
+
+        templates: Mapping[str, str] | None = context.get("templates")
+        if templates is not None:
+            for template_id in {self.template_id, *(c.template_id for c in self.components)}:
+                if template_id not in templates:
+                    raise ValueError(
+                        f"template_id '{template_id}' is unknown; choose one of {sorted(templates)}"
+                    )
+            stacks = self.stacks(templates)
+            if self.stack is not Stack.MIXED and stacks != [self.stack.value]:
+                raise ValueError(
+                    f"template '{self.template_id}' is for {stacks[0]}, but stack is {self.stack}"
+                )
+            if self.stack is Stack.MIXED and len(set(stacks)) != len(stacks):
+                raise ValueError("each component must use a different stack")
+            task_stacks: set[str] | None = context.get("task_stacks")
+            if task_stacks and not task_stacks <= set(stacks):
+                missing = sorted(task_stacks - set(stacks))
+                raise ValueError(
+                    f"the plan has {missing} tasks but the design provides no template for them; "
+                    "use stack 'mixed' with one component per stack"
+                )
         return self
+
+    def stacks(self, templates: Mapping[str, str]) -> list[str]:
+        if self.stack is Stack.MIXED:
+            return [templates[c.template_id] for c in self.components]
+        return [templates[self.template_id]]
 
 
 # --------------------------------------------------------------------------------------------

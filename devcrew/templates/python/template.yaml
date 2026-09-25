@@ -1,5 +1,6 @@
 id: python-fastapi
 stack: python
-description: FastAPI app with routers/schemas/services layout, pydantic-settings, pytest and ruff.
-build_cmd: pip install -e ".[dev]"
+description: FastAPI 0.115+ app (routers/schemas/services layout, pydantic-settings) with pytest and ruff.
+install_cmd: pip install -q -e ".[dev]"
+build_cmd: python -m compileall -q app
 test_cmd: pytest -q

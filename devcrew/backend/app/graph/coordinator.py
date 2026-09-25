@@ -105,6 +105,8 @@ def make_task_coordinator(deps: GraphDeps) -> NodeFn:
         if payload.action is ResumeAction.REJECT:
             ts.status = TaskStatus.FAILED
             ts.error = reason
+            if deps.sandbox is not None:
+                await deps.sandbox.release(state["run_id"], task_id)
             return Command(
                 goto=END,
                 update={"tasks": {task_id: dump(ts)}, "errors": [f"task {task_id}: {reason}"]},

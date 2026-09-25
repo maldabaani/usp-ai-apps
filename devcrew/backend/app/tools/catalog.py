@@ -45,6 +45,7 @@ class TemplateInfo(BaseModel):
     id: str
     stack: str
     description: str
+    install_cmd: str  # the only command that runs with network access
     build_cmd: str
     test_cmd: str
     path: Path = Field(exclude=True, default=Path())

@@ -7,8 +7,8 @@ approvals for the plan, the design and the final result, then open a GitHub PR.
 
 All LLM calls go to a **local Ollama**. There are no cloud LLM calls anywhere.
 
-> Status: **Phase 2**: sequential backbone graph, all five roles, approvals, checkpointer,
-> `scripts/run_local.py`. Sandbox execution (Phase 3), RAG (4), parallelism (5), API (6),
+> Status: **Phase 3**: sequential backbone graph with all five roles, Docker sandboxes,
+> runnable starter templates, `scripts/run_local.py`. RAG (4), parallelism (5), API (6),
 > UI (7) and GitHub delivery (8) come next.
 
 ## Architecture
@@ -61,8 +61,62 @@ Design notes:
   corrects bad references.
 - QA's pass/fail comes from the sandbox exit code, not from the model. The model only
   summarizes failures for the Developer.
-- **Until Phase 3 there is no sandbox runner.** QA writes tests, but they are not executed:
-  results show `ran: false` and the task proceeds.
+- With `SANDBOX_ENABLED=false`, QA writes tests but they are not executed: results show
+  `ran: false` and the task proceeds.
+
+## Sandbox (Phase 3)
+
+Generated code only ever runs inside Docker, never on the host.
+
+| Image | Contents | Used for |
+|---|---|---|
+| `devcrew-sandbox-python` | Python 3.12, pytest, ruff | `python` projects |
+| `devcrew-sandbox-java` | Temurin 21, Maven 3.9 | `java` projects |
+| `devcrew-sandbox-node` | Node 20, Angular CLI 19, Chromium | `angular` projects |
+| `devcrew-sandbox-mixed` | all of the above | `mixed` designs (only needed for those) |
+
+```bash
+scripts/build_sandbox_images.sh                 # all four
+scripts/build_sandbox_images.sh python java     # a subset
+# base images are build args (PYTHON_IMAGE, MAVEN_IMAGE, NODE_IMAGE), e.g. to use a mirror:
+scripts/build_sandbox_images.sh -- --build-arg PYTHON_IMAGE=mirror.gcr.io/library/python:3.12-slim
+```
+
+How commands run (`backend/app/sandbox/`):
+- **One container per task worktree**, created on first use and removed after the task
+  merges or fails. All of a run's containers and per-run volumes are removed when the run
+  completes. The workspace is bind-mounted at `/workspace`.
+- **The network is off** (`network_mode=none`) for every agent command and test run. The only
+  networked step is **dependency install**: the template's fixed `install_cmd` (never an
+  agent-chosen command) runs in a short-lived container on the bridge network. It runs at
+  scaffold time and again whenever a manifest changes (`pyproject.toml`, `pom.xml`,
+  `package.json`).
+- **Dependencies live in volumes**: a per-run Python venv and `node_modules`, plus shared
+  Maven (`devcrew-m2`) and npm caches. Maven runs in offline mode (`-o`) outside the
+  install step.
+- **Limits and hardening**: a per-command timeout (`timeout -s KILL` inside the container
+  plus an outer watchdog), CPU/memory/pids limits, all capabilities dropped,
+  `no-new-privileges`, and a read-only root filesystem. Commands run as the backend's
+  uid:gid, which is root inside the compose backend container.
+- **Policy** (`policy.py`): denies `rm -rf /` (and `~`, `--no-preserve-root`), `curl|sh`-style
+  download-and-execute, `docker`, `sudo`/`su`, including when nested in `sh -c`, `$(...)`,
+  backticks, `env`/`timeout` wrappers. Working directories must be inside `WORKSPACES_DIR`
+  (allowlist), and `cwd` must stay inside the project.
+- Tools: the Developer and QA get `run_command` (sandboxed). QA's pass/fail is the test
+  command's exit code.
+
+### Starter templates (`templates/<stack>/`)
+
+| id | Stack | Sample test | Test command |
+|---|---|---|---|
+| `python-fastapi` | FastAPI + pydantic-settings, routers/schemas/services | `GET /health` via TestClient | `pytest -q` |
+| `java-spring-boot` | Spring Boot 3.5, Java 21, controller/service/repository/dto | `@WebMvcTest` MockMvc | `mvn -q test` |
+| `angular-standalone` | Angular 19 standalone, OnPush + signals, router | TestBed component spec | `npx ng test --watch=false --browsers=ChromeHeadless` |
+
+Each `template.yaml` has `id`, `stack`, `description`, `install_cmd`, `build_cmd`, `test_cmd`.
+Multi-stack projects use `stack: mixed` with `components` (one template per sub-directory,
+e.g. `backend/` + `frontend/`). Each stack's commands run in its own sub-directory, in the
+`mixed` image.
 
 ## Prerequisites
 
@@ -121,6 +175,7 @@ TEST_DATABASE_URL=postgresql+asyncpg://devcrew:<pw>@localhost:5432/devcrew_test 
 ```bash
 cd devcrew/backend && . .venv/bin/activate
 docker compose up -d postgres            # or use --memory
+../scripts/build_sandbox_images.sh       # once
 alembic upgrade head
 export OLLAMA_BASE_URL=http://localhost:11434 DATABASE_URL=postgresql+asyncpg://devcrew:<pw>@localhost:5432/devcrew
 python ../scripts/run_local.py "Build a FastAPI TODO API with CRUD and pytest tests"

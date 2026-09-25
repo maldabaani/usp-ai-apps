@@ -35,6 +35,7 @@ def _stub_infra(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(health, "check_database", ok)
     monkeypatch.setattr(health, "check_chroma", ok)
     monkeypatch.setattr(health, "check_docker", ok)
+    monkeypatch.setattr(health, "check_sandbox_images", ok)
 
 
 async def _report(settings: Settings, transport: httpx.MockTransport) -> health.HealthReport:

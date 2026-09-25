@@ -36,7 +36,7 @@ def role_of(messages: Sequence[BaseMessage]) -> str:
     assert isinstance(first, SystemMessage), "first message must be the role's system prompt"
     header = str(first.content).splitlines()[0]
     role = header.removeprefix("# Role: ").strip().lower()
-    if "summarize a test run" in str(first.content):
+    if "summarize a test run" in str(first.content).lower():
         return "qa_report"
     return role
 
@@ -111,3 +111,48 @@ def gateway(
 
 def tool_results(call: Call) -> list[ToolMessage]:
     return [m for m in call.messages if isinstance(m, ToolMessage)]
+
+
+class FakeRunner:
+    """In-memory CommandRunner: records calls, returns scripted results (default: success)."""
+
+    def __init__(self) -> None:
+        from app.sandbox.runner import CommandResult
+
+        self._result = CommandResult
+        self.calls: list[tuple[str | None, str, str, bool, str]] = []
+        self.scripts: dict[str, list[tuple[int, str]]] = {}
+        self.released: list[str | None] = []
+        self.cleaned: list[str] = []
+
+    def script(self, needle: str, *results: tuple[int, str]) -> None:
+        self.scripts.setdefault(needle, []).extend(results)
+
+    async def run(
+        self,
+        target: Any,
+        command: str,
+        *,
+        cwd: str = ".",
+        timeout_s: int | None = None,
+        network: bool = False,
+    ) -> Any:
+        self.calls.append((target.task_id, command, cwd, network, target.image_stack))
+        for needle, queue in self.scripts.items():
+            if needle in command and queue:
+                code, output = queue.pop(0)
+                return self._result(exit_code=code, output=output)
+        return self._result(exit_code=0, output=f"ok: {command}")
+
+    async def release(self, run_id: str, task_id: str | None) -> None:
+        self.released.append(task_id)
+
+    async def cleanup_run(self, run_id: str) -> None:
+        self.cleaned.append(run_id)
+
+    def commands(self, *, network: bool | None = None) -> list[tuple[str | None, str, str]]:
+        return [
+            (task, cmd, cwd)
+            for task, cmd, cwd, net, _ in self.calls
+            if network is None or net == network
+        ]

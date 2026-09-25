@@ -86,6 +86,17 @@ async def check_docker() -> str:
     return f"daemon reachable (version {version})"
 
 
+async def check_sandbox_images(settings: Settings) -> str:
+    from app.sandbox.docker_runner import REQUIRED_IMAGE_FAMILIES, DockerSandboxRunner
+
+    missing = await asyncio.to_thread(DockerSandboxRunner(settings).missing_images)
+    required = {f"{settings.sandbox_image_prefix}-{f}:latest" for f in REQUIRED_IMAGE_FAMILIES}
+    if set(missing) & required:
+        raise RuntimeError(f"missing sandbox images: {', '.join(sorted(missing))}")
+    note = f" ({missing[0]} not built: only needed for mixed-stack projects)" if missing else ""
+    return "python, java and node images present" + note
+
+
 async def check_github(http: httpx.AsyncClient, settings: Settings) -> str:
     if settings.github_token is None:
         raise RuntimeError(
@@ -140,7 +151,7 @@ async def run_health_checks(
             ollama_models = await fetch_ollama_models(client, settings.ollama_base_url)
             return f"reachable at {settings.ollama_base_url} ({len(ollama_models)} models)"
 
-        db, chroma, ollama, dock, gh = await asyncio.gather(
+        db, chroma, ollama, dock, images, gh = await asyncio.gather(
             _run(
                 "database",
                 True,
@@ -164,6 +175,12 @@ async def run_health_checks(
                 True,
                 check_docker,
                 "Start Docker and make /var/run/docker.sock available to the backend.",
+            ),
+            _run(
+                "sandbox_images",
+                settings.sandbox_enabled,
+                lambda: check_sandbox_images(settings),
+                "Build them with scripts/build_sandbox_images.sh.",
             ),
             _run(
                 "github_token",
@@ -196,7 +213,7 @@ async def run_health_checks(
         if own_http:
             await client.aclose()
 
-    checks = [db, chroma, ollama, models, dock, gh]
+    checks = [db, chroma, ollama, models, dock, images, gh]
     return HealthReport(ok=all(c.ok for c in checks), checks=checks)
 
 

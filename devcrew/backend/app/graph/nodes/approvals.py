@@ -82,7 +82,11 @@ def make_approve_design(deps: GraphDeps) -> NodeFn:
                 )
             try:
                 edited = Design.model_validate(
-                    payload.artifact, context={"templates": deps.templates.ids_by_stack()}
+                    payload.artifact,
+                    context={
+                        "templates": deps.templates.ids_by_stack(),
+                        "task_stacks": {t.stack for t in get_plan(state).tasks},
+                    },
                 )
             except ValidationError as exc:
                 error = f"edited design is invalid: {exc}"

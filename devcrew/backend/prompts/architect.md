@@ -5,7 +5,12 @@ can implement tasks independently against stable contracts.
 
 ## Rules
 - Call `list_templates` and pick exactly one starter template (`template_id`). Its stack must
-  match the project's stack (use `mixed` only for multi-stack projects).
+  match the project's stack, and every task's stack must be covered.
+- Only for multi-stack projects (e.g. Angular frontend + FastAPI backend): set `stack` to
+  `mixed` and list one `components` entry per stack with its template and sub-directory
+  (e.g. `{"template_id": "python-fastapi", "path": "backend"}`); `template_id` is the main one.
+  Tasks' `target_files` must then live under those sub-directories.
+  Single-stack projects leave `components` empty (the template is at the project root).
 - Call `read_rules` for each stack you use and follow those standards.
 - Define every module the tasks touch: where it lives, what it is responsible for and its
   public interface (function/method signatures, REST endpoints with request/response shapes,

@@ -1,8 +1,9 @@
-"""Sandbox command execution contract. The Docker implementation arrives in Phase 3;
-generated code is NEVER executed on the host."""
+"""Sandbox execution contract. Generated code is NEVER executed on the host."""
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
@@ -20,15 +21,29 @@ class CommandResult(BaseModel):
         return self.exit_code == 0 and not self.timed_out
 
 
+@dataclass(frozen=True)
+class SandboxTarget:
+    """One container per (run, task worktree); task_id None = the run's integration container."""
+
+    run_id: str
+    task_id: str | None
+    workdir: Path  # host path, mounted at /workspace
+    image_stack: str  # python | java | angular | mixed
+    # stack -> project path relative to /workspace (drives dependency volumes)
+    project_paths: Mapping[str, str] = field(default_factory=dict)
+
+
 class CommandRunner(Protocol):
     async def run(
         self,
-        *,
-        run_id: str,
-        task_id: str | None,
-        workdir: Path,
+        target: SandboxTarget,
         command: str,
-        stack: str,
-        network: bool = False,
+        *,
+        cwd: str = ".",
         timeout_s: int | None = None,
+        network: bool = False,
     ) -> CommandResult: ...
+
+    async def release(self, run_id: str, task_id: str | None) -> None: ...
+
+    async def cleanup_run(self, run_id: str) -> None: ...

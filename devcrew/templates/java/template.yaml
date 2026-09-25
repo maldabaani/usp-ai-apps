@@ -1,5 +1,8 @@
 id: java-spring-boot
 stack: java
-description: Spring Boot 3 (Java 21, Maven) web app with layered packages and JUnit 5.
+description: Spring Boot 3.5 (Java 21, Maven) web app with controller/service/repository packages, Bean Validation and JUnit 5.
+# Resolve dependencies and plugins, plus surefire's JUnit provider (normally fetched lazily at
+# test time). Tests later run with the network disabled, in Maven offline mode.
+install_cmd: mvn -q dependency:resolve dependency:resolve-plugins && mvn -q dependency:get -Dartifact=org.apache.maven.surefire:surefire-junit-platform:$(mvn -q help:evaluate -Dexpression=maven-surefire-plugin.version -DforceStdout)
 build_cmd: mvn -q -DskipTests package
 test_cmd: mvn -q test
