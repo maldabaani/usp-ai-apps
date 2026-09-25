@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -28,6 +28,9 @@ class ModelSpec(BaseModel):
     num_ctx: int = Field(default=16384, ge=1024)
     temperature: float = Field(default=0.1, ge=0.0, le=2.0)
     num_predict: int = Field(default=4096, ge=1)
+    # How structured outputs are constrained: Ollama JSON-schema decoding, plain JSON mode,
+    # or unconstrained (prompt + validator only).
+    structured_format: Literal["schema", "json", "none"] = "schema"
 
     @model_validator(mode="after")
     def _answer_fits_context(self) -> ModelSpec:
@@ -48,6 +51,7 @@ class ModelOverride(BaseModel):
     num_ctx: int | None = None
     temperature: float | None = None
     num_predict: int | None = None
+    structured_format: Literal["schema", "json", "none"] | None = None
 
 
 class EmbeddingSpec(BaseModel):

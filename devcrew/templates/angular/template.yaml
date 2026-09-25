@@ -1,0 +1,5 @@
+id: angular-standalone
+stack: angular
+description: Angular 17+ standalone app (signals, OnPush, Angular Material) with Karma/Jasmine.
+build_cmd: npm ci && npx ng build
+test_cmd: npx ng test --watch=false --browsers=ChromeHeadless

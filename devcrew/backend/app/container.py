@@ -11,8 +11,8 @@ from app.db.repository import RunRepository
 from app.db.session import create_engine, create_sessionmaker
 from app.events.bus import EventBus
 from app.events.store import PostgresEventStore
+from app.graph.factory import build_llm
 from app.llm.client import LLMGateway
-from app.llm.models_config import load_models_config
 
 
 @dataclass
@@ -28,19 +28,13 @@ class Container:
     def build(cls, settings: Settings) -> Container:
         engine = create_engine(settings.database_url)
         sessionmaker = create_sessionmaker(engine)
-        models = load_models_config(settings.models_config_path)
         return cls(
             settings=settings,
             engine=engine,
             sessionmaker=sessionmaker,
             runs=RunRepository(sessionmaker),
             events=EventBus(PostgresEventStore(sessionmaker)),
-            llm=LLMGateway(
-                models,
-                base_url=settings.ollama_base_url,
-                max_parallel=settings.max_parallel_devs,
-                request_timeout_s=settings.llm_request_timeout_s,
-            ),
+            llm=build_llm(settings),
         )
 
     async def close(self) -> None:

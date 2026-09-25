@@ -9,6 +9,7 @@ from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
+DEVCREW_DIR = BACKEND_DIR.parent
 
 
 class Settings(BaseSettings):
@@ -35,6 +36,12 @@ class Settings(BaseSettings):
     max_parallel_devs: int = Field(default=2, ge=1)
     max_dev_iterations: int = Field(default=3, ge=1)
     max_questions_per_task: int = Field(default=3, ge=0)
+
+    # --- Agents -----------------------------------------------------------------------------
+    prompts_dir: Path = BACKEND_DIR / "prompts"
+    rules_dir: Path = DEVCREW_DIR / "rules"
+    templates_dir: Path = DEVCREW_DIR / "templates"
+    max_agent_steps: int = Field(default=30, ge=1, description="Tool-loop steps per agent turn.")
 
     # --- Workspaces / sandbox ---------------------------------------------------------------
     workspaces_dir: Path = Path("/tmp/devcrew/workspaces")

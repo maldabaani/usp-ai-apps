@@ -1,0 +1,5 @@
+id: java-spring-boot
+stack: java
+description: Spring Boot 3 (Java 21, Maven) web app with layered packages and JUnit 5.
+build_cmd: mvn -q -DskipTests package
+test_cmd: mvn -q test

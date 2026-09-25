@@ -19,7 +19,7 @@ class FakeChat:
         self.peak = 0
         self.specs: list[ModelSpec] = []
 
-    async def ainvoke(self, messages: list[BaseMessage]) -> AIMessage:
+    async def ainvoke(self, messages: list[BaseMessage], **kwargs: Any) -> AIMessage:
         self.active += 1
         self.peak = max(self.peak, self.active)
         await asyncio.sleep(0.02)

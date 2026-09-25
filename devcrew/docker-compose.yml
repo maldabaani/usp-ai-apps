@@ -38,6 +38,8 @@ services:
       CHROMA_PORT: "8000"
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       WORKSPACES_DIR: ${WORKSPACES_DIR:?set WORKSPACES_DIR in .env (absolute host path)}
+      RULES_DIR: /devcrew/rules
+      TEMPLATES_DIR: /devcrew/templates
     ports:
       - "8080:8080"
     extra_hosts:
@@ -48,6 +50,9 @@ services:
       # Same absolute path inside and outside the container, so sandbox bind mounts
       # created by the backend resolve on the host.
       - ${WORKSPACES_DIR}:${WORKSPACES_DIR}
+      # Editable standards and starter templates (no rebuild needed after edits).
+      - ./rules:/devcrew/rules:ro
+      - ./templates:/devcrew/templates:ro
     depends_on:
       postgres:
         condition: service_healthy

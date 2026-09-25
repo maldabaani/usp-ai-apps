@@ -108,13 +108,20 @@ class LLMGateway:
         messages: Sequence[BaseMessage],
         *,
         tools: Sequence[Any] | None = None,
+        output_format: str | dict[str, Any] | None = None,
     ) -> AIMessage:
-        """Invoke the role's chat model, bounded by the global LLM semaphore."""
+        """Invoke the role's chat model, bounded by the global LLM semaphore.
+
+        `output_format` is passed to Ollama's `format` ("json" or a JSON schema).
+        """
         model: Any = self.chat_model(role)
         if tools:
             model = model.bind_tools(list(tools))
+        kwargs: dict[str, Any] = {}
+        if output_format is not None:
+            kwargs["format"] = output_format
         async with self._semaphore:
-            result = await model.ainvoke(list(messages))
+            result = await model.ainvoke(list(messages), **kwargs)
         if not isinstance(result, AIMessage):
             raise TypeError(f"Expected AIMessage from chat model, got {type(result).__name__}")
         self.usage.record(role, result)
