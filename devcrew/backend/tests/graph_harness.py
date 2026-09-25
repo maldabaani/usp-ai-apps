@@ -14,6 +14,7 @@ from app.config import BACKEND_DIR, DEVCREW_DIR, Settings
 from app.events.bus import EventBus
 from app.events.store import InMemoryEventStore
 from app.events.types import Event
+from app.github.delivery import GitHubDelivery
 from app.graph.backbone import build_graph
 from app.graph.interrupts import ResumePayload
 from app.graph.runner import RunDriver, RunOutcome
@@ -178,6 +179,7 @@ def make_harness(
     checkpointer: BaseCheckpointSaver[Any] | None = None,
     runner: FakeRunner | None = None,
     chroma: FakeChroma | None = None,
+    github: GitHubDelivery | None = None,
     **settings: Any,
 ) -> Harness:
     brain = brain or default_brain()
@@ -203,6 +205,7 @@ def make_harness(
             if chroma is not None
             else None
         ),
+        github=github,
     )
     saver = checkpointer or InMemorySaver()
     graph = build_graph(deps, saver)

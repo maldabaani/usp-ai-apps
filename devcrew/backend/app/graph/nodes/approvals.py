@@ -131,7 +131,10 @@ def make_approve_final(deps: GraphDeps) -> NodeFn:
             )
         )
         if payload.action is ResumeAction.APPROVE:
-            return Command(goto="github_delivery", update={"status": RunStatus.DELIVERING.value})
+            return Command(
+                goto="github_delivery",
+                update={"status": RunStatus.DELIVERING.value, "final_approved": True},
+            )
         # Rejected: schedule a follow-up task carrying the feedback, then integrate again.
         number = state.get("followups", 0) + 1
         task = followup_task(plan, payload.feedback or "", number)

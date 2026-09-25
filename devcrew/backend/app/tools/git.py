@@ -7,7 +7,9 @@ fsmonitor is off for every invocation.
 from __future__ import annotations
 
 import asyncio
+import os
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -30,6 +32,25 @@ SAFE_CONFIG = (
     "init.defaultBranch=main",
 )
 MAX_DIFF_CHARS = 60_000
+# Minimal environment for git (no inherited credentials). Proxy/CA variables are passed through
+# so pushes work behind a corporate proxy.
+GIT_BASE_ENV: dict[str, str] = {
+    "GIT_TERMINAL_PROMPT": "0",
+    "PATH": "/usr/bin:/bin:/usr/local/bin",
+    "HOME": "/tmp",
+    **{
+        k: v
+        for k in (
+            "HTTPS_PROXY",
+            "https_proxy",
+            "NO_PROXY",
+            "no_proxy",
+            "SSL_CERT_FILE",
+            "GIT_SSL_CAINFO",
+        )
+        if (v := os.environ.get(k))
+    },
+}
 
 
 CONFLICT_MARKER_RE = re.compile(r"^(<{7}|={7}|>{7})( |$)", re.MULTILINE)
@@ -64,7 +85,9 @@ class GitRepo:
     def __init__(self, root: Path) -> None:
         self.root = root
 
-    async def run(self, *args: str, check: bool = True) -> str:
+    async def run(
+        self, *args: str, check: bool = True, extra_env: Mapping[str, str] | None = None
+    ) -> str:
         proc = await asyncio.create_subprocess_exec(
             "git",
             *SAFE_CONFIG,
@@ -72,7 +95,7 @@ class GitRepo:
             cwd=self.root,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            env={"GIT_TERMINAL_PROMPT": "0", "PATH": "/usr/bin:/bin:/usr/local/bin"},
+            env={**GIT_BASE_ENV, **(extra_env or {})},
         )
         out, err = await proc.communicate()
         if check and proc.returncode != 0:
@@ -88,7 +111,7 @@ class GitRepo:
             cwd=self.root,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            env={"GIT_TERMINAL_PROMPT": "0", "PATH": "/usr/bin:/bin:/usr/local/bin"},
+            env=GIT_BASE_ENV,
         )
         out, err = await proc.communicate()
         if proc.returncode != 0:

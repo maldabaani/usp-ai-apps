@@ -19,6 +19,9 @@ robustness, **P3** = nice to have.
   `deb.debian.org` was blocked in the dev sandbox).
 - [ ] **BL-004** (P2, from P4) Measure retrieval quality with the real `nomic-embed-text`
   (tests use a hashing embedder). Candidate input for the Phase 9 benchmark.
+- [ ] **BL-005** (P1, from P8) First delivery to real GitHub with your token: create-repo (user
+  and org), push to an empty repo, PR creation. Tests used a mocked REST API and bare git
+  repositories on disk; the dev sandbox did not push anywhere (outward-facing action).
 
 ## Robustness
 
@@ -37,8 +40,9 @@ robustness, **P3** = nice to have.
 - [ ] **BL-013** (P2, from P4) Indexing failures are non-fatal (error event, search serves the
   previous index, empty retrieval sections if Chroma is down). Consider surfacing a degraded
   "RAG unavailable" status in the UI.
-- [ ] **BL-014** (P3, from P1) Health check treats `GITHUB_TOKEN` as non-critical; `/health` is
-  only "all green" with a valid token. Revisit once GitHub delivery exists (Phase 8).
+- [x] **BL-014** (P3, from P1) *Decided in P8:* `GITHUB_TOKEN` stays non-critical at startup
+  (only delivery needs it, and a missing or invalid token becomes a "retry / finish without PR"
+  decision at delivery time). `/health` is fully green only with a valid token.
 
 ## Security / sandbox
 
@@ -70,8 +74,9 @@ robustness, **P3** = nice to have.
 - [ ] **BL-053** (P2, from P5) Coordinator decisions (replan/split quality, when to escalate) are
   only exercised with scripted models; evaluate with the real model (see BL-002) and tune
   `prompts/coordinator.md`.
-- [ ] **BL-054** (P3, from P5) Task branches are kept after merge (for per-task diffs in the UI /
-  PR); worktrees are removed. Decide a branch cleanup policy after delivery (Phase 8).
+- [x] **BL-054** (P3, from P5) *Decided in P8:* task branches stay local (for per-task diffs in the
+  UI) and are never pushed; only the integration branch is delivered. Worktrees are removed
+  after merge; a run's workspace (and its local branches) is kept for inspection.
 - [ ] **BL-055** (P3, from P5) "Routing agent questions" is implemented as: the target role
   flags `needs_human`, the Coordinator's routing rule sends it to the human. There is no
   separate Coordinator LLM call to pick the target (the Developer chooses architect/planner).
@@ -87,6 +92,17 @@ robustness, **P3** = nice to have.
 - [ ] **BL-062** (P3, from P6) One backend process only: background drives, the event bus and
   repository locks are in-process. Running several backend replicas would need a job queue and
   cross-process pub/sub (out of scope: single local user).
+
+## GitHub delivery
+
+- [ ] **BL-080** (P2, from P8) Delivery to a non-empty repository is refused (greenfield only).
+  Supporting "deliver into an existing repo" would need a base-branch choice and rebasing the
+  scaffold, which is out of the specified scope.
+- [ ] **BL-081** (P3, from P8) After a final rejection the follow-up task is merged into the same
+  branch; if a PR was already opened (e.g. delivery retried later), the same PR is reused and
+  its body is not refreshed. Consider updating the PR body on re-delivery.
+- [ ] **BL-082** (P3, from P8) Only github.com-style hosts were considered; GitHub Enterprise
+  should work via `GITHUB_API_URL` / `GITHUB_GIT_URL` but is untested.
 
 ## Web UI
 
@@ -138,3 +154,6 @@ robustness, **P3** = nice to have.
 - [x] **BL-048** (from P7) UI uses Angular 19 (spec: 17+), no icon/web fonts (system UI font, no
   CDN requests), health badge tooltip via `title`; the frontend compose service is no longer
   behind a profile (the acceptance criteria need it on `docker compose up`).
+- [x] **BL-049** (from P8) Additions: settings `GITHUB_GIT_URL`, `GITHUB_DELIVERY_ENABLED`; state
+  fields `final_approved`, `delivery_error`; a `delivery_failed` node (retry / finish without
+  PR); created repositories are private and empty (`auto_init: false`).

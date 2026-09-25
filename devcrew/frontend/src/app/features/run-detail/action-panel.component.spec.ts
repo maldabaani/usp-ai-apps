@@ -85,4 +85,15 @@ describe('ActionPanelComponent', () => {
     expect(el.textContent).toContain('iteration limit');
     expect(el.textContent).toContain('invalid resume payload');
   });
+
+  it('words delivery failures as retry / finish without PR', () => {
+    const el = setup({
+      interrupt_id: 'd1', kind: 'escalation', title: 'GitHub delivery failed', artifact: null,
+      allowed_actions: ['approve', 'reject'],
+      data: { node: 'github_delivery', reason: 'GITHUB_TOKEN was rejected', question: 'Delivery failed' },
+      error: null,
+    });
+    expect(buttons(el)).toEqual(['Retry delivery', 'Finish without PR']);
+    expect(el.textContent).toContain('GITHUB_TOKEN was rejected');
+  });
 });

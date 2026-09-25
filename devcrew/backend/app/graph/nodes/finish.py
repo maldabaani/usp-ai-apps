@@ -10,6 +10,8 @@ from langgraph.types import Command
 
 from app.db.models import RunStatus
 from app.events.types import EventType
+from app.github.delivery import DeliveryError
+from app.graph.interrupts import InterruptKind, InterruptRequest, ResumeAction, request_input
 from app.graph.layout import resolve_layout, sandbox_target
 from app.graph.runtime import GraphDeps, NodeFn, release_run_resources
 from app.graph.state import TaskState, TaskStatus, TestResult, dump, get_design
@@ -76,19 +78,78 @@ def make_integration(deps: GraphDeps) -> NodeFn:
 
 def make_github_delivery(deps: GraphDeps) -> NodeFn:
     async def github_delivery(state: dict[str, Any]) -> Command[str]:
-        # Phase 8 implements push + PR. Nothing is pushed before this node.
+        run_id = state["run_id"]
+        if deps.github is None:
+            await deps.emit(
+                run_id,
+                EventType.TOOL_RESULT,
+                node="github_delivery",
+                tool="github",
+                ok=True,
+                skipped=True,
+                result="GitHub delivery disabled; nothing was pushed.",
+            )
+            return Command(goto="done", update={"pr_url": None})
+
+        async def progress(message: str) -> None:
+            await deps.emit(
+                run_id,
+                EventType.TOOL_CALL,
+                node="github_delivery",
+                tool="github",
+                args={"step": message},
+            )
+
+        try:
+            result = await deps.github.deliver(state, progress=progress)
+        except DeliveryError as exc:
+            await deps.emit(run_id, EventType.ERROR, node="github_delivery", message=str(exc))
+            return Command(goto="delivery_failed", update={"delivery_error": str(exc)})
         await deps.emit(
-            state["run_id"],
+            run_id,
             EventType.TOOL_RESULT,
             node="github_delivery",
             tool="github",
-            ok=False,
-            skipped=True,
-            result="GitHub delivery is not implemented yet (Phase 8); nothing was pushed.",
+            ok=True,
+            result=f"pull request opened: {result.pr_url}",
+            pr_url=result.pr_url,
+            repo_created=result.repo_created,
+            pushed_main=result.pushed_main,
         )
-        return Command(goto="done", update={"pr_url": None})
+        return Command(goto="done", update={"pr_url": result.pr_url, "delivery_error": None})
 
     return github_delivery
+
+
+def make_delivery_failed(deps: GraphDeps) -> NodeFn:
+    """Delivery failed (auth, permissions, network, non-empty repo): retry or finish without PR."""
+
+    async def delivery_failed(state: dict[str, Any]) -> Command[str]:
+        error = state.get("delivery_error") or "unknown error"
+        payload = request_input(
+            InterruptRequest(
+                kind=InterruptKind.ESCALATION,
+                title="GitHub delivery failed",
+                allowed_actions=[ResumeAction.APPROVE, ResumeAction.REJECT],
+                data={
+                    "node": "github_delivery",
+                    "reason": error,
+                    "question": f"Delivery to {state.get('repo_target')} failed: {error}",
+                    "options": {
+                        "approve": "retry delivery (fix the token/repository first)",
+                        "reject": "finish the run without a pull request",
+                    },
+                },
+            )
+        )
+        if payload.action is ResumeAction.APPROVE:
+            return Command(goto="github_delivery", update={"status": RunStatus.DELIVERING.value})
+        return Command(
+            goto="done",
+            update={"pr_url": None, "errors": [f"delivery skipped: {error}"]},
+        )
+
+    return delivery_failed
 
 
 def make_done(deps: GraphDeps) -> NodeFn:

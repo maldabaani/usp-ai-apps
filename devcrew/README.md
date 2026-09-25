@@ -7,10 +7,10 @@ approvals for the plan, the design and the final result, then open a GitHub PR.
 
 All LLM calls go to a **local Ollama**. There are no cloud LLM calls anywhere.
 
-> Status: **Phase 7**: Angular UI on top of the HTTP API (SSE replay, resume/cancel, restart
-> recovery) and the backbone graph (five roles, parallel developers in git worktrees, LLM
-> Coordinator, agent Q&A, Docker sandboxes, starter templates, per-run RAG). GitHub delivery
-> (8) and the benchmark (9) come next.
+> Status: **Phase 8**: GitHub delivery (repo creation, push, pull request) after final
+> approval, on top of the Angular UI, the HTTP API (SSE replay, resume/cancel, restart recovery)
+> and the backbone graph (five roles, parallel developers in git worktrees, LLM Coordinator,
+> agent Q&A, Docker sandboxes, starter templates, per-run RAG). The benchmark (9) comes next.
 > Open issues and deferred work: [BACKLOG.md](BACKLOG.md).
 
 ## Architecture
@@ -69,6 +69,35 @@ Design notes:
   summarizes failures for the Developer.
 - With `SANDBOX_ENABLED=false`, QA writes tests but they are not executed: results show
   `ran: false` and the task proceeds.
+
+## GitHub delivery (Phase 8)
+
+`backend/app/github/`. Delivery runs only after you approve the final result: the approval gate
+sets `final_approved`, and the delivery refuses to push without it.
+
+1. **Repository.** If `owner/repo` is missing and the run was started with "create repo if
+   missing", DevCrew creates it **private and empty** (`POST /user/repos` for your own account,
+   `POST /orgs/{org}/repos` for an organization). Otherwise delivery fails with an actionable
+   message.
+2. **`main`.** It is pushed **only if the remote repository is empty**, and then only the
+   template scaffold commit. A non-empty repository whose `main` is not this run's scaffold is
+   refused: DevCrew builds greenfield projects and never pushes to, or forces, an existing
+   `main`.
+3. **The run's branch.** `devcrew/<run_id>-<slug>` is pushed. It is the integration branch,
+   with one commit per task. Task branches stay local.
+4. **Pull request.** A PR is opened against `main`, or the existing open PR for the branch is
+   reused, so re-delivery is idempotent. Its body contains the request, plan summary and user
+   stories, the design document, the task list with statuses, attempts and test results, the
+   integration test results (with failing output), and the Q&A log. `pr_url` is stored in the
+   graph state and the runs table, and shown in the UI.
+
+If delivery fails (bad token, missing permission, network, non-empty repo), the run asks you
+to **retry delivery** or **finish without a PR**. The token is sent to git as an HTTP header
+through environment-based git config, scoped to `GITHUB_GIT_URL`. It never appears in remote
+URLs, `.git/config` or process arguments, and is scrubbed from error messages.
+
+Token permissions: classic `repo` scope, or fine-grained **Contents** and **Pull requests**
+read/write, plus **Administration** write if DevCrew should create repositories.
 
 ## Web UI (Phase 7)
 

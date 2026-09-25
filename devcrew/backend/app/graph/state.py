@@ -405,6 +405,8 @@ class RunState(TypedDict, total=False):
     escalation: dict[str, Any] | None
 
     pr_url: str | None
+    final_approved: bool  # set only by the final approval gate; delivery refuses without it
+    delivery_error: str | None
 
     # Phase 5: waves of parallel tasks and Coordinator plan changes (replan/split), applied by
     # the scheduler in order; `plan_changes_applied` counts how many were applied already.

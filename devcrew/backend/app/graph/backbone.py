@@ -26,7 +26,12 @@ from app.events.types import EventType
 from app.graph.coordinator import make_run_coordinator, make_run_escalate
 from app.graph.nodes.approvals import make_approve_design, make_approve_final, make_approve_plan
 from app.graph.nodes.architect import make_architect
-from app.graph.nodes.finish import make_done, make_github_delivery, make_integration
+from app.graph.nodes.finish import (
+    make_delivery_failed,
+    make_done,
+    make_github_delivery,
+    make_integration,
+)
 from app.graph.nodes.human import make_ask_human
 from app.graph.nodes.planner import make_planner
 from app.graph.nodes.scaffold import make_scaffold
@@ -149,7 +154,8 @@ def build_graph(
         "schedule": (make_schedule(deps), ("task_worker", "integration")),
         "integration": (make_integration(deps), ("approve_final",)),
         "approve_final": (make_approve_final(deps), ("github_delivery", "schedule")),
-        "github_delivery": (make_github_delivery(deps), ("done",)),
+        "github_delivery": (make_github_delivery(deps), ("done", "delivery_failed")),
+        "delivery_failed": (make_delivery_failed(deps), ("github_delivery", "done")),
         "done": (make_done(deps), (END,)),
     }
     for name, (fn, destinations) in nodes.items():
@@ -177,6 +183,8 @@ def initial_state(run_id: str, request: str, repo_target: str, create_repo: bool
         escalation=None,
         followups=0,
         pr_url=None,
+        final_approved=False,
+        delivery_error=None,
         wave=0,
         plan_changes=[],
         plan_changes_applied=0,

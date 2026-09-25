@@ -50,7 +50,7 @@ type Mode = 'none' | 'reject' | 'edit' | 'answer';
         @switch (mode()) {
           @case ('reject') {
             <mat-form-field appearance="outline" class="wide">
-              <mat-label>{{ pending().kind === 'escalation' ? 'Why give up on it?' : 'What should change?' }}</mat-label>
+              <mat-label>{{ labels().rejectPrompt }}</mat-label>
               <textarea matInput rows="4" [ngModel]="text()" (ngModelChange)="text.set($event)"></textarea>
             </mat-form-field>
           }
@@ -75,7 +75,7 @@ type Mode = 'none' | 'reject' | 'edit' | 'answer';
         @if (mode() === 'none') {
           @if (allows('approve')) {
             <button mat-flat-button (click)="send('approve')" [disabled]="busy()">
-              {{ pending().kind === 'escalation' ? 'Retry' : 'Approve' }}
+              {{ labels().approve }}
             </button>
           }
           @if (allows('answer')) {
@@ -88,7 +88,7 @@ type Mode = 'none' | 'reject' | 'edit' | 'answer';
           }
           @if (allows('reject')) {
             <button mat-stroked-button (click)="mode.set('reject')" [disabled]="busy()">
-              {{ pending().kind === 'escalation' ? 'Give up on task' : 'Reject' }}
+              {{ labels().reject }}
             </button>
           }
         } @else {
@@ -149,6 +149,18 @@ export class ActionPanelComponent {
     return [p.kind, typeof role === 'string' ? `from ${role}` : '', typeof task === 'string' ? `task ${task}` : '']
       .filter(Boolean)
       .join(' · ');
+  });
+
+  /** Button wording depends on what is being decided. */
+  readonly labels = computed(() => {
+    const p = this.pending();
+    if (p.kind !== 'escalation') {
+      return { approve: 'Approve', reject: 'Reject', rejectPrompt: 'What should change?' };
+    }
+    if (p.data['node'] === 'github_delivery') {
+      return { approve: 'Retry delivery', reject: 'Finish without PR', rejectPrompt: 'Why skip the pull request?' };
+    }
+    return { approve: 'Retry', reject: 'Give up on task', rejectPrompt: 'Why give up on it?' };
   });
 
   allows(action: ResumeAction): boolean {

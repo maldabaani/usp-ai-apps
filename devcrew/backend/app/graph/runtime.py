@@ -22,6 +22,7 @@ from langgraph.errors import GraphBubbleUp
 from app.config import Settings
 from app.events.bus import EventBus
 from app.events.types import EventType
+from app.github.delivery import GitHubDelivery
 from app.graph.state import PendingQuestion, QAEntry
 from app.llm.agent import AgentOutcome, ToolEventHook, run_agent
 from app.llm.client import LLMGateway
@@ -47,6 +48,7 @@ class GraphDeps:
     templates: TemplatesCatalog
     sandbox: Sandbox | None = None  # None: commands/tests are not executed
     rag: RagService | None = None  # None: no retrieval
+    github: GitHubDelivery | None = None  # None: no push / PR (benchmarks)
 
     async def emit(
         self,

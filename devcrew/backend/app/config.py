@@ -71,6 +71,10 @@ class Settings(BaseSettings):
     # --- GitHub -----------------------------------------------------------------------------
     github_token: SecretStr | None = None
     github_api_url: str = "https://api.github.com"
+    github_git_url: str = "https://github.com"
+    github_delivery_enabled: bool = Field(
+        default=True, description="Push + open a PR after final approval (off for benchmarks)."
+    )
 
     # --- Server -----------------------------------------------------------------------------
     cors_origins: list[str] = ["http://localhost:4200"]
@@ -80,7 +84,7 @@ class Settings(BaseSettings):
         description="Abort startup when a critical dependency (DB, Ollama, models, Docker) fails.",
     )
 
-    @field_validator("ollama_base_url", "github_api_url")
+    @field_validator("ollama_base_url", "github_api_url", "github_git_url")
     @classmethod
     def _strip_trailing_slash(cls, v: str) -> str:
         return v.rstrip("/")

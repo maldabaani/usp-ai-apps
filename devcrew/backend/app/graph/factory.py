@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from app.config import Settings
 from app.events.bus import EventBus
+from app.github.client import GitHubClient
+from app.github.delivery import GitHubDelivery
 from app.graph.runtime import GraphDeps
 from app.llm.client import LLMGateway
 from app.llm.models_config import load_models_config
@@ -31,6 +33,7 @@ def build_deps(
     llm: LLMGateway | None = None,
     sandbox: Sandbox | None = None,
     rag: RagService | None = None,
+    github: GitHubDelivery | None = None,
 ) -> GraphDeps:
     if sandbox is None and settings.sandbox_enabled:
         sandbox = Sandbox(DockerSandboxRunner(settings))
@@ -45,6 +48,13 @@ def build_deps(
             ),
             settings,
         )
+    if github is None and settings.github_delivery_enabled:
+        token = settings.github_token.get_secret_value() if settings.github_token else ""
+        github = GitHubDelivery(
+            lambda: GitHubClient(token, settings.github_api_url),
+            token=token,
+            git_url=settings.github_git_url,
+        )
     return GraphDeps(
         settings=settings,
         llm=llm,
@@ -54,4 +64,5 @@ def build_deps(
         templates=TemplatesCatalog(settings.templates_dir),
         sandbox=sandbox,
         rag=rag,
+        github=github,
     )
