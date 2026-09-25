@@ -59,9 +59,8 @@ services:
       chromadb:
         condition: service_started
 
-  # Enabled in Phase 7 (Angular UI). Start with: docker compose --profile ui up
+  # Angular UI (static bundle served by nginx). It calls the backend at http://localhost:8080.
   frontend:
-    profiles: ["ui"]
     build: ./frontend
     ports:
       - "127.0.0.1:4200:4200"

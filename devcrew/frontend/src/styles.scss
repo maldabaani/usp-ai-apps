@@ -1,0 +1,16 @@
+// Local-first: no web fonts. Material's typescale variables all point at the system UI font.
+$app-font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+
+:root {
+  --mat-sys-brand-font-family: #{$app-font};
+  --mat-sys-plain-font-family: #{$app-font};
+  @each $scale in display, headline, title, label, body {
+    @each $size in large, medium, small {
+      --mat-sys-#{$scale}-#{$size}-font: #{$app-font};
+    }
+  }
+}
+
+html, body { height: 100%; }
+body { margin: 0; font-family: $app-font; background: #fbfcfe; }
+code, pre { font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace; }

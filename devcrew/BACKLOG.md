@@ -88,6 +88,21 @@ robustness, **P3** = nice to have.
   repository locks are in-process. Running several backend replicas would need a job queue and
   cross-process pub/sub (out of scope: single local user).
 
+## Web UI
+
+- [ ] **BL-070** (P2, from P7) The UI's backend URL is fixed at build time
+  (`frontend/src/environments/*.ts`, default `http://localhost:8080`). Add a runtime
+  `config.json` if the backend ever runs on another host or port.
+- [ ] **BL-071** (P2, from P7) UI verified with scripted models only (Playwright run through the
+  whole flow). Check rendering with real model output: very long design docs and large diffs
+  (the diff viewer renders every line; add virtual scrolling if needed).
+- [ ] **BL-072** (P3, from P7) The timeline keeps every event of the run in memory and the file
+  explorer is a flat, indented list. Both are fine for local runs; window/tree them if runs grow
+  large.
+- [ ] **BL-073** (P3, from P7) Frontend unit tests cover the SSE client, API client, diff/DAG
+  helpers, action panel, new-run form and run detail; there is no committed browser E2E test
+  (the Playwright flow was run manually). Phase 9's end-to-end demo could reuse it.
+
 ## Retrieval (RAG)
 
 - [ ] **BL-030** (P2, from P4) The index mirrors the integration branch only: code of in-flight
@@ -120,3 +135,6 @@ robustness, **P3** = nice to have.
   `ref` values are limited to `integration`, `main` and `task:<id>`; `?last_event_id=` query
   parameter as an alternative to the `Last-Event-ID` header; compose ports bound to
   `127.0.0.1`.
+- [x] **BL-048** (from P7) UI uses Angular 19 (spec: 17+), no icon/web fonts (system UI font, no
+  CDN requests), health badge tooltip via `title`; the frontend compose service is no longer
+  behind a profile (the acceptance criteria need it on `docker compose up`).

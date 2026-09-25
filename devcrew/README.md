@@ -7,10 +7,10 @@ approvals for the plan, the design and the final result, then open a GitHub PR.
 
 All LLM calls go to a **local Ollama**. There are no cloud LLM calls anywhere.
 
-> Status: **Phase 6**: HTTP API with SSE replay, resume/cancel and restart recovery, on top of
-> the backbone graph (five roles, parallel developers in git worktrees, LLM Coordinator, agent
-> Q&A, Docker sandboxes, starter templates, per-run RAG). UI (7), GitHub delivery (8) and the
-> benchmark (9) come next.
+> Status: **Phase 7**: Angular UI on top of the HTTP API (SSE replay, resume/cancel, restart
+> recovery) and the backbone graph (five roles, parallel developers in git worktrees, LLM
+> Coordinator, agent Q&A, Docker sandboxes, starter templates, per-run RAG). GitHub delivery
+> (8) and the benchmark (9) come next.
 > Open issues and deferred work: [BACKLOG.md](BACKLOG.md).
 
 ## Architecture
@@ -69,6 +69,43 @@ Design notes:
   summarizes failures for the Developer.
 - With `SANDBOX_ENABLED=false`, QA writes tests but they are not executed: results show
   `ran: false` and the task proceeds.
+
+## Web UI (Phase 7)
+
+`docker compose up` serves the UI at **http://localhost:4200** (nginx, static bundle). It calls
+the backend at `http://localhost:8080`, set in `frontend/src/environments/`.
+
+- **Runs list**: status, repository, PR link; refreshes every 5s.
+- **New run**: feature request, `owner/repo`, "create repo if missing" (typed reactive form
+  with validation).
+- **Run detail**:
+  - **Action panel**, one per pending interrupt. Approvals offer approve / reject with
+    feedback / edit (the plan or design as JSON). Questions get an answer box. Escalations
+    offer retry / retry with guidance / give up. Only the actions the backend allows are shown.
+  - **Timeline**: live events over SSE (toggle to include tool calls).
+  - **Tasks**: the DAG as **parallel lanes**, one column per wave with tasks in their lanes,
+    then the planned layers. Selecting a task shows its review issues (with rule refs),
+    test results and logs, developer feedback, and its **diff**.
+  - **Plan** and **Design** viewers (the design document is rendered from markdown and
+    sanitized), **Q&A** log, and a **Files** explorer for the integration branch, `main` or
+    any task branch.
+  - PR link, cancel button, and the event stream's connection state.
+- **SSE client** (`core/run-events.service.ts`):
+  - Exposes events, connection state and the last event id as signals, de-duplicated by id.
+  - The browser's `EventSource` reconnects with `Last-Event-ID`. If the connection is
+    closed, the client reconnects with exponential backoff and `?last_event_id=`.
+  - The stream closes itself once the run is finished.
+- Stack: Angular 19, standalone components, signals, `@if`/`@for`, OnPush, Angular Material,
+  no web fonts (system UI font; works offline).
+
+Development:
+```bash
+cd devcrew/frontend
+npm ci
+npx ng serve                      # http://localhost:4200, backend on :8080
+npx ng lint
+npx ng test --watch=false --browsers=ChromeHeadless
+```
 
 ## HTTP API (Phase 6)
 
@@ -267,7 +304,7 @@ The backend container runs `alembic upgrade head` on start. With `STARTUP_HEALTH
 (default) it refuses to start when a critical dependency is down and logs how to fix it.
 `GITHUB_TOKEN` is reported but is not critical: it is only needed for PR delivery.
 
-The UI (`frontend`, Phase 7) is behind a compose profile: `docker compose --profile ui up`.
+The UI is served at http://localhost:4200.
 
 Note that `WORKSPACES_DIR` is mounted at the **same absolute path** in the backend container.
 Sandbox containers are started through the host Docker socket, so their bind mounts must be
