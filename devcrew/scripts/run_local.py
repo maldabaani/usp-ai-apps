@@ -28,7 +28,6 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
-import httpx
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
 
@@ -43,7 +42,7 @@ from app.graph.checkpointer import postgres_checkpointer
 from app.graph.factory import build_deps, build_llm
 from app.graph.interrupts import ResumePayload
 from app.graph.runner import PendingInterrupt, RunDriver, RunOutcome
-from app.health import check_sandbox_images, fetch_ollama_models, missing_models
+from app.preflight import PreflightError, preflight
 
 AUTO_ANSWER = "Use your best judgment and document the assumption."
 
@@ -156,29 +155,6 @@ def ask(pending: PendingInterrupt, auto: bool) -> ResumePayload:
 
 
 # ------------------------------------------------------------------------------------ setup
-async def preflight(settings: Settings) -> None:
-    llm = build_llm(settings)
-    try:
-        async with httpx.AsyncClient(timeout=5) as http:
-            available = await fetch_ollama_models(http, settings.ollama_base_url)
-    except httpx.HTTPError as exc:
-        sys.exit(
-            f"Ollama is not reachable at {settings.ollama_base_url} ({exc}). "
-            "Start `ollama serve` or set OLLAMA_BASE_URL."
-        )
-    missing = missing_models(llm.models.required_models(), available)
-    if missing:
-        sys.exit("Missing models. Run: " + " && ".join(f"ollama pull {m}" for m in missing))
-    if settings.sandbox_enabled:
-        try:
-            await check_sandbox_images(settings)
-        except Exception as exc:
-            sys.exit(
-                f"Sandbox not ready: {exc}. Run scripts/build_sandbox_images.sh "
-                "(or set SANDBOX_ENABLED=false to skip executing tests)."
-            )
-
-
 @contextlib.asynccontextmanager
 async def infrastructure(
     settings: Settings, memory: bool
@@ -210,7 +186,10 @@ async def main() -> None:
 
     env_file = DEVCREW_DIR / ".env"
     settings = Settings(_env_file=env_file if env_file.exists() else None)
-    await preflight(settings)
+    try:
+        await preflight(settings, build_llm(settings).models.required_models())
+    except PreflightError as exc:
+        sys.exit(str(exc))
 
     async with infrastructure(settings, args.memory) as (bus, saver, runs):
         driver = RunDriver(build_graph(build_deps(settings, bus), saver), bus, runs)

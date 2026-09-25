@@ -69,10 +69,8 @@ class FakeGitHub:
             if self.bare(parts[1], parts[2]).exists():
                 return httpx.Response(200, json={"full_name": f"{parts[1]}/{parts[2]}"})
             return httpx.Response(404, json={"message": "Not Found"})
-        if (
-            (method == "POST"
-            and path in ("/user/repos",))
-            or (method == "POST" and parts[0] == "orgs")
+        if (method == "POST" and path in ("/user/repos",)) or (
+            method == "POST" and parts[0] == "orgs"
         ):
             body = json.loads(request.content)
             owner = self.login if path == "/user/repos" else parts[1]

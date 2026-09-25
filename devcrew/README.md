@@ -70,6 +70,62 @@ Design notes:
 - With `SANDBOX_ENABLED=false`, QA writes tests but they are not executed: results show
   `ran: false` and the task proceeds.
 
+## Benchmark (Phase 9)
+
+`benchmarks/` holds 12 tasks: 4 per stack (Python/FastAPI, Java/Spring Boot, Angular),
+from a single CRUD resource (difficulty 1) to a multi-module service (difficulty 4). Each task
+has a precise request in `benchmarks/tasks/<stack>.yaml` and a **hidden** acceptance suite in
+`benchmarks/hidden_tests/<task_id>/` that the agents never see (93 tests in total). See
+[`benchmarks/README.md`](benchmarks/README.md) for the conventions.
+
+```bash
+cd devcrew/backend && . .venv/bin/activate
+docker compose up -d chromadb            # Postgres is not needed (in-memory checkpoints)
+export OLLAMA_BASE_URL=http://localhost:11434 CHROMA_HOST=localhost
+python ../scripts/run_benchmark.py --list                     # tasks and hidden-test counts
+python ../scripts/run_benchmark.py --stack python             # or --task py-todo-crud ...
+python ../scripts/run_benchmark.py \
+    --models-config config/models.yaml --models-config /path/to/other-models.yaml   # compare
+```
+
+Runs are headless and fully automatic:
+- Every approval is approved.
+- Every agent question is answered with "Use your best judgment and document the assumption."
+- Escalations are retried with that same guidance up to `--max-escalations` times (default 2),
+  then given up, so a stuck run always ends.
+- `--task-timeout-min` (default 120) caps a single run.
+- Nothing is pushed to GitHub, whatever `GITHUB_DELIVERY_ENABLED` says.
+
+Scoring: after a run, its integration branch is exported (`git archive`) to
+`$WORKSPACES_DIR/<run_id>/hidden-eval`, the hidden tests are copied in, and the suite runs in
+the sandbox like any other test command (dependency install with network, tests offline).
+Tests that never ran (for example a compile error or a missing component) count as failures
+against the suite size.
+
+Per task, `benchmarks/results/<timestamp>.json` and `.md` record:
+- run status and wall time;
+- hidden tests passed/total and pass rate;
+- dev iterations (including the attempts before an escalation retry reset the counter);
+- escalations, and questions to the human and to other agents;
+- Coordinator calls, and planned/merged/failed tasks;
+- whether the project's own tests passed at integration;
+- token counts (total and per role).
+
+A summary per models config is included, plus a comparison table when several configs are
+given. Results are rewritten after each task, so an interrupted benchmark keeps what it has.
+
+### End-to-end demo
+
+With the stack up (`docker compose up`, Ollama on the host, `GITHUB_TOKEN` set):
+
+1. Open http://localhost:4200 and click **New run**. Enter
+   "Build a FastAPI TODO API with CRUD and pytest tests" and your `owner/repo`; tick "Create the
+   repository if it is missing" if it does not exist yet.
+2. Review and approve the plan, then the design (or reject with feedback, or edit the JSON).
+3. Watch the task lanes, answer agent questions in the action panel, and inspect task diffs.
+4. Approve the final result. The integration branch is pushed and the PR link appears next to
+   the run status.
+
 ## GitHub delivery (Phase 8)
 
 `backend/app/github/`. Delivery runs only after you approve the final result: the approval gate

@@ -1,0 +1,94 @@
+# Angular benchmark tasks. The hidden acceptance specs (benchmarks/hidden_tests/<id>/) live in
+# src/hidden/ and use TestBed with the public API pinned below (file paths, class names,
+# inputs/outputs and data-testid attributes), so those must match exactly.
+stack: angular
+tasks:
+  - id: ng-counter
+    difficulty: 1
+    title: Counter component
+    request: |
+      Build an Angular counter component with Jasmine/Karma specs and show it on the app page.
+
+      Contract:
+      - Standalone `CounterComponent` exported from `src/app/counter/counter.component.ts`,
+        selector `app-counter`, OnPush.
+      - Input `start` (number, default 0) sets the initial count.
+      - The current count is rendered in an element with `data-testid="count"`.
+      - Buttons with `data-testid="increment"`, `data-testid="decrement"` and
+        `data-testid="reset"`: +1, -1, and back to `start`.
+      - The count never goes below 0: the decrement button is disabled at 0.
+      - Output `changed` emits the new count after every change.
+
+  - id: ng-todo-list
+    difficulty: 2
+    title: TODO list component with filters
+    request: |
+      Build an Angular TODO list component (signals, standalone, OnPush) with Jasmine/Karma
+      specs and show it on the app page.
+
+      Contract:
+      - Standalone `TodoListComponent` exported from `src/app/todo-list/todo-list.component.ts`,
+        selector `app-todo-list`. State is kept in the component (signals), no backend.
+      - A text input `data-testid="new-todo"` and a button `data-testid="add"` add a todo with
+        the trimmed input text and clear the input; blank text is ignored. Pressing Enter in the
+        input also adds.
+      - Each todo is an element `data-testid="todo-item"` containing its title, a checkbox
+        `data-testid="toggle"` (checked when done) and a button `data-testid="remove"`.
+        Done items also get the CSS class `done`.
+      - `data-testid="remaining"` shows "<n> items left" (n = todos not done; "1 item left" for
+        one).
+      - Filter buttons `data-testid="filter-all"`, `data-testid="filter-active"` and
+        `data-testid="filter-done"` switch which todos are listed (default: all).
+      - A button `data-testid="clear-done"` removes all done todos.
+
+  - id: ng-signup-form
+    difficulty: 3
+    title: Signup form with validation
+    request: |
+      Build an Angular signup form with reactive forms, validation messages and Jasmine/Karma
+      specs, and show it on the app page.
+
+      Contract:
+      - Standalone `SignupFormComponent` exported from
+        `src/app/signup/signup-form.component.ts`, selector `app-signup-form`, using
+        ReactiveFormsModule.
+      - Inputs (form fields): `data-testid="email"`, `data-testid="password"`,
+        `data-testid="confirm"`.
+      - Rules: email required and a valid email; password required, at least 8 characters and
+        containing at least one digit; confirm must equal password.
+      - Error messages appear only after the field was touched (blurred), in elements
+        `data-testid="email-error"`, `data-testid="password-error"` and
+        `data-testid="confirm-error"`; they are absent while the field is valid.
+      - The submit button `data-testid="submit"` is disabled while the form is invalid.
+      - Submitting a valid form emits the output `submitted` with
+        `{ email: string, password: string }` and then resets the form.
+
+  - id: ng-shopping-cart
+    difficulty: 4
+    title: Product list and shopping cart
+    request: |
+      Build a multi-module Angular shopping cart: a cart service with signals, a product list
+      and a cart view, with Jasmine/Karma specs, and show both on the app page.
+
+      Contract:
+      - `Product` interface `{ id: string; name: string; price: number }` exported from
+        `src/app/cart/product.ts`.
+      - `CartService` (`@Injectable({ providedIn: 'root' })`) exported from
+        `src/app/cart/cart.service.ts` with:
+        - `items`: a signal of `{ product: Product; quantity: number }[]` (read as `items()`),
+        - `add(product: Product)`: adds 1 (a new line or +1 on the existing line),
+        - `remove(productId: string)`: removes the line,
+        - `setQuantity(productId: string, quantity: number)`: quantity <= 0 removes the line,
+        - `count`: computed signal with the total number of units,
+        - `total`: computed signal with the sum of price * quantity,
+        - `clear()`: empties the cart.
+      - Standalone `ProductListComponent` exported from
+        `src/app/products/product-list.component.ts` (selector `app-product-list`) with input
+        `products: Product[]`; renders one `data-testid="product"` element per product with
+        its name and an add button `data-testid="add-<id>"` that calls `CartService.add`.
+      - Standalone `CartComponent` exported from `src/app/cart/cart.component.ts` (selector
+        `app-cart`): shows `data-testid="cart-empty"` when the cart is empty; otherwise one
+        `data-testid="cart-line"` per line (name, quantity and a remove button
+        `data-testid="remove-<id>"`), `data-testid="cart-count"` with the number of units and
+        `data-testid="cart-total"` with the total formatted with exactly 2 decimals (e.g.
+        `12.50`, no currency symbol).

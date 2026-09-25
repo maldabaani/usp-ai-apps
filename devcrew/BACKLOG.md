@@ -22,6 +22,17 @@ robustness, **P3** = nice to have.
 - [ ] **BL-005** (P1, from P8) First delivery to real GitHub with your token: create-repo (user
   and org), push to an empty repo, PR creation. Tests used a mocked REST API and bare git
   repositories on disk; the dev sandbox did not push anywhere (outward-facing action).
+- [ ] **BL-090** (P1, from P9) Run the full benchmark (12 tasks) against the real Ollama
+  models and commit or record the baseline `benchmarks/results/*.md`. So far the runner was
+  only exercised with the scripted fake model; the real sandbox scored the hidden suites for
+  Python and Java reference solutions (100%) and the bare template (1/9).
+- [ ] **BL-091** (P2, from P9) The Angular hidden suites were checked in headless Chromium
+  on the host, not inside `devcrew-sandbox-node` (image not buildable in the dev sandbox,
+  see BL-003).
+- [ ] **BL-092** (P2, from P9) The P9 end-to-end demo (UI → plan/design approval → question
+  answered in the UI → final approval → PR) ran with the fake Ollama server and a local fake
+  GitHub API (git remote over `file://`). It needs repeating with real Ollama and GitHub
+  (BL-002, BL-005). The node/mixed sandbox images were stand-in tags for that demo only.
 
 ## Robustness
 
@@ -117,7 +128,23 @@ robustness, **P3** = nice to have.
   large.
 - [ ] **BL-073** (P3, from P7) Frontend unit tests cover the SSE client, API client, diff/DAG
   helpers, action panel, new-run form and run detail; there is no committed browser E2E test
-  (the Playwright flow was run manually). Phase 9's end-to-end demo could reuse it.
+  (the Playwright flow was run manually). *P9: the same flow, extended to the PR link, was
+  run again for the end-to-end demo; it is still not committed (Playwright is not a project
+  dependency).*
+
+## Benchmark
+
+- [ ] **BL-093** (P2, from P9) Hidden tests check the contract pinned in each request, so a
+  model that deviates slightly (e.g. 400 instead of 422, a different `data-testid`) loses
+  those tests. That is intended: the tasks test instruction following as well. Revisit if
+  results turn out dominated by such near-misses.
+- [ ] **BL-094** (P3, from P9) Benchmark tasks run one at a time: per-run token counts rely
+  on that (the gateway's usage tracker is swapped per task). Running tasks concurrently
+  would need per-run usage tracking.
+- [ ] **BL-095** (P3, from P9) The benchmark uses in-memory checkpoints and events. An
+  interrupted benchmark cannot resume a run, but results are rewritten after every task.
+- [ ] **BL-096** (P3, from P9) The reference solutions used to validate the hidden suites
+  are not committed. Add them with a `--validate-hidden` mode if the suites change often.
 
 ## Retrieval (RAG)
 
@@ -157,3 +184,11 @@ robustness, **P3** = nice to have.
 - [x] **BL-049** (from P8) Additions: settings `GITHUB_GIT_URL`, `GITHUB_DELIVERY_ENABLED`; state
   fields `final_approved`, `delivery_error`; a `delivery_failed` node (retry / finish without
   PR); created repositories are private and empty (`auto_init: false`).
+- [x] **BL-097** (from P9) Additions:
+  - `app/benchmark/` package; `app/preflight.py`, shared by both CLI scripts.
+  - An automatic escalation policy for benchmark runs (retry with the standard answer up to
+    `--max-escalations`, then give up). The spec only defines auto-approval and
+    auto-answers.
+  - The benchmark forces GitHub delivery off.
+  - Extra metrics: Coordinator calls, task counts, per-role tokens, and the project's own
+    integration test result.
