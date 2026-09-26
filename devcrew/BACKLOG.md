@@ -15,7 +15,7 @@ robustness, **P3** = nice to have.
   used scripted fake models. Tune prompts, `num_ctx`/`num_predict`, and check tool-calling and
   JSON-schema output quality per role. *A first real run with `qwen2.5:3b` on CPU (no GPU
   available) found and fixed five bugs; see [docs/REAL-RUN.md](docs/REAL-RUN.md) and BL-180 to
-  BL-187. The intended 14B-on-GPU setup is still unverified.*
+  BL-189. The intended 14B-on-GPU setup is still unverified.*
 - [ ] **BL-003** (P1, from P3) Build `devcrew-sandbox-node` and `devcrew-sandbox-mixed` and run
   the Angular template's `ng test` inside the node image (only verified on the host so far;
   `deb.debian.org` was blocked in the dev sandbox).
@@ -337,6 +337,13 @@ never pushes to the default branch of an existing repo, and never pushes before 
   only covers consecutive steps. De-duplicate calls within one answer.
 - [ ] **BL-187** (P3) CPU-only is a smoke test: a small API did not finish in 4 hours with a 3B
   model. Document the minimum hardware; consider a smaller default `num_predict` for CPU.
+- [ ] **BL-188** (P2) The same question was asked three times across attempts of one task, and
+  the Architect agent answered it "no", then "yes", before it reached the human. Answer a
+  repeated question from the task's Q&A log, and send a question to the human when agent answers
+  contradict each other.
+- [ ] **BL-189** (P2) Splits can nest without limit (T1 → T1-b → T1-b-a): every sub-task gets its
+  own `MAX_COORDINATOR_ACTIONS`, so a task that keeps failing is split again and again. Limit the
+  split depth (e.g. one level) and escalate to the human after that.
 
 ## Parity with commercial coding agents (from the P10 gap review)
 

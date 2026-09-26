@@ -99,7 +99,7 @@ worked with real model output.
 
 ## Still open
 
-Each finding is tracked in the [backlog](../BACKLOG.md) (BL-180 to BL-187).
+Each finding is tracked in the [backlog](../BACKLOG.md) (BL-180 to BL-189).
 
 - **Too many questions (BL-180).** The small model asked about things the request or its own
   tools answer. The per-node limit (3) contains it, but each question waits for a human.
@@ -117,5 +117,9 @@ Each finding is tracked in the [backlog](../BACKLOG.md) (BL-180 to BL-187).
 - **Parallel duplicate tool calls (BL-186).** The Reviewer issued the same `search_codebase`
   call several times in one answer. They are cheap, but the new repeat guard only covers
   consecutive steps.
+- **Repeated questions, contradictory answers (BL-188).** One developer question was asked three
+  times across attempts. The Architect agent answered "no", then "yes", before it came to me.
+- **Unlimited split depth (BL-189).** Every sub-task gets its own Coordinator budget, so T1-b
+  was split again (T1-b-a, T1-b-b) and could have gone on.
 - **Speed on CPU (BL-187).** A small API did not finish in 4 hours. CPU-only is a smoke test,
   not a way to use DevCrew; the intended setup (14B on a GPU) is still unverified (BL-002).
