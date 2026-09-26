@@ -248,10 +248,10 @@ class RunManager:
         pr_url = state.get("pr_url")
         errors = state.get("errors") or []
         failed = outcome.status in (RunStatus.FAILED, RunStatus.CANCELLED)
-        if pr_url or (failed and errors):
-            await self.runs.update(
-                run_id, pr_url=pr_url, error=errors[-1] if failed and errors else None
-            )
+        if pr_url or (failed and (errors or outcome.error)):
+            # the exception that stopped the run beats an older, handled error in the state
+            error = (outcome.error or errors[-1]) if failed else None
+            await self.runs.update(run_id, pr_url=pr_url, error=error)
 
     async def _release(self, run_id: str) -> None:
         await release_run_resources(self.deps, run_id)

@@ -121,3 +121,10 @@ async def test_git_hooks_are_disabled(tmp_path: Path) -> None:
     (tmp_path / "a").write_text("a")
     await repo.commit_all("x")
     assert not marker.exists()
+
+
+def test_read_file_always_returns_a_useful_page() -> None:
+    from app.tools.workspace import MIN_READ_LINES, ReadFileArgs
+
+    assert ReadFileArgs(path="docs/design.md", max_lines=4).max_lines == MIN_READ_LINES
+    assert ReadFileArgs(path="a.py", max_lines=300).max_lines == 300

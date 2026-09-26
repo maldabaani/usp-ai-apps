@@ -11,7 +11,7 @@ import os
 from collections.abc import Callable, Sequence
 from pathlib import Path, PurePosixPath
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.tools.base import ToolError, ToolSpec
 
@@ -113,10 +113,20 @@ class Workspace:
         return entries
 
 
+MIN_READ_LINES = 100
+
+
 class ReadFileArgs(BaseModel):
     path: str = Field(description="File path relative to the project root.")
     start_line: int = Field(default=1, ge=1)
     max_lines: int = Field(default=200, ge=1, le=MAX_READ_LINES)
+
+    @field_validator("max_lines")
+    @classmethod
+    def _at_least_a_page(cls, v: int) -> int:
+        # Small models ask for a few lines at a time and then page through the file one call
+        # per step (a real run read a 62-line doc in 16 calls). Always return a useful page.
+        return max(v, MIN_READ_LINES)
 
 
 class WriteFileArgs(BaseModel):

@@ -33,6 +33,14 @@ TOOL_SCHEMA_OVERHEAD_TOKENS = 150  # per bound tool, rough
 # withdrawn for the rest of the turn (small models loop, e.g. asking again after the question
 # limit: one real run spent 27 model calls that way).
 REPEAT_LIMIT = 2
+# Ollama answers HTTP 500 when the model's output ends inside a tool call (the answer hit
+# num_predict). That is a malformed call, not a crash: the model gets one corrective retry.
+CUT_OFF_MARKERS = ("invalid tool call arguments", "unexpected end of JSON")
+CUT_OFF_FEEDBACK = (
+    "Your last reply was cut off at the output limit in the middle of a tool call, so nothing "
+    "was done. Keep each tool call short: put less code in one file (split it into several "
+    "modules) and do not repeat content."
+)
 
 ToolEventHook = Callable[[Literal["tool_call", "tool_result"], dict[str, Any]], Awaitable[None]]
 
@@ -110,7 +118,22 @@ async def run_agent(
 
     for step in range(1, max_steps + 1):
         compact_messages(transcript, budget)
-        ai = await gateway.ainvoke(role, transcript, tools=schemas or None)
+        try:
+            ai = await gateway.ainvoke(role, transcript, tools=schemas or None)
+        except Exception as exc:
+            if not any(marker in str(exc) for marker in CUT_OFF_MARKERS):
+                raise
+            if retried_malformed:
+                return AgentOutcome(
+                    kind="error",
+                    messages=transcript,
+                    error=f"tool call cut off at the output limit twice: {exc}",
+                    steps=step,
+                    tool_calls=tool_calls_made,
+                )
+            retried_malformed = True
+            transcript.append(HumanMessage(content=CUT_OFF_FEEDBACK))
+            continue
         transcript.append(ai)
 
         problems: list[str] = []

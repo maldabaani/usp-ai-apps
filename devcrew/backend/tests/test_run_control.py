@@ -253,3 +253,26 @@ async def test_event_cache_reads_only_new_events(tmp_path: Path) -> None:
     events = await cache.events("r")
     assert [e.payload["status"] for e in events][-1] == "executing" and len(events) == 4
     assert calls == [0, 3]  # the second read started after the last cached event
+
+
+async def test_a_failed_run_reports_the_exception_not_an_older_error(tmp_path: Path) -> None:
+    """Real run: QA crashed, but the run showed the Architect's earlier (handled) error."""
+    from app.db.models import RunStatus
+    from app.graph.runner import RunOutcome
+
+    old = "architect: step limit (30) reached without a final answer"
+    async with api(tmp_path) as a:
+        run_id = await create(a)
+        manager = a.container.manager
+
+        async def state(_: str) -> dict[str, Any]:
+            return {"errors": [old]}
+
+        manager.driver.state = state  # type: ignore[method-assign,assignment]
+        failed = RunOutcome("failed", RunStatus.FAILED, error="ResponseError: cut")
+        await manager._sync(run_id, failed)
+        run = await manager.runs.get(run_id)
+        assert run is not None and run.error == "ResponseError: cut"
+        await manager._sync(run_id, RunOutcome("failed", RunStatus.FAILED))
+        run = await manager.runs.get(run_id)
+        assert run is not None and run.error == old

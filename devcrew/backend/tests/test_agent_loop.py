@@ -163,3 +163,39 @@ async def test_repeating_a_tool_after_other_work_is_fine() -> None:
     assert out.kind == "final" and out.tool_calls == 4
     # the last two calls were identical and consecutive: echo is withdrawn before the answer
     assert b.calls[-1].tool_names == ()
+
+
+async def test_a_tool_call_cut_off_by_the_output_limit_is_retried_not_fatal() -> None:
+    """Real run: Ollama answered 500 'invalid tool call arguments' when the answer hit
+    num_predict inside write_file, and the whole run failed."""
+    cut = RuntimeError(
+        'llama-server returned invalid tool call arguments for "write_file": unexpected end of '
+        "JSON input (status code: 500)"
+    )
+    replies: list[object] = [cut, tool_call("echo", text="small"), final("done")]
+
+    def dev(call: Call) -> AIMessage:
+        reply = replies.pop(0)
+        if isinstance(reply, Exception):
+            raise reply
+        return reply  # type: ignore[return-value]
+
+    b = brain(dev)
+    out = await run_agent(gateway(b), Role.DEVELOPER, MESSAGES, [ECHO], max_steps=6)
+    assert out.kind == "final" and out.final_text == "done"
+    assert "cut off at the output limit" in str(b.calls[1].messages[-1].content)
+
+    replies[:] = [cut, cut]
+    out = await run_agent(gateway(brain(dev)), Role.DEVELOPER, MESSAGES, [ECHO], max_steps=6)
+    assert out.kind == "error" and "cut off" in (out.error or "")
+
+
+async def test_other_model_errors_still_raise() -> None:
+    def dev(call: Call) -> AIMessage:
+        raise ConnectionError("ollama is down")
+
+    try:
+        await run_agent(gateway(brain(dev)), Role.DEVELOPER, MESSAGES, [ECHO], max_steps=3)
+    except ConnectionError:
+        return
+    raise AssertionError("expected ConnectionError")
