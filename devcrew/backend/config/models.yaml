@@ -1,0 +1,33 @@
+# Model configuration for DevCrew roles.
+#
+# One chat model is shared by all roles by default so Ollama never has to swap
+# weights on a 16-24GB GPU. Override per role only if you have the VRAM for it.
+# Every role inherits `defaults`; keys under `roles.<role>` override them.
+
+embeddings:
+  model: nomic-embed-text
+
+defaults:
+  model: qwen2.5-coder:14b
+  num_ctx: 16384
+  temperature: 0.1
+  # Tokens reserved for the model's answer; context builders keep prompts
+  # within num_ctx - num_predict.
+  num_predict: 4096
+  # Structured outputs: "schema" (Ollama JSON-schema constrained decoding), "json", or "none".
+  structured_format: schema
+
+roles:
+  planner:
+    temperature: 0.3
+  architect:
+    temperature: 0.3
+  developer:
+    temperature: 0.1
+  reviewer:
+    temperature: 0.1
+  qa:
+    temperature: 0.1
+  # The Coordinator is not a persona; it only handles exceptions.
+  coordinator:
+    temperature: 0.1

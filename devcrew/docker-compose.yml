@@ -1,0 +1,75 @@
+# DevCrew local stack. Ollama is NOT here: it runs on the host (GPU) and is reached via
+# OLLAMA_BASE_URL (default http://host.docker.internal:11434).
+name: devcrew
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-devcrew}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-devcrew}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-devcrew} -d ${POSTGRES_DB:-devcrew}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  chromadb:
+    image: chromadb/chroma:${CHROMA_VERSION:-1.5.9}
+    environment:
+      IS_PERSISTENT: "TRUE"
+      ANONYMIZED_TELEMETRY: "FALSE"
+    ports:
+      - "127.0.0.1:${CHROMA_PORT:-8000}:8000"
+    volumes:
+      - chromadata:/data
+
+  backend:
+    build: ./backend
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-devcrew}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-devcrew}
+      CHROMA_HOST: chromadb
+      CHROMA_PORT: "8000"
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      WORKSPACES_DIR: ${WORKSPACES_DIR:?set WORKSPACES_DIR in .env (absolute host path)}
+      RULES_DIR: /devcrew/rules
+      TEMPLATES_DIR: /devcrew/templates
+    ports:
+      - "127.0.0.1:8080:8080"  # no auth by design: never expose beyond localhost
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # Docker-out-of-Docker: sandbox containers are siblings started via the host daemon.
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Same absolute path inside and outside the container, so sandbox bind mounts
+      # created by the backend resolve on the host.
+      - ${WORKSPACES_DIR}:${WORKSPACES_DIR}
+      # Editable standards and starter templates (no rebuild needed after edits).
+      - ./rules:/devcrew/rules:ro
+      - ./templates:/devcrew/templates:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      chromadb:
+        condition: service_started
+
+  # Angular UI (static bundle served by nginx). It calls the backend at http://localhost:8080.
+  frontend:
+    build: ./frontend
+    environment:
+      # where the browser reaches the backend (written to config.json at container start)
+      DEVCREW_API_URL: ${DEVCREW_API_URL:-http://localhost:8080}
+    ports:
+      - "127.0.0.1:4200:4200"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  chromadata:
