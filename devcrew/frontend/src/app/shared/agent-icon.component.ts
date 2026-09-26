@@ -14,6 +14,7 @@ export const ICON_STYLE: Record<string, { color: string; emblem: string; robot: 
   delivery: { color: '#3ddc84', emblem: '', robot: false },
   repository: { color: '#8fd3ff', emblem: '', robot: false },
   gates: { color: '#2de2b0', emblem: '', robot: false },
+  watch: { color: '#3ee6ff', emblem: '', robot: false },
 };
 
 /**
@@ -73,6 +74,12 @@ export const ICON_STYLE: Record<string, { color: string; emblem: string; robot: 
           @case ('gates') {
             <path d="M24 4l16 6v12c0 11-7 18-16 22C15 40 8 33 8 22V10z" fill="#0b1426" [attr.stroke]="style().color" stroke-width="2" />
             <path d="M17 24l5 5 9-10" fill="none" [attr.stroke]="style().color" stroke-width="2.6" />
+          }
+          @case ('watch') {
+            <path d="M3 24c5-9 12-14 21-14s16 5 21 14c-5 9-12 14-21 14S8 33 3 24z" fill="#0b1426"
+                  [attr.stroke]="style().color" stroke-width="2" />
+            <circle cx="24" cy="24" r="7" fill="none" [attr.stroke]="style().color" stroke-width="2.4" />
+            <circle cx="24" cy="24" r="2.8" [attr.fill]="style().color" class="eye" />
           }
           @default {
             <path d="M24 5l17 9v20l-17 9-17-9V14z" fill="#0b1426" [attr.stroke]="style().color" stroke-width="2" />

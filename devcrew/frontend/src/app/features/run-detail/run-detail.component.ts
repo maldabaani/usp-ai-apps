@@ -62,6 +62,9 @@ const REFRESH_DEBOUNCE_MS = 300;
               <span class="badge">existing repo · {{ run.mode === 'quick' ? 'quick fix' : 'full' }}
                 @if (run.base_branch) { · base {{ run.base_branch }} }</span>
             }
+            @if (run.issue; as issue) {
+              <a class="badge issue" [href]="issue.url" target="_blank" rel="noopener">issue #{{ issue.number }}</a>
+            }
             @if (run.integration_branch) { <code>{{ run.integration_branch }}</code> }
             @if (run.pr_url) {
               <a [href]="run.pr_url" target="_blank" rel="noopener" class="pr">Pull request ↗</a>

@@ -219,6 +219,15 @@ class GitRepo:
         sha = await self.commit_all(message)
         return MergeResult(ok=True, commit=sha, conflicts=[])
 
+    async def fast_forward(self, branch: str, into: str) -> MergeResult:
+        """Move `into` to `branch` when it only adds commits (keeps merge commits intact)."""
+        await self.checkout(into)
+        try:
+            await self.run("merge", "--ff-only", branch)
+        except GitError:
+            return MergeResult(ok=False, commit=None, conflicts=[])
+        return MergeResult(ok=True, commit=await self.head(), conflicts=[])
+
 
 class GitDiffArgs(BaseModel):
     path: str | None = Field(default=None, description="Optional file to restrict the diff to.")

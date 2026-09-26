@@ -19,5 +19,11 @@ export const routes: Routes = [
       import('./features/run-detail/run-detail.component').then((m) => m.RunDetailComponent),
     title: 'DevCrew · Run',
   },
+  {
+    path: 'settings',
+    loadComponent: () =>
+      import('./features/settings/settings.component').then((m) => m.SettingsComponent),
+    title: 'DevCrew · GitHub automation',
+  },
   { path: '**', redirectTo: '' },
 ];

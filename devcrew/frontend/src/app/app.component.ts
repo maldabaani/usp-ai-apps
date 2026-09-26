@@ -15,6 +15,7 @@ import { AgentIconComponent } from './shared/agent-icon.component';
     <mat-toolbar color="primary" class="toolbar">
       <a routerLink="/" class="brand"><app-agent-icon kind="planner" [size]="30" [active]="true" /><span class="word">Dev<span>Crew</span></span></a>
       <a mat-button routerLink="/">Runs</a>
+      <a mat-button routerLink="/settings">GitHub</a>
       <a mat-flat-button routerLink="/runs/new">New run</a>
       <span class="spacer"></span>
       @if (health(); as h) {

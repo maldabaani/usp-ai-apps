@@ -179,7 +179,13 @@ async def test_failed_planner_marks_the_stage_failed(tmp_path: Path) -> None:
 async def test_request_size_limit_and_client_config(tmp_path: Path) -> None:
     async with api(tmp_path, max_request_chars=200) as a:
         config = (await a.client.get("/config")).json()
-        assert config == {"max_request_chars": 200, "max_dev_iterations": 3, "max_parallel_devs": 2}
+        assert config == {
+            "max_request_chars": 200,
+            "max_dev_iterations": 3,
+            "max_parallel_devs": 2,
+            "github_enabled": False,
+            "max_pr_rounds": 3,
+        }
         too_long = {**REQUEST, "request": "# Requirements\n\n" + "x" * 300}
         resp = await a.client.post("/runs", json=too_long)
         assert resp.status_code == 422

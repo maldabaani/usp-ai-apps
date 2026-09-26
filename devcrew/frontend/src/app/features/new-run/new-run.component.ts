@@ -1,7 +1,13 @@
 import { DecimalPipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import {
+  AbstractControl,
+  NonNullableFormBuilder,
+  ReactiveFormsModule,
+  ValidationErrors,
+  Validators,
+} from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatCardModule } from '@angular/material/card';
@@ -23,8 +29,25 @@ import { AgentIconComponent } from '../../shared/agent-icon.component';
 import { MarkdownPipe } from '../../shared/markdown.pipe';
 
 export const REPO_PATTERN = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/;
+const ISSUE_URL = /^https:\/\/github\.com\/([^/\s]+\/[^/\s]+)\/issues\/(\d+)\/?$/;
+
+/** "#12", "12" or an issue URL (which also names the repository). */
+export function parseIssueRef(text: string): { repo: string | null; number: number } | null {
+  const value = text.trim();
+  const url = ISSUE_URL.exec(value);
+  if (url) {
+    return { repo: url[1], number: Number(url[2]) };
+  }
+  const plain = /^#?(\d+)$/.exec(value);
+  return plain && Number(plain[1]) > 0 ? { repo: null, number: Number(plain[1]) } : null;
+}
+
 /** Used until GET /config answers (same as the backend default). */
 export const DEFAULT_MAX_REQUEST_CHARS = 20_000;
+
+function issueValidator(control: AbstractControl<string>): ValidationErrors | null {
+  return !control.value || parseIssueRef(control.value) ? null : { issue: true };
+}
 
 @Component({
   selector: 'app-new-run',
@@ -53,6 +76,10 @@ export const DEFAULT_MAX_REQUEST_CHARS = 20_000;
               <mat-button-toggle value="existing">Existing repository</mat-button-toggle>
             </mat-button-toggle-group>
             @if (existing()) {
+              <mat-button-toggle-group formControlName="source" aria-label="Requirements source" hideSingleSelectionIndicator>
+                <mat-button-toggle value="text">Describe</mat-button-toggle>
+                <mat-button-toggle value="issue">GitHub issue</mat-button-toggle>
+              </mat-button-toggle-group>
               <mat-button-toggle-group formControlName="mode" aria-label="Change flow" hideSingleSelectionIndicator>
                 <mat-button-toggle value="full" title="Plan, Architect design, then development">Full</mat-button-toggle>
                 <mat-button-toggle value="quick" title="One change-plan approval, no design step">Quick fix</mat-button-toggle>
@@ -70,6 +97,18 @@ export const DEFAULT_MAX_REQUEST_CHARS = 20_000;
               DevCrew builds a new project from a starter template and opens a PR.
             }
           </p>
+          @if (fromIssue()) {
+            <mat-form-field appearance="outline">
+              <mat-label>Issue (#number or URL)</mat-label>
+              <input matInput formControlName="issue" placeholder="#42 or https://github.com/owner/repo/issues/42"
+                     (blur)="onIssueBlur()" />
+              <mat-hint>The issue title and body become the requirements; DevCrew keeps one status
+                comment on the issue and the PR says “Fixes #N”.</mat-hint>
+              @if (form.controls.issue.hasError('issue')) {
+                <mat-error>Use #number or https://github.com/owner/repo/issues/number.</mat-error>
+              }
+            </mat-form-field>
+          } @else {
           <div class="req-head">
             <span class="req-label">Requirements</span>
             <mat-button-toggle-group [value]="mode()" (change)="mode.set($event.value)" aria-label="Editor mode" hideSingleSelectionIndicator>
@@ -107,6 +146,7 @@ export const DEFAULT_MAX_REQUEST_CHARS = 20_000;
               together with num_ctx.</p>
           }
           @if (fileError(); as e) { <p class="error" role="alert">{{ e }}</p> }
+          }
 
           <mat-form-field appearance="outline">
             <mat-label>GitHub repository (owner/repo)</mat-label>
@@ -122,8 +162,9 @@ export const DEFAULT_MAX_REQUEST_CHARS = 20_000;
             <p class="error" role="alert">{{ e }}</p>
           }
           <div class="actions">
-            <button mat-flat-button type="submit" class="start" [disabled]="form.invalid || tooLong() || submitting()">
-              {{ submitting() ? 'Starting…' : 'Start run' }}
+            <button mat-flat-button type="submit" class="start"
+                    [disabled]="form.invalid || (!fromIssue() && tooLong()) || submitting()">
+              {{ submitting() ? 'Starting…' : fromIssue() ? 'Import issue' : 'Start run' }}
             </button>
           </div>
         </form>
@@ -175,11 +216,41 @@ export class NewRunComponent {
     create_repo: [false],
     target: ['new' as RunTarget],
     mode: ['full' as RunMode],
+    source: ['text' as 'text' | 'issue'],
+    issue: [{ value: '', disabled: true }, [Validators.required, issueValidator]],
   });
   private readonly targetValue = toSignal(this.form.controls.target.valueChanges, {
     initialValue: this.form.controls.target.value,
   });
   readonly existing = computed(() => this.targetValue() === 'existing');
+  private readonly sourceValue = toSignal(this.form.controls.source.valueChanges, {
+    initialValue: this.form.controls.source.value,
+  });
+  readonly fromIssue = computed(() => this.existing() && this.sourceValue() === 'issue');
+
+  constructor() {
+    // only the active requirements source is validated
+    effect(() => {
+      const issue = this.fromIssue();
+      const { request, issue: issueControl } = this.form.controls;
+      if (issue) {
+        request.disable({ emitEvent: false });
+        issueControl.enable({ emitEvent: false });
+      } else {
+        request.enable({ emitEvent: false });
+        issueControl.disable({ emitEvent: false });
+      }
+    });
+  }
+
+  /** An issue URL also fills in the repository. */
+  onIssueBlur(): void {
+    const ref = parseIssueRef(this.form.controls.issue.value);
+    if (ref?.repo) {
+      this.form.controls.repo_target.setValue(ref.repo);
+      this.form.controls.issue.setValue(`#${ref.number}`);
+    }
+  }
 
   private readonly config = toSignal(this.api.config().pipe(catchError(() => of(null))), {
     initialValue: null,
@@ -227,18 +298,28 @@ export class NewRunComponent {
   }
 
   submit(): void {
-    if (this.form.invalid || this.tooLong()) {
+    if (this.form.invalid || (!this.fromIssue() && this.tooLong())) {
       return;
     }
     this.submitting.set(true);
     this.error.set(null);
     const value = this.form.getRawValue();
     const existing = value.target === 'existing';
-    this.api.createRun({
-      ...value,
-      create_repo: existing ? false : value.create_repo,
-      mode: existing ? value.mode : 'full',
-    }).subscribe({
+    const ref = parseIssueRef(value.issue);
+    const started = this.fromIssue() && ref
+      ? this.api.importIssue({
+          repo: ref.repo ?? value.repo_target,
+          number: ref.number,
+          mode: value.mode,
+        })
+      : this.api.createRun({
+          request: value.request,
+          repo_target: value.repo_target,
+          target: value.target,
+          create_repo: existing ? false : value.create_repo,
+          mode: existing ? value.mode : 'full',
+        });
+    started.subscribe({
       next: (run) => void this.router.navigate(['/runs', run.id]),
       error: (err: { error?: { detail?: unknown } }) => {
         this.submitting.set(false);

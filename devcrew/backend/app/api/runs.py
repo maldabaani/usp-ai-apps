@@ -17,6 +17,7 @@ from app.api.schemas import (
 )
 from app.api.sse import event_stream
 from app.db.models import RunStatus
+from app.graph.interrupts import ResumeAction
 from app.services.run_manager import (
     InvalidResumeError,
     RunConflictError,
@@ -39,6 +40,8 @@ STATE_FIELDS = (
     "base_branch",
     "repo_info",
     "gates",
+    "issue",
+    "followup",
 )
 
 
@@ -153,6 +156,11 @@ async def run_events(
 async def resume_run(run_id: str, body: ResumeRequest, container: ContainerDep) -> PendingInput:
     manager = container.manager
     await _run_or_404(manager, run_id)
+    if body.action is ResumeAction.UPDATE:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "update is reserved for the GitHub watcher (PR activity)",
+        )
     try:
         payload = body.payload()
     except ValueError as exc:

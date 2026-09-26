@@ -63,6 +63,9 @@ describe('workflow layout', () => {
     expect(iconKind(node('prepare_repo'))).toBe('repository');
     expect(iconKind(node('gates'))).toBe('gates');
     expect(iconKind(node('scaffold'))).toBe('system');
+    expect(iconKind(node('followup:2', { kind: 'agent' }))).toBe('coordinator');
+    expect(iconKind(node('push:2', { kind: 'output' }))).toBe('delivery');
+    expect(iconKind(node('watch'))).toBe('watch');
   });
 
   it('formats durations and elapsed times', () => {

@@ -49,6 +49,8 @@ class RunOutcome:
 def status_for_interrupt(value: dict[str, Any]) -> RunStatus:
     if value.get("kind") == InterruptKind.APPROVAL:
         return AWAITING_STATUS.get(str(value.get("artifact")), RunStatus.NEEDS_HUMAN)
+    if value.get("kind") == InterruptKind.WATCH:
+        return RunStatus.WATCHING
     return RunStatus.NEEDS_HUMAN
 
 
@@ -77,8 +79,11 @@ class RunDriver:
         *,
         target: str = "new",
         mode: str = "full",
+        issue: dict[str, Any] | None = None,
     ) -> RunOutcome:
-        state = initial_state(run_id, request, repo_target, create_repo, target=target, mode=mode)
+        state = initial_state(
+            run_id, request, repo_target, create_repo, target=target, mode=mode, issue=issue
+        )
         await self._set_status(run_id, RunStatus(state["status"]))
         return await self._drive(run_id, state)
 

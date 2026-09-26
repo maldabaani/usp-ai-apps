@@ -184,6 +184,7 @@ def make_harness(
 ) -> Harness:
     brain = brain or default_brain()
     settings.setdefault("gates_enabled", False)  # gate tests turn them on explicitly
+    settings.setdefault("watch_prs", False)  # PR follow-up tests turn it on explicitly
     cfg = Settings(
         _env_file=None,
         workspaces_dir=tmp_path / "ws",

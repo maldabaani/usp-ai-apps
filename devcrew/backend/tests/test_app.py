@@ -78,7 +78,9 @@ async def test_non_strict_startup_continues(
     @asynccontextmanager
     async def fake_open(*_: Any) -> Any:
         opened.append(True)
-        yield type("C", (), {"manager": FakeManager()})()
+        yield type(
+            "C", (), {"manager": FakeManager(), "watcher": type("W", (), {"github": None})()}
+        )()
 
     monkeypatch.setattr(Container, "open", fake_open)
     app = main.create_app(settings)

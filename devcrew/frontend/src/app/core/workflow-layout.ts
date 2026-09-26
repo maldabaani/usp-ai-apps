@@ -96,7 +96,7 @@ export function layoutWorkflow(
 export function iconKind(node: WorkflowNode): string {
   switch (node.kind) {
     case 'agent':
-      return node.id; // planner | architect
+      return node.id.startsWith('followup:') ? 'coordinator' : node.id; // planner | architect
     case 'task':
       if (node.step === 'reviewer' || node.step === 'qa' || node.step === 'coordinator') {
         return node.step;
@@ -114,6 +114,9 @@ export function iconKind(node: WorkflowNode): string {
     default:
       if (node.id === 'prepare_repo') {
         return 'repository';
+      }
+      if (node.id === 'watch') {
+        return 'watch';
       }
       return node.id === 'gates' ? 'gates' : 'system';
   }

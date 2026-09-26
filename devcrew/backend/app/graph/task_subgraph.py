@@ -35,7 +35,7 @@ from app.graph.nodes.task_common import (
 )
 from app.graph.runtime import GraphDeps, NodeFn, instrument, reindex
 from app.graph.state import TaskStatus, TaskWorkerOutput, TaskWorkerState
-from app.tools.git import repo_lock
+from app.tools.git import GitRepo, repo_lock
 
 
 def make_prepare(deps: GraphDeps) -> NodeFn:
@@ -61,6 +61,20 @@ def make_prepare(deps: GraphDeps) -> NodeFn:
                     else ctx.integration_branch
                 )
                 await ctx.main_repo.worktree_add(worktree, branch, base)
+                if ctx.ts.merge_from:
+                    # PR follow-up: bring the PR base in; conflicts go to the developer.
+                    task_repo = GitRepo(worktree)
+                    conflicts = await task_repo.merge_in(ctx.ts.merge_from)
+                    if conflicts:
+                        ctx.ts.conflict_files = conflicts
+                        ctx.ts.feedback = (
+                            f"The pull request conflicts with its base branch. The base has been "
+                            f"merged into your branch; resolve the conflicts in: "
+                            f"{', '.join(conflicts)}. Keep both sides' intent, remove every "
+                            "<<<<<<< ======= >>>>>>> marker and write the complete files."
+                        )
+                    else:
+                        await task_repo.commit_all(f"{ctx.task.id}: merge the base branch")
         ctx.ts.branch = branch
         ctx.ts.worktree = str(worktree)
         ctx.ts.reset_branch = False
@@ -74,9 +88,13 @@ def make_merge(deps: GraphDeps) -> NodeFn:
     async def merge(state: dict[str, Any]) -> Command[str]:
         ctx = load_task_ctx(deps, state)
         async with repo_lock(ctx.main_root):
-            result = await ctx.main_repo.squash_merge(
-                ctx.branch, ctx.integration_branch, f"{ctx.task.id}: {ctx.task.title}"
-            )
+            if ctx.ts.merge_from:
+                # keep the merge commit (base as a parent) so GitHub sees the conflict resolved
+                result = await ctx.main_repo.fast_forward(ctx.branch, ctx.integration_branch)
+            else:
+                result = await ctx.main_repo.squash_merge(
+                    ctx.branch, ctx.integration_branch, f"{ctx.task.id}: {ctx.task.title}"
+                )
             if result.ok:
                 # Index under the same lock so it always matches the integration HEAD.
                 await reindex(deps, ctx.run_id, ctx.main_root, "merge")

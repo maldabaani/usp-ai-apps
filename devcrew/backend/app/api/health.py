@@ -27,6 +27,8 @@ class ClientConfig(BaseModel):
     max_request_chars: int
     max_dev_iterations: int
     max_parallel_devs: int
+    github_enabled: bool
+    max_pr_rounds: int
 
 
 @router.get("/config", response_model=ClientConfig)
@@ -36,4 +38,6 @@ async def client_config(container: ContainerDep) -> ClientConfig:
         max_request_chars=s.max_request_chars,
         max_dev_iterations=s.max_dev_iterations,
         max_parallel_devs=s.max_parallel_devs,
+        github_enabled=container.deps.github is not None,
+        max_pr_rounds=s.max_pr_rounds,
     )

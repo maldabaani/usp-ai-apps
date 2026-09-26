@@ -102,6 +102,8 @@ class RunDetail(RunSummary):
     base_branch: str | None = None
     repo_info: dict[str, Any] | None = None
     gates: dict[str, Any] | None = None
+    issue: dict[str, Any] | None = None
+    followup: dict[str, Any] | None = None
     plan: dict[str, Any] | None = None
     design: dict[str, Any] | None = None
     tasks: dict[str, dict[str, Any]] = Field(default_factory=dict)

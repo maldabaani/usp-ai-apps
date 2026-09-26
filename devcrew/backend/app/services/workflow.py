@@ -7,11 +7,15 @@ Stages run left to right: requirements -> planner -> plan approval -> architect 
 approval -> scaffold -> one node per plan task (wired by dependencies) -> integration -> final
 approval -> GitHub PR. The run status decides which stage is current; events add timing, run
 counts and a short activity feed per node.
+
+After the PR, follow-up rounds on review comments / CI / conflicts are appended to the right:
+PR -> round 1 triage -> round 1 tasks -> round 1 push & reply -> round 2 ... -> watching PR.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime
 from itertools import pairwise
@@ -90,6 +94,23 @@ TASK_STEPS = {
 }
 RUN_LEVEL_HELPERS = {"ask_human", "coordinator", "escalate"}
 ARTIFACT_STAGE = {"plan": "approve_plan", "design": "approve_design", "final": "approve_final"}
+WATCH = "watch"
+ROUND_TASK_RE = re.compile(r"^R(\d+)-")
+# graph nodes that belong to a follow-up round once one started
+ROUND_TRIAGE_NODES = {"followup", "approve_followup"}
+ROUND_PUSH_NODES = {
+    "schedule",
+    "integration",
+    "gates",
+    "github_delivery",
+    "delivery_failed",
+    "report_followup",
+}
+CLOSED_AS = {
+    "merged": "pull request merged",
+    "closed": "pull request closed",
+    "stopped": "stopped watching",
+}
 
 
 class Activity(BaseModel):
@@ -137,6 +158,19 @@ def task_node_id(task_id: str) -> str:
     return f"task:{task_id}"
 
 
+def triage_node_id(round_: int) -> str:
+    return f"followup:{round_}"
+
+
+def push_node_id(round_: int) -> str:
+    return f"push:{round_}"
+
+
+def task_round(task_id: str) -> int | None:
+    match = ROUND_TASK_RE.match(task_id)
+    return int(match.group(1)) if match else None
+
+
 def _short(value: Any, limit: int = 120) -> str:
     text = value if isinstance(value, str) else json.dumps(value, default=str)
     text = " ".join(text.split())
@@ -182,7 +216,10 @@ def describe(event: Event) -> Activity | None:
                 ok=False,
             )
         case EventType.AWAITING_INPUT:
-            text = f"waiting for you: {p.get('title', '')}"
+            if p.get("kind") == "watch":
+                text = "watching for review comments, CI results and conflicts"
+            else:
+                text = f"waiting for you: {p.get('title', '')}"
         case _:
             return None
     return Activity(at=event.created_at, kind=event.type.value, text=text)
@@ -191,6 +228,10 @@ def describe(event: Event) -> Activity | None:
 def _interrupt_stage(value: Mapping[str, Any]) -> str | None:
     """Which node a pending interrupt belongs to."""
     data = value.get("data") or {}
+    if value.get("kind") == "watch":
+        return WATCH
+    if value.get("artifact") == "followup":
+        return triage_node_id(int(data.get("round") or 1))
     if data.get("task_id"):
         return task_node_id(str(data["task_id"]))
     artifact = value.get("artifact")
@@ -221,6 +262,9 @@ def build_workflow(
     task_ids += [tid for tid in task_states if tid not in task_ids]  # e.g. split parents
 
     existing = state.get("target") == "existing"
+    followup = state.get("followup") or {}
+    rounds = int(followup.get("round") or 0)
+    watching = bool(followup) or run_status is RunStatus.WATCHING
     nodes: dict[str, WorkflowNode] = {}
     for sid, kind, label, _ in STAGES:
         if (sid == DEVELOPMENT and task_ids) or (sid == "prepare_repo" and not existing):
@@ -236,10 +280,24 @@ def build_workflow(
             task_id=tid,
             stack=spec.get("stack"),
         )
+    for n in range(1, rounds + 1):
+        nodes[triage_node_id(n)] = WorkflowNode(
+            id=triage_node_id(n), kind="agent", label=f"Round {n} · triage"
+        )
+        nodes[push_node_id(n)] = WorkflowNode(
+            id=push_node_id(n), kind="output", label=f"Round {n} · push & reply"
+        )
+    if watching:
+        nodes[WATCH] = WorkflowNode(id=WATCH, kind="system", label="Watching PR")
 
     _apply_events(nodes, events)
-    _apply_stage_status(nodes, run_status, pending, events, pr_url)
+    # once the PR exists the main pipeline is finished; follow-up rounds carry the status
+    _apply_stage_status(
+        nodes, RunStatus.COMPLETED if watching else run_status, pending, events, pr_url
+    )
     _apply_task_status(nodes, task_states, run_status, max_dev_iterations)
+    if watching:
+        _apply_followup(nodes, followup, rounds, run_status, pending, task_ids)
 
     requirements = nodes["requirements"]
     requirements.status = "done"
@@ -255,10 +313,13 @@ def build_workflow(
         target = _interrupt_stage(p.value)
         if target in nodes:
             nodes[target].pending_interrupt_ids.append(p.id)
+            if target == WATCH:  # the poller answers it, not the human
+                continue
             nodes[target].status = "waiting"
             attention.append(target)
 
     edges = _edges(nodes, plan_tasks, task_ids)
+    edges += _followup_edges(nodes, task_ids, rounds)
     return Workflow(
         run_id=run_id,
         status=run_status.value,
@@ -299,12 +360,20 @@ def _apply_repository_and_gates(
             )
 
 
-def _event_target(event: Event, nodes: Mapping[str, WorkflowNode], last_agent: str) -> str | None:
+def _event_target(
+    event: Event, nodes: Mapping[str, WorkflowNode], last_agent: str, round_: int
+) -> str | None:
     if event.task_id and task_node_id(event.task_id) in nodes:
         return task_node_id(event.task_id)
     if event.type is EventType.AWAITING_INPUT:
         return _interrupt_stage(event.payload) or last_agent
     node = event.node or ""
+    if node in ("watch_pr", "done") and WATCH in nodes:
+        return WATCH
+    if round_ and node in ROUND_TRIAGE_NODES:
+        return triage_node_id(round_)
+    if round_ and node in ROUND_PUSH_NODES:
+        return push_node_id(round_)
     if node in RUN_LEVEL_HELPERS:  # planner/architect questions, retries and escalations
         return last_agent
     return GRAPH_NODE_TO_STAGE.get(node)
@@ -312,11 +381,14 @@ def _event_target(event: Event, nodes: Mapping[str, WorkflowNode], last_agent: s
 
 def _apply_events(nodes: dict[str, WorkflowNode], events: Iterable[Event]) -> None:
     last_agent = "planner"
+    round_ = 0
     feeds: dict[str, list[Activity]] = {}
     for event in events:
         if event.type is EventType.NODE_STARTED and event.node in ("planner", "architect"):
             last_agent = event.node
-        target = _event_target(event, nodes, last_agent)
+        if event.type is EventType.NODE_STARTED and event.node == "followup":
+            round_ += 1
+        target = _event_target(event, nodes, last_agent, round_)
         if target is None or target not in nodes:
             continue
         node = nodes[target]
@@ -444,6 +516,96 @@ def _apply_task_status(
             node.detail = "planned"
 
 
+def _apply_followup(
+    nodes: dict[str, WorkflowNode],
+    followup: Mapping[str, Any],
+    rounds: int,
+    status: RunStatus,
+    pending: Sequence[PendingInterrupt],
+    task_ids: Sequence[str],
+) -> None:
+    """Statuses of the follow-up round nodes and the watching node."""
+    for n in range(1, rounds + 1):
+        triage, push = nodes[triage_node_id(n)], nodes[push_node_id(n)]
+        round_tasks = [t for t in task_ids if task_round(t) == n]
+        triage.detail = (
+            f"{len(round_tasks)} task{'s' if len(round_tasks) != 1 else ''}"
+            if round_tasks
+            else "replies only"
+        )
+        if n < rounds or status is RunStatus.WATCHING or status is RunStatus.COMPLETED:
+            triage.status = push.status = "done"
+            continue
+        # the current round
+        waiting_triage = any(_interrupt_stage(p.value) == triage.id for p in pending)
+        if waiting_triage:
+            triage.status, push.status = "waiting", "pending"
+            triage.detail = "big changes need your approval"
+        elif status in (RunStatus.FAILED, RunStatus.CANCELLED):
+            triage.status = "done" if round_tasks else "failed"
+            push.status = "failed" if push.started_at else "skipped"
+        else:
+            triage.status = "done" if round_tasks or push.started_at else "running"
+            push.status = (
+                "running"
+                if status
+                in (
+                    RunStatus.INTEGRATING,
+                    RunStatus.CHECKING,
+                    RunStatus.DELIVERING,
+                )
+                or (push.started_at and not round_tasks)
+                else "pending"
+            )
+    watch = nodes[WATCH]
+    closed = followup.get("closed_as")
+    if closed:
+        watch.status = "done"
+        watch.detail = CLOSED_AS.get(str(closed), str(closed))
+    elif status is RunStatus.WATCHING:
+        watch.status = "running"
+        watch.detail = f"{rounds} follow-up round{'s' if rounds != 1 else ''}"
+    elif status.is_terminal:
+        watch.status = "skipped"
+    else:
+        watch.status = "pending"
+    ignored = followup.get("ignored") or []
+    if ignored:
+        watch.counters["ignored_comments"] = len(ignored)
+
+
+def _followup_edges(
+    nodes: Mapping[str, WorkflowNode], task_ids: Sequence[str], rounds: int
+) -> list[WorkflowEdge]:
+    """PR -> round 1 triage -> round 1 tasks -> round 1 push -> round 2 ... -> watching."""
+    if WATCH not in nodes:
+        return []
+    edges: list[WorkflowEdge] = []
+
+    def add(source: str, target: str) -> None:
+        active = nodes[target].status in ("running", "waiting") and nodes[source].status in (
+            "done",
+            "running",
+        )
+        edges.append(
+            WorkflowEdge(id=f"{source}->{target}", source=source, target=target, active=active)
+        )
+
+    previous = "delivery"
+    for n in range(1, rounds + 1):
+        triage, push = triage_node_id(n), push_node_id(n)
+        add(previous, triage)
+        round_tasks = [t for t in task_ids if task_round(t) == n]
+        for tid in round_tasks:
+            add(triage, task_node_id(tid))
+            add(task_node_id(tid), push)
+        if not round_tasks:
+            add(triage, push)
+        previous = push
+    add(previous, WATCH)
+    return edges
+
+
 def _edges(
     nodes: Mapping[str, WorkflowNode],
     plan_tasks: Sequence[Mapping[str, Any]],
@@ -486,6 +648,8 @@ def _edges(
         known = set(task_ids)
         has_dependents = {d for ds in deps.values() for d in ds if d in known}
         for tid in task_ids:
+            if task_round(tid) is not None:  # follow-up tasks hang off their round
+                continue
             inner = [d for d in deps.get(tid, []) if d in known]
             if not inner:
                 add("scaffold", task_node_id(tid))
@@ -518,7 +682,8 @@ def _edges(
         )
     integration_runs = nodes["integration"].runs - len(fix_tasks)
     if integration_runs > 1:
-        first = task_node_id(task_ids[-1]) if task_ids else DEVELOPMENT
+        main = [t for t in task_ids if task_round(t) is None]
+        first = task_node_id(main[-1]) if main else DEVELOPMENT
         edges.append(
             WorkflowEdge(
                 id=f"approve_final->{first}:loop",

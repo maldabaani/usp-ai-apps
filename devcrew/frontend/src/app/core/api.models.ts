@@ -13,6 +13,7 @@ export type RunStatus =
   | 'checking'
   | 'awaiting_final_approval'
   | 'delivering'
+  | 'watching_pr'
   | 'needs_human'
   | 'completed'
   | 'failed'
@@ -139,14 +140,14 @@ export interface QAEntry {
   answer: string;
 }
 
-export type ResumeAction = 'approve' | 'reject' | 'edit' | 'answer';
-export type InterruptKind = 'approval' | 'question' | 'escalation';
+export type ResumeAction = 'approve' | 'reject' | 'edit' | 'answer' | 'update';
+export type InterruptKind = 'approval' | 'question' | 'escalation' | 'watch';
 
 export interface PendingInput {
   interrupt_id: string;
   kind: InterruptKind;
   title: string;
-  artifact: 'plan' | 'design' | 'final' | null;
+  artifact: 'plan' | 'design' | 'final' | 'followup' | null;
   allowed_actions: ResumeAction[];
   data: Record<string, unknown>;
   error: string | null;
@@ -199,12 +200,47 @@ export interface GateReport {
   round: number;
 }
 
+/** The GitHub issue a run was started from (label or manual import). */
+export interface RunIssue {
+  repo: string;
+  number: number;
+  url: string | null;
+  title: string | null;
+}
+
+/** PR follow-up state: rounds of review comments / CI / conflicts handled after the PR. */
+export interface FollowupState {
+  round?: number;
+  handled?: string[];
+  ignored?: string[];
+  closed_as?: 'merged' | 'closed' | 'stopped';
+}
+
+/** An item of PR activity (review comment, CI failure, conflict) as triaged by the Coordinator. */
+export interface FollowupItem {
+  kind: 'review' | 'comment' | 'review_body' | 'ci' | 'conflict' | 'ignored';
+  key: string;
+  user?: string;
+  body?: string;
+  path?: string | null;
+  line?: number | null;
+  name?: string;
+}
+
+export interface FollowupProposal {
+  task: PlanTask;
+  reason: string;
+  item: FollowupItem;
+}
+
 export interface RunDetail extends RunSummary {
   target?: RunTarget;
   mode?: RunMode;
   base_branch?: string | null;
   repo_info?: RepoInfo | null;
   gates?: GateReport | null;
+  issue?: RunIssue | null;
+  followup?: FollowupState | null;
   plan: Plan | null;
   design: Design | null;
   tasks: Record<string, TaskState>;
@@ -298,6 +334,47 @@ export interface ClientConfig {
   max_request_chars: number;
   max_dev_iterations: number;
   max_parallel_devs: number;
+  github_enabled: boolean;
+  max_pr_rounds: number;
+}
+
+export interface WatchedRepo {
+  id: number;
+  repo: string;
+  enabled: boolean;
+  poll_interval_s: number;
+  extra_reviewers: string[];
+  last_polled_at: string | null;
+  last_error: string | null;
+}
+
+export interface WatchedRepoCreate {
+  repo: string;
+  poll_interval_s?: number | null;
+  extra_reviewers?: string[];
+}
+
+export interface WatchedRepoUpdate {
+  enabled?: boolean;
+  poll_interval_s?: number;
+  extra_reviewers?: string[];
+}
+
+export interface IssueRun {
+  id: number;
+  repo: string;
+  issue_number: number;
+  trigger: string;
+  run_id: string;
+  run_status: RunStatus | null;
+  comment_id: number | null;
+  created_at: string | null;
+}
+
+export interface ImportIssueRequest {
+  repo: string;
+  number: number;
+  mode: RunMode;
 }
 
 export type WorkflowNodeStatus = 'pending' | 'running' | 'waiting' | 'done' | 'failed' | 'skipped';

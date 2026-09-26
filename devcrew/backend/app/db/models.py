@@ -25,6 +25,7 @@ class RunStatus(StrEnum):
     EXECUTING = "executing"
     INTEGRATING = "integrating"
     CHECKING = "checking"  # quality gates
+    WATCHING = "watching_pr"  # PR opened: following review comments, CI and conflicts
     AWAITING_FINAL_APPROVAL = "awaiting_final_approval"
     DELIVERING = "delivering"
     NEEDS_HUMAN = "needs_human"
@@ -78,3 +79,43 @@ class RunEvent(Base):
     )
 
     run: Mapped[Run] = relationship(back_populates="events")
+
+
+class WatchedRepo(Base):
+    """A repository polled for issues labelled `devcrew` / `devcrew:quick` (Phase 12)."""
+
+    __tablename__ = "watched_repos"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    repo: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    poll_interval_s: Mapped[int] = mapped_column(BigInteger, nullable=False, default=300)
+    # Reviewers without write access whose PR comments DevCrew should act on.
+    extra_reviewers: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    last_polled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class IssueRun(Base):
+    """A run started for a GitHub issue; `trigger` is the label event that started it."""
+
+    __tablename__ = "issue_runs"
+    __table_args__ = (
+        Index("ux_issue_runs_trigger", "repo", "issue_number", "trigger", unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    repo: Mapped[str] = mapped_column(String(200), nullable=False)
+    issue_number: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    trigger: Mapped[str] = mapped_column(String(100), nullable=False)
+    run_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("runs.id", ondelete="CASCADE"), nullable=False
+    )
+    comment_id: Mapped[int | None] = mapped_column(BigInteger)
+    comment_text: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

@@ -53,6 +53,12 @@ class Settings(BaseSettings):
     gate_coverage_min: float = Field(default=70.0, ge=0, le=100)
     gate_coverage_tolerance: float = Field(default=0.5, ge=0)
     max_gate_fix_rounds: int = Field(default=1, ge=0)
+    # GitHub automation (Phase 12): issue intake and PR follow-up, driven by polling.
+    watch_prs: bool = True
+    max_pr_rounds: int = Field(default=3, ge=0)
+    github_poll_tick_s: float = Field(default=30.0, gt=0)
+    default_poll_interval_s: int = Field(default=300, ge=30)
+    max_issue_runs: int = Field(default=2, ge=1)
     max_conflict_rounds: int = Field(default=2, ge=0, description="Merge-conflict fixes per task.")
     max_coordinator_actions: int = Field(
         default=2, ge=0, description="Automatic retry/replan/split decisions per task/node."

@@ -31,6 +31,9 @@ def pr_body(state: Mapping[str, Any]) -> str:
     integration = state.get("integration") or {}
     parts: list[str] = []
 
+    issue = state.get("issue") or {}
+    if issue.get("number") and issue.get("repo") == state.get("repo_target"):
+        parts.append(f"Fixes #{issue['number']}")
     parts.append(f"## Request\n\n{state.get('request', '').strip()}")
     if plan.get("summary"):
         parts.append(f"## Summary\n\n{plan['summary']}")

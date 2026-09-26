@@ -85,6 +85,16 @@ class GitHubDelivery:
                 heads[ref.removeprefix("refs/heads/")] = sha
         return heads
 
+    def client(self) -> GitHubClient:
+        """A new API client (the caller closes it)."""
+        return self._client_factory()
+
+    async def fetch_base(self, repo: GitRepo, owner: str, name: str, base: str) -> str:
+        """Fetch the PR base branch into a local ref and return that ref."""
+        ref = f"refs/devcrew/base/{base}"
+        await self._git(repo, "fetch", "--no-tags", self.remote_url(owner, name), f"+{base}:{ref}")
+        return ref
+
     async def default_branch(self, owner: str, name: str) -> str:
         client = self._client_factory()
         try:

@@ -105,3 +105,133 @@ class GitHubClient:
             json={"title": title, "head": head, "base": base, "body": body},
         )
         return str(pull["html_url"])
+
+    # ------------------------------------------------------------------ Phase 12: automation
+    async def labelled_issues(self, owner: str, repo: str, label: str) -> list[dict[str, Any]]:
+        """Open issues (not pull requests) carrying `label`."""
+        items = await self._request(
+            "GET",
+            f"/repos/{owner}/{repo}/issues",
+            params={"labels": label, "state": "open", "per_page": 50},
+        )
+        return [dict(i) for i in items or [] if "pull_request" not in i]
+
+    async def get_issue(self, owner: str, repo: str, number: int) -> dict[str, Any]:
+        return dict(await self._request("GET", f"/repos/{owner}/{repo}/issues/{number}"))
+
+    async def label_events(self, owner: str, repo: str, number: int) -> list[dict[str, Any]]:
+        events = await self._request(
+            "GET", f"/repos/{owner}/{repo}/issues/{number}/events", params={"per_page": 100}
+        )
+        return [dict(e) for e in events or [] if e.get("event") == "labeled"]
+
+    async def create_issue_comment(self, owner: str, repo: str, number: int, body: str) -> int:
+        comment = await self._request(
+            "POST", f"/repos/{owner}/{repo}/issues/{number}/comments", json={"body": body}
+        )
+        return int(comment["id"])
+
+    async def update_issue_comment(self, owner: str, repo: str, comment_id: int, body: str) -> None:
+        await self._request(
+            "PATCH", f"/repos/{owner}/{repo}/issues/comments/{comment_id}", json={"body": body}
+        )
+
+    async def get_pull(self, owner: str, repo: str, number: int) -> dict[str, Any]:
+        return dict(await self._request("GET", f"/repos/{owner}/{repo}/pulls/{number}"))
+
+    async def review_comments(self, owner: str, repo: str, number: int) -> list[dict[str, Any]]:
+        items = await self._request(
+            "GET", f"/repos/{owner}/{repo}/pulls/{number}/comments", params={"per_page": 100}
+        )
+        return [dict(c) for c in items or []]
+
+    async def conversation_comments(
+        self, owner: str, repo: str, number: int
+    ) -> list[dict[str, Any]]:
+        items = await self._request(
+            "GET", f"/repos/{owner}/{repo}/issues/{number}/comments", params={"per_page": 100}
+        )
+        return [dict(c) for c in items or []]
+
+    async def reviews(self, owner: str, repo: str, number: int) -> list[dict[str, Any]]:
+        items = await self._request(
+            "GET", f"/repos/{owner}/{repo}/pulls/{number}/reviews", params={"per_page": 100}
+        )
+        return [dict(r) for r in items or []]
+
+    async def reply_to_review_comment(
+        self, owner: str, repo: str, number: int, comment_id: int, body: str
+    ) -> None:
+        await self._request(
+            "POST",
+            f"/repos/{owner}/{repo}/pulls/{number}/comments/{comment_id}/replies",
+            json={"body": body},
+        )
+
+    async def permission(self, owner: str, repo: str, user: str) -> str:
+        """admin | maintain | write | triage | read | none."""
+        result = await self._request(
+            "GET", f"/repos/{owner}/{repo}/collaborators/{user}/permission", ok404=True
+        )
+        if result is None:
+            return "none"
+        return str(result.get("role_name") or result.get("permission") or "none")
+
+    async def check_runs(self, owner: str, repo: str, sha: str) -> list[dict[str, Any]]:
+        result = await self._request(
+            "GET", f"/repos/{owner}/{repo}/commits/{sha}/check-runs", params={"per_page": 100}
+        )
+        return [dict(c) for c in (result or {}).get("check_runs", [])]
+
+    async def job_logs(self, owner: str, repo: str, job_id: int) -> str:
+        """A GitHub Actions job log (the API redirects to a short-lived download URL)."""
+        try:
+            resp = await self._http.get(
+                f"/repos/{owner}/{repo}/actions/jobs/{job_id}/logs", follow_redirects=True
+            )
+        except httpx.HTTPError as exc:
+            raise GitHubError(f"cannot download job logs ({type(exc).__name__})") from exc
+        if resp.status_code >= 400:
+            raise GitHubError(
+                f"job logs unavailable ({resp.status_code}); the token needs Actions: read",
+                resp.status_code,
+            )
+        return resp.text
+
+    def _graphql_url(self) -> str:
+        base = str(self._http.base_url).rstrip("/")
+        return base[: -len("/v3")] + "/graphql" if base.endswith("/api/v3") else base + "/graphql"
+
+    async def graphql(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
+        result = await self._request(
+            "POST", self._graphql_url(), json={"query": query, "variables": variables}
+        )
+        if result.get("errors"):
+            raise GitHubError(f"GitHub GraphQL error: {result['errors']}")
+        return dict(result.get("data") or {})
+
+    async def review_threads(self, owner: str, repo: str, number: int) -> list[dict[str, Any]]:
+        """Review threads with their id, resolved flag and the first comment's REST id."""
+        data = await self.graphql(
+            """query($owner: String!, $repo: String!, $number: Int!) {
+              repository(owner: $owner, name: $repo) { pullRequest(number: $number) {
+                reviewThreads(first: 100) { nodes {
+                  id isResolved comments(first: 1) { nodes { databaseId } } } } } } }""",
+            {"owner": owner, "repo": repo, "number": number},
+        )
+        nodes = data["repository"]["pullRequest"]["reviewThreads"]["nodes"]
+        return [
+            {
+                "id": n["id"],
+                "resolved": bool(n["isResolved"]),
+                "comment_id": (n["comments"]["nodes"] or [{}])[0].get("databaseId"),
+            }
+            for n in nodes
+        ]
+
+    async def resolve_thread(self, thread_id: str) -> None:
+        await self.graphql(
+            """mutation($id: ID!) { resolveReviewThread(input: {threadId: $id}) {
+              thread { isResolved } } }""",
+            {"id": thread_id},
+        )

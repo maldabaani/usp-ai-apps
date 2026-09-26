@@ -354,6 +354,9 @@ class TaskState(BaseModel):
     conflict_rounds: int = 0
     coordinator_actions: int = 0  # automatic Coordinator decisions taken for this task
     reset_branch: bool = False  # replanned: restart from the integration branch
+    # PR follow-up: merge this ref (the PR base) into the task branch first; the task result
+    # is then fast-forwarded (not squashed) so the merge commit keeps the base as a parent.
+    merge_from: str | None = None
 
 
 class QAEntry(BaseModel):
@@ -497,6 +500,13 @@ class RunState(TypedDict, total=False):
     gate_baseline: dict[str, Any] | None  # coverage / known vulnerabilities on the base branch
     gates: dict[str, Any] | None  # latest GateReport (integration)
     gate_fix_rounds: int
+
+    # Phase 12: GitHub issue that started the run, and PR follow-up rounds.
+    issue: dict[str, Any] | None  # {"repo", "number", "url", "title"}
+    followup: dict[str, Any] | None  # round, handled keys, pending replies, ignored authors
+    followup_items: list[dict[str, Any]] | None  # activity delivered by the poller
+    followup_triage: list[dict[str, Any]] | None
+    followup_active: bool  # a follow-up round is being implemented
 
 
 class TaskWorkerState(TypedDict, total=False):

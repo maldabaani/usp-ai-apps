@@ -82,6 +82,13 @@ def gate_fix_task(plan: Plan, report: GateReport, number: int) -> PlanTask:
     )
 
 
+def auto_push(state: dict[str, Any]) -> bool:
+    """A PR follow-up round pushes without final approval while the integration tests pass
+    (failing tests go to the human's final approval, like a normal run)."""
+    tests = ((state.get("integration") or {}).get("tests") or {}).values()
+    return bool(state.get("followup_active")) and all(t.get("passed", True) for t in tests)
+
+
 def make_gates(deps: GraphDeps) -> NodeFn:
     async def gates(state: dict[str, Any]) -> Command[str]:
         run_id = state["run_id"]
@@ -93,6 +100,11 @@ def make_gates(deps: GraphDeps) -> NodeFn:
                 GateResult(name=n, status="skipped", summary=reason)
                 for n in ("secrets", "dependencies", "coverage")
             ]
+            if auto_push(state):  # PR follow-up round: push the fixes
+                return Command(
+                    goto="github_delivery",
+                    update={"gates": dump(report), "status": RunStatus.DELIVERING.value},
+                )
             return Command(
                 goto="approve_final",
                 update={"gates": dump(report), "status": RunStatus.AWAITING_FINAL_APPROVAL.value},
@@ -146,6 +158,12 @@ def make_gates(deps: GraphDeps) -> NodeFn:
                 details=r.details[:20],
             )
 
+        if auto_push(state) and not report.failed:
+            # PR follow-up round: already approved; push the fixes to the PR branch.
+            return Command(
+                goto="github_delivery",
+                update={"gates": dump(report), "status": RunStatus.DELIVERING.value},
+            )
         if report.failed and rounds < deps.settings.max_gate_fix_rounds:
             plan = get_plan(state)
             task = gate_fix_task(plan, report, rounds + 1)

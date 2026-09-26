@@ -5,16 +5,19 @@ import { of, throwError } from 'rxjs';
 
 import { ClientConfig, RunSummary } from '../../core/api.models';
 import { ApiService } from '../../core/api.service';
-import { NewRunComponent } from './new-run.component';
+import { NewRunComponent, parseIssueRef } from './new-run.component';
 
-const CONFIG: ClientConfig = { max_request_chars: 60, max_dev_iterations: 3, max_parallel_devs: 2 };
+const CONFIG: ClientConfig = {
+  max_request_chars: 60, max_dev_iterations: 3, max_parallel_devs: 2, github_enabled: true, max_pr_rounds: 3,
+};
 
 describe('NewRunComponent', () => {
   let api: jasmine.SpyObj<ApiService>;
 
   function setup(config = of(CONFIG)) {
-    api = jasmine.createSpyObj<ApiService>('ApiService', ['createRun', 'config']);
+    api = jasmine.createSpyObj<ApiService>('ApiService', ['createRun', 'config', 'importIssue']);
     api.createRun.and.returnValue(of({ id: 'r9' } as RunSummary));
+    api.importIssue.and.returnValue(of({ id: 'r10' } as RunSummary));
     api.config.and.returnValue(config);
     TestBed.configureTestingModule({
       imports: [NewRunComponent],
@@ -60,6 +63,36 @@ describe('NewRunComponent', () => {
       request: 'Add a discount field to orders', repo_target: 'acme/shop', create_repo: false,
       target: 'existing', mode: 'quick',
     });
+  });
+
+  it('imports a GitHub issue instead of a description', () => {
+    const { fixture, router } = setup();
+    const c = fixture.componentInstance;
+    c.form.patchValue({ target: 'existing', source: 'issue', mode: 'quick' });
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(c.fromIssue()).toBeTrue();
+    expect(el.querySelector('textarea')).toBeNull();
+    expect(el.querySelector('button.start')?.textContent).toContain('Import issue');
+    c.form.controls.issue.setValue('not an issue');
+    expect(c.form.valid).toBeFalse();
+    c.form.controls.issue.setValue('https://github.com/acme/shop/issues/42');
+    c.onIssueBlur();
+    expect(c.form.controls.repo_target.value).toBe('acme/shop');
+    expect(c.form.controls.issue.value).toBe('#42');
+    expect(c.form.valid).toBeTrue();
+    c.submit();
+    expect(api.importIssue).toHaveBeenCalledWith({ repo: 'acme/shop', number: 42, mode: 'quick' });
+    expect(api.createRun).not.toHaveBeenCalled();
+    expect(router.navigate).toHaveBeenCalledWith(['/runs', 'r10']);
+  });
+
+  it('parses issue references', () => {
+    expect(parseIssueRef('#7')).toEqual({ repo: null, number: 7 });
+    expect(parseIssueRef(' 12 ')).toEqual({ repo: null, number: 12 });
+    expect(parseIssueRef('https://github.com/a/b/issues/3')).toEqual({ repo: 'a/b', number: 3 });
+    expect(parseIssueRef('#0')).toBeNull();
+    expect(parseIssueRef('https://github.com/a/b/pull/3')).toBeNull();
   });
 
   it('enforces the server limit and shows the character count', () => {

@@ -10,10 +10,15 @@ import {
   FileContent,
   FileList,
   HealthReport,
+  ImportIssueRequest,
+  IssueRun,
   PendingInput,
   ResumeRequest,
   RunDetail,
   RunSummary,
+  WatchedRepo,
+  WatchedRepoCreate,
+  WatchedRepoUpdate,
   Workflow,
 } from './api.models';
 
@@ -75,6 +80,31 @@ export class ApiService {
 
   config(): Observable<ClientConfig> {
     return this.http.get<ClientConfig>(`${this.baseUrl}/config`);
+  }
+
+  // ------------------------------------------------------------------ GitHub automation
+  watchedRepos(): Observable<WatchedRepo[]> {
+    return this.http.get<WatchedRepo[]>(`${this.baseUrl}/watched-repos`);
+  }
+
+  addWatchedRepo(body: WatchedRepoCreate): Observable<WatchedRepo> {
+    return this.http.post<WatchedRepo>(`${this.baseUrl}/watched-repos`, body);
+  }
+
+  updateWatchedRepo(id: number, body: WatchedRepoUpdate): Observable<WatchedRepo> {
+    return this.http.patch<WatchedRepo>(`${this.baseUrl}/watched-repos/${id}`, body);
+  }
+
+  deleteWatchedRepo(id: number): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/watched-repos/${id}`);
+  }
+
+  issueRuns(): Observable<IssueRun[]> {
+    return this.http.get<IssueRun[]>(`${this.baseUrl}/issue-runs`);
+  }
+
+  importIssue(body: ImportIssueRequest): Observable<RunSummary> {
+    return this.http.post<RunSummary>(`${this.baseUrl}/issues/import`, body);
   }
 
   health(): Observable<HealthReport> {

@@ -5,7 +5,14 @@ import { MatCardModule } from '@angular/material/card';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 
-import { IntegrationSummary, PendingInput, ResumeAction, ResumeRequest, TaskState } from '../../core/api.models';
+import {
+  FollowupProposal,
+  IntegrationSummary,
+  PendingInput,
+  ResumeAction,
+  ResumeRequest,
+  TaskState,
+} from '../../core/api.models';
 
 type Mode = 'none' | 'reject' | 'edit' | 'answer';
 
@@ -33,6 +40,26 @@ type Mode = 'none' | 'reject' | 'edit' | 'answer';
         }
         @if (reason(); as r) {
           <pre class="reason">{{ r }}</pre>
+        }
+        @if (watchInfo(); as w) {
+          <p>DevCrew follows the pull request: new review comments, failed checks and merge conflicts
+            start a follow-up round ({{ w.round }} of {{ w.max }} automatic rounds used).</p>
+        }
+        @if (proposals().length) {
+          <p>These changes need your approval before the crew makes them:</p>
+          <ul class="proposals">
+            @for (p of proposals(); track p.task.id) {
+              <li>
+                <b>{{ p.task.id }} · {{ p.task.title }}</b> <span class="why">— {{ p.reason }}</span>
+                @if (p.item.body) {
+                  <blockquote>&#64;{{ p.item.user }}@if (p.item.path) { on <code>{{ p.item.path }}</code> }: {{ p.item.body }}</blockquote>
+                }
+              </li>
+            }
+          </ul>
+          @if (smallTitles().length) {
+            <p class="muted">Also in this round (small, automatic): {{ smallTitles().join(', ') }}</p>
+          }
         }
         @if (finalSummary(); as f) {
           <p>
@@ -107,6 +134,12 @@ type Mode = 'none' | 'reject' | 'edit' | 'answer';
     .question { font-size: 16px; font-weight: 500; }
     .reason { white-space: pre-wrap; background: rgba(255, 90, 122, 0.08); padding: 8px; border-radius: 6px; font-size: 12px; }
     .error, .bad { color: var(--dc-red); }
+    .panel.watch { border-left-color: var(--dc-cyan); }
+    .proposals { padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
+    .why { color: var(--dc-text-dim); font-size: 12.5px; }
+    blockquote { margin: 4px 0 0; padding: 4px 8px; border-left: 2px solid var(--dc-border-strong); color: var(--dc-text-dim);
+                 font-size: 12.5px; white-space: pre-wrap; }
+    .muted { color: var(--dc-text-faint); font-size: 12.5px; }
   `,
 })
 export class ActionPanelComponent {
@@ -136,6 +169,18 @@ export class ActionPanelComponent {
   readonly finalSummary = computed(
     () => (this.pending().artifact === 'final' ? (this.pending().data['integration'] as IntegrationSummary | null) : null),
   );
+  readonly watchInfo = computed(() => {
+    const p = this.pending();
+    return p.kind === 'watch'
+      ? { round: Number(p.data['round'] ?? 0), max: Number(p.data['max_rounds'] ?? 0) }
+      : null;
+  });
+  readonly proposals = computed<FollowupProposal[]>(() =>
+    this.pending().artifact === 'followup' ? ((this.pending().data['items'] as FollowupProposal[] | undefined) ?? []) : [],
+  );
+  readonly smallTitles = computed<string[]>(() =>
+    this.pending().artifact === 'followup' ? ((this.pending().data['small'] as string[] | undefined) ?? []) : [],
+  );
   readonly testRows = computed(() =>
     Object.entries(this.finalSummary()?.tests ?? {}).map(([stack, t]) => ({
       stack,
@@ -154,6 +199,16 @@ export class ActionPanelComponent {
   /** Button wording depends on what is being decided. */
   readonly labels = computed(() => {
     const p = this.pending();
+    if (p.kind === 'watch') {
+      return { approve: '', reject: 'Stop watching', rejectPrompt: 'Why stop following the PR? (kept in the run log)' };
+    }
+    if (p.artifact === 'followup') {
+      return {
+        approve: 'Approve changes',
+        reject: 'Decline',
+        rejectPrompt: 'Reply to the reviewers (posted on the PR as “Not changed: …”)',
+      };
+    }
     if (p.kind !== 'escalation') {
       return { approve: 'Approve', reject: 'Reject', rejectPrompt: 'What should change?' };
     }

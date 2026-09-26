@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
@@ -9,7 +11,7 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import health, runs, workspace
+from app.api import github, health, runs, workspace
 from app.config import Settings, get_settings
 from app.container import Container, default_engine
 from app.graph.factory import build_llm
@@ -59,7 +61,16 @@ def create_app(
             recovered = await container.manager.recover()
             if recovered:
                 logger.info("resumed %d run(s) after restart: %s", len(recovered), recovered)
-            yield
+            watcher = None
+            if container.watcher.github is not None:  # GitHub automation needs a token
+                watcher = asyncio.create_task(container.watcher.run_forever())
+            try:
+                yield
+            finally:
+                if watcher is not None:
+                    watcher.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await watcher
 
     app = FastAPI(title="DevCrew", version="0.1.0", lifespan=lifespan)
     app.add_middleware(
@@ -72,6 +83,7 @@ def create_app(
     app.include_router(health.router)
     app.include_router(runs.router)
     app.include_router(workspace.router)
+    app.include_router(github.router)
     return app
 
 

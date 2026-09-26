@@ -25,7 +25,21 @@ const ROLE_TEXT: Record<string, string> = {
     'Secret scan, dependency vulnerabilities and coverage. Failures get one automatic fix, then you decide.',
   approve_final: 'You approve the result; rejecting adds a follow-up task.',
   delivery: 'Pushes the branch and opens the pull request on GitHub.',
+  watch:
+    'Polls the pull request: review comments from people with write access (or listed reviewers), ' +
+    'failed checks and merge conflicts start a follow-up round. Ends when the PR is merged or closed.',
+  followup:
+    'The Coordinator sorts the new PR activity: small fixes run automatically, big ones wait for you, ' +
+    'questions get an answer on the PR.',
+  push: 'Integration tests and gates, then the fixes are pushed to the same PR branch (never forced); ' +
+    'each thread gets a reply and fixed threads are resolved.',
 };
+
+/** Round nodes are "followup:<n>" / "push:<n>". */
+export function roundOf(nodeId: string): number | null {
+  const m = /^(?:followup|push):(\d+)$/.exec(nodeId);
+  return m ? Number(m[1]) : null;
+}
 
 /** Details and actions for the selected workflow node. */
 @Component({
@@ -98,6 +112,26 @@ const ROLE_TEXT: Record<string, string> = {
             <h4>{{ entry[0] }}: {{ !entry[1].ran ? 'not run' : entry[1].passed ? 'passed' : 'failed' }}</h4>
             @if (entry[1].logs_excerpt) { <pre>{{ entry[1].logs_excerpt }}</pre> }
           }
+        }
+      }
+      @case ('watch') {
+        @if (run().pr_url; as url) {
+          <a mat-flat-button [href]="url" target="_blank" rel="noopener">Open pull request ↗</a>
+        }
+        @if (run().followup?.ignored?.length) {
+          <h4>Ignored comments (no write access, not an extra reviewer)</h4>
+          <ul class="ignored">@for (i of run().followup?.ignored ?? []; track $index) { <li>{{ i }}</li> }</ul>
+        }
+      }
+      @case ('round') {
+        @if (roundTasks().length) {
+          <ul class="round-tasks">
+            @for (t of roundTasks(); track t.id) {
+              <li><b>{{ t.id }}</b> · {{ t.title }} <span class="tstate">{{ run().tasks[t.id] ? run().tasks[t.id].status : 'pending' }}</span></li>
+            }
+          </ul>
+        } @else if (n.status === 'done') {
+          <p class="muted">No code changes in this round (replies only).</p>
         }
       }
       @case ('delivery') {
@@ -175,6 +209,8 @@ const ROLE_TEXT: Record<string, string> = {
     .gname { font-weight: 700; text-transform: capitalize; margin-right: 8px; }
     .gstatus { text-transform: uppercase; font-size: 10.5px; font-weight: 700; margin-right: 8px; color: var(--dc-text-dim); }
     .passed .gstatus { color: var(--dc-teal); } .failed .gstatus { color: var(--dc-red); } .error .gstatus { color: var(--dc-amber); }
+    .round-tasks, .ignored { padding-left: 18px; font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
+    .tstate { margin-left: 6px; font-size: 11px; text-transform: uppercase; color: var(--dc-text-dim); }
     .never { margin-left: 8px; font-size: 11px; color: var(--dc-red); border: 1px solid rgba(255, 90, 122, 0.5); border-radius: 8px; padding: 0 6px; }
   `,
 })
@@ -189,7 +225,7 @@ export class WorkflowPanelComponent {
   readonly icon = computed(() => iconKind(this.node()));
   readonly elapsed = computed(() => nodeElapsed(this.node(), this.now()));
   readonly roleText = computed(() =>
-    this.node().kind === 'task' ? '' : (ROLE_TEXT[this.node().id] ?? ''),
+    this.node().kind === 'task' ? '' : (ROLE_TEXT[this.node().id] ?? ROLE_TEXT[this.node().id.split(':')[0]] ?? ''),
   );
   readonly reversed = computed(() => [...this.node().activity].reverse());
 
@@ -213,9 +249,21 @@ export class WorkflowPanelComponent {
         return 'gates';
       case 'delivery':
         return 'delivery';
+      case 'watch':
+        return 'watch';
       default:
+        if (roundOf(n.id) !== null) {
+          return 'round';
+        }
         return n.kind === 'task' ? 'task' : 'none';
     }
+  });
+
+  readonly roundTasks = computed(() => {
+    const round = roundOf(this.node().id);
+    return round === null
+      ? []
+      : (this.run().plan?.tasks ?? []).filter((t) => t.id.startsWith(`R${round}-`));
   });
 
   readonly pending = computed<PendingInput[]>(() => {

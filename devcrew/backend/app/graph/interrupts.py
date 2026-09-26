@@ -13,6 +13,7 @@ class InterruptKind(StrEnum):
     APPROVAL = "approval"  # plan / design / final
     QUESTION = "question"  # ask_human
     ESCALATION = "escalation"  # iteration limit or unrecoverable agent error
+    WATCH = "watch"  # waiting for GitHub activity on the PR (resumed by the poller)
 
 
 class ResumeAction(StrEnum):
@@ -20,6 +21,7 @@ class ResumeAction(StrEnum):
     REJECT = "reject"
     EDIT = "edit"
     ANSWER = "answer"
+    UPDATE = "update"  # new PR activity delivered by the poller (artifact = activity)
 
 
 class ResumePayload(BaseModel):
@@ -36,6 +38,8 @@ class ResumePayload(BaseModel):
             raise ValueError("edit requires artifact")
         if self.action is ResumeAction.ANSWER and not (self.answer or "").strip():
             raise ValueError("answer requires answer text")
+        if self.action is ResumeAction.UPDATE and self.artifact is None:
+            raise ValueError("update requires artifact (the PR activity)")
         return self
 
 

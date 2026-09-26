@@ -181,7 +181,7 @@ never pushes to the default branch of an existing repo, and never pushes before 
     - a test coverage threshold.
   - A failed gate goes back to the Developer; if it still fails, the Coordinator asks you:
     allow (noted in the PR body) or stop.
-- **Phase 12: GitHub automation**
+- **Phase 12: GitHub automation** *(done in P12)*
   - Issue intake: polling of watched repos for issues labelled `devcrew`, plus manual import
     of an issue URL or number. DevCrew comments on the issue (started, waiting for approval,
     PR link), and the PR says "Fixes #N".
@@ -217,6 +217,35 @@ never pushes to the default branch of an existing repo, and never pushes before 
 - [ ] **BL-125** (P3, from P11) A coverage baseline and a dependency scan of the base branch
   run once per existing-repository run (one extra test run). Consider caching them per base
   commit.
+
+## GitHub automation (Phase 12)
+
+- [ ] **BL-130** (P1, from P12) Verified only against the fake GitHub, which follows GitHub's
+  documented REST and GraphQL shapes, and in a live UI walk-through against that fake. Check
+  these with a real repository and token:
+  - label events;
+  - the collaborator permission endpoint;
+  - check runs and the job-log redirect;
+  - `resolveReviewThread`;
+  - the token scopes.
+- [ ] **BL-131** (P2, from P12) API usage:
+  - Every tick (`GITHUB_POLL_TICK_S`), each watching run makes about 6 REST calls: pull,
+    three comment lists, check runs, permissions.
+  - With many watching runs this approaches the 5,000/hour rate limit.
+  - Use conditional requests (ETag / `If-None-Match`) and a per-run PR poll interval.
+- [ ] **BL-132** (P2, from P12) Comments are handled once, by id: an edited review comment is
+  not processed again. Only check runs are read, not legacy commit statuses. Logs are fetched
+  only for GitHub Actions jobs; other checks contribute their name only.
+- [ ] **BL-133** (P3, from P12) A failing gate inside a follow-up round adds a `GATEFIX` task
+  that the graph attaches to the main pipeline rather than to the round. The round still
+  pushes after the fix.
+- [ ] **BL-134** (P3, from P12) The issue-comment sync loads the state of every issue run on
+  each tick, finished ones included. Limit it to runs that changed since the last sync.
+- [ ] **BL-135** (P3, from P12) Removing the label does not cancel a run that already started;
+  cancel it in the UI. A declined big change is not proposed again unless the reviewer writes
+  a new comment.
+- [ ] **BL-136** (P3, from P12) The Overview of a run with many rounds is one long row.
+  Collapse finished rounds (with BL-103).
 
 ## Parity with commercial coding agents (from the P10 gap review)
 
@@ -312,3 +341,15 @@ steering and security gates.
     `MAX_GATE_FIX_ROUNDS`.
   - The `devcrew-sandbox-gate-tools` image.
   - The locked "greenfield only" rule is lifted for existing repositories, with your approval.
+- [x] **BL-137** (from P12) Additions:
+  - Tables `watched_repos` and `issue_runs` (migration `0002`).
+  - Run status `watching_pr`, interrupt kind `watch` and resume action `update` (the
+    poller only).
+  - Graph nodes `watch_pr`, `followup`, `approve_followup` and `report_followup`.
+  - Run fields `issue` and `followup`.
+  - Settings `WATCH_PRS`, `MAX_PR_ROUNDS`, `GITHUB_POLL_TICK_S`, `DEFAULT_POLL_INTERVAL_S`,
+    `MAX_ISSUE_RUNS`.
+  - Endpoints `/watched-repos`, `/issue-runs` and `/issues/import`.
+  - The Settings page (`/settings`).
+  - GitHub actions approved for P12: issue comments, PR replies, resolving review threads, and
+    non-force pushes to DevCrew's own PR branch.

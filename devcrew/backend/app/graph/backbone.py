@@ -32,6 +32,12 @@ from app.graph.nodes.finish import (
     make_github_delivery,
     make_integration,
 )
+from app.graph.nodes.followup import (
+    make_approve_followup,
+    make_followup,
+    make_report_followup,
+    make_watch_pr,
+)
 from app.graph.nodes.gates import make_gates
 from app.graph.nodes.human import make_ask_human
 from app.graph.nodes.planner import make_planner
@@ -156,9 +162,19 @@ def build_graph(
         "scaffold": (make_scaffold(deps), ("schedule",)),
         "schedule": (make_schedule(deps), ("task_worker", "integration")),
         "integration": (make_integration(deps), ("gates",)),
-        "gates": (make_gates(deps), ("approve_final", "schedule")),
+        "gates": (make_gates(deps), ("approve_final", "schedule", "github_delivery")),
         "approve_final": (make_approve_final(deps), ("github_delivery", "schedule")),
-        "github_delivery": (make_github_delivery(deps), ("done", "delivery_failed")),
+        "github_delivery": (
+            make_github_delivery(deps),
+            ("done", "delivery_failed", "watch_pr", "report_followup"),
+        ),
+        "watch_pr": (make_watch_pr(deps), ("followup", "done", "watch_pr")),
+        "followup": (
+            make_followup(deps),
+            ("approve_followup", "schedule", "report_followup"),
+        ),
+        "approve_followup": (make_approve_followup(deps), ("schedule", "report_followup")),
+        "report_followup": (make_report_followup(deps), ("watch_pr",)),
         "delivery_failed": (make_delivery_failed(deps), ("github_delivery", "done")),
         "done": (make_done(deps), (END,)),
     }
@@ -183,6 +199,7 @@ def initial_state(
     *,
     target: str = "new",
     mode: str = "full",
+    issue: dict[str, Any] | None = None,
 ) -> RunState:
     existing = target == "existing"
     state = RunState(
@@ -196,6 +213,11 @@ def initial_state(
         gate_baseline=None,
         gates=None,
         gate_fix_rounds=0,
+        issue=issue,
+        followup=None,
+        followup_items=None,
+        followup_triage=None,
+        followup_active=False,
         status=(RunStatus.PREPARING if existing else RunStatus.PLANNING).value,
         plan=None,
         design=None,

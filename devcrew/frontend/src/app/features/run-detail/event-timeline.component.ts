@@ -29,7 +29,9 @@ export function describeEvent(e: RunEvent): string {
     case 'status':
       return `status → ${str(p['status']).replaceAll('_', ' ')}`;
     case 'awaiting_input':
-      return `waiting for you: ${str(p['title'])}`;
+      return p['kind'] === 'watch'
+        ? 'watching the pull request for reviews, CI and conflicts'
+        : `waiting for you: ${str(p['title'])}`;
     default:
       return e.type;
   }

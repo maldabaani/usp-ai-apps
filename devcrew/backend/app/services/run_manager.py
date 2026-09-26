@@ -94,6 +94,7 @@ class RunManager:
         create_repo: bool,
         target: str = "new",
         mode: str = "full",
+        issue: dict[str, Any] | None = None,
     ) -> Run:
         run = await self.runs.create(
             request=request, repo_target=repo_target, create_repo=create_repo
@@ -101,7 +102,7 @@ class RunManager:
         self._spawn(
             run.id,
             lambda: self.driver.start(
-                run.id, request, repo_target, create_repo, target=target, mode=mode
+                run.id, request, repo_target, create_repo, target=target, mode=mode, issue=issue
             ),
         )
         return run

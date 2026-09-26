@@ -96,4 +96,38 @@ describe('ActionPanelComponent', () => {
     expect(buttons(el)).toEqual(['Retry delivery', 'Finish without PR']);
     expect(el.textContent).toContain('GITHUB_TOKEN was rejected');
   });
+
+  it('stops watching a pull request with a reason (the poller sends the updates)', () => {
+    const el = setup({
+      interrupt_id: 'w1', kind: 'watch', title: 'Watching the pull request', artifact: null,
+      allowed_actions: ['update', 'reject'], data: { round: 1, max_rounds: 3 }, error: null,
+    });
+    expect(buttons(el)).toEqual(['Stop watching']);
+    expect(el.textContent).toContain('1 of 3 automatic rounds used');
+    click(el, 'Stop watching');
+    fixture.componentInstance.text.set('merged by hand');
+    fixture.detectChanges();
+    click(el, 'Send');
+    expect(sent).toEqual([{ interrupt_id: 'w1', action: 'reject', feedback: 'merged by hand' }]);
+  });
+
+  it('lists follow-up changes that need approval', () => {
+    const el = setup({
+      interrupt_id: 'f1', kind: 'approval', title: 'Approve follow-up changes (round 1)', artifact: 'followup',
+      allowed_actions: ['approve', 'reject'], error: null,
+      data: {
+        round: 1,
+        items: [{
+          task: { id: 'R1-1', title: 'Bump fastapi', description: '', target_files: [], depends_on: [], stack: 'python', story_ids: [] },
+          reason: 'touches pyproject.toml',
+          item: { kind: 'review', key: 'review:9', user: 'alice', body: 'Please bump fastapi', path: 'pyproject.toml' },
+        }],
+        small: ['Rename X'],
+      },
+    });
+    expect(buttons(el)).toEqual(['Approve changes', 'Decline']);
+    expect(el.textContent).toContain('R1-1 · Bump fastapi');
+    expect(el.textContent).toContain('@alice on pyproject.toml: Please bump fastapi');
+    expect(el.textContent).toContain('Also in this round (small, automatic): Rename X');
+  });
 });

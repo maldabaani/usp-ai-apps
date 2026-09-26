@@ -71,3 +71,32 @@ async def test_restart_keeps_waiting_and_active_runs(
         assert events[-1]["payload"]["status"] == "cancelled"
         listed = {r["id"]: r["status"] for r in (await b.client.get("/runs")).json()}
         assert listed == {waiting: "cancelled", active: "awaiting_final_approval"}
+
+
+async def test_watch_store_on_postgres(pg_engine: AsyncEngine) -> None:
+    from sqlalchemy.exc import IntegrityError
+
+    from app.db.models import Run
+    from app.db.watch import WatchRepository
+
+    sm = create_sessionmaker(pg_engine)
+    store = WatchRepository(sm)
+    row = await store.add_repo("acme/shop", poll_interval_s=120, extra_reviewers=["carol"])
+    assert row.id and row.enabled and row.extra_reviewers == ["carol"]
+    updated = await store.update_repo(row.id, enabled=False)
+    assert updated is not None and updated.enabled is False
+    assert [r.repo for r in await store.list_repos()] == ["acme/shop"]
+
+    async with sm() as session, session.begin():
+        session.add(Run(id="r" * 32, request="x", repo_target="acme/shop", status="pending"))
+    ir = await store.add_issue_run(
+        repo="acme/shop", issue_number=3, trigger="label:1", run_id="r" * 32
+    )
+    await store.update_issue_run(ir.id, comment_id=77, comment_text="hi")
+    found = await store.issue_run_for("r" * 32)
+    assert found is not None and found.comment_id == 77
+    with pytest.raises(IntegrityError):  # one run per label event
+        await store.add_issue_run(
+            repo="acme/shop", issue_number=3, trigger="label:1", run_id="r" * 32
+        )
+    assert await store.delete_repo(row.id) and not await store.delete_repo(row.id)

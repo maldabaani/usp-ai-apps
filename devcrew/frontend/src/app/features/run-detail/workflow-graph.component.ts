@@ -68,7 +68,7 @@ const STATUS_LABEL: Record<string, string> = {
                   @if (elapsed(n); as t) { <span class="time">· {{ t }}</span> }
                 </div>
               </div>
-              @if (n.pending_interrupt_ids.length) { <span class="badge" title="Waiting for you">!</span> }
+              @if (n.pending_interrupt_ids.length && n.status === 'waiting') { <span class="badge" title="Waiting for you">!</span> }
             </div>
             @if (n.detail) { <div class="detail" [title]="n.detail">{{ n.detail }}</div> }
             @if (n.kind === 'task') {

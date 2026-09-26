@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from app.config import Settings
 from app.db.repository import RunRepository, RunStore
 from app.db.session import create_engine, create_sessionmaker
+from app.db.watch import InMemoryWatchStore, WatchRepository, WatchStore
 from app.events.bus import EventBus
 from app.events.store import PostgresEventStore
 from app.graph.backbone import build_graph
@@ -21,6 +22,7 @@ from app.graph.factory import build_deps, build_llm
 from app.graph.runner import RunDriver
 from app.graph.runtime import GraphDeps
 from app.llm.client import LLMGateway
+from app.services.github_watch import GitHubWatcher
 from app.services.run_manager import RunManager
 
 
@@ -34,6 +36,8 @@ class Container:
     deps: GraphDeps
     driver: RunDriver
     manager: RunManager
+    watch: WatchStore
+    watcher: GitHubWatcher
 
     @classmethod
     def assemble(
@@ -44,8 +48,11 @@ class Container:
         runs: RunStore,
         checkpointer: BaseCheckpointSaver[Any],
         engine: AsyncEngine | None = None,
+        watch: WatchStore | None = None,
     ) -> Container:
         driver = RunDriver(build_graph(deps, checkpointer), deps.events, runs)
+        manager = RunManager(driver, runs, deps.events, deps)
+        watch = watch if watch is not None else InMemoryWatchStore()
         return cls(
             settings=settings,
             engine=engine,
@@ -54,7 +61,9 @@ class Container:
             llm=deps.llm,
             deps=deps,
             driver=driver,
-            manager=RunManager(driver, runs, deps.events, deps),
+            manager=manager,
+            watch=watch,
+            watcher=GitHubWatcher(settings, manager, watch, deps.github),
         )
 
     @classmethod
@@ -71,6 +80,7 @@ class Container:
                 runs=RunRepository(sessionmaker),
                 checkpointer=saver,
                 engine=engine,
+                watch=WatchRepository(sessionmaker),
             )
             try:
                 yield container

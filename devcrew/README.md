@@ -21,7 +21,7 @@ All LLM calls go to a **local Ollama**. There are no cloud LLM calls anywhere.
 | `backend/config/models.yaml` | Per-role model config. One shared chat model by default (no VRAM swapping). |
 | `backend/app/llm/client.py` | `LLMGateway`: ChatOllama/OllamaEmbeddings factory, a **global asyncio semaphore** (`MAX_PARALLEL_DEVS`) around every chat call, per-role token accounting. |
 | `backend/app/health.py` | DB, Chroma, Ollama, pulled models, Docker, GitHub token checks with actionable messages. Used by `GET /health` and by startup fail-fast. |
-| `backend/app/db/` | SQLAlchemy 2.0 async models: `runs` (run index) and `run_events` (append-only event log). Alembic migrations in `backend/alembic/`. |
+| `backend/app/db/` | SQLAlchemy 2.0 async models: `runs` (run index), `run_events` (append-only event log), `watched_repos` and `issue_runs` (GitHub automation). Alembic migrations in `backend/alembic/`. |
 | `backend/app/events/` | In-process asyncio pub/sub. Events are persisted **before** fan-out. Subscribers replay from Postgres after a `Last-Event-ID`, then switch to live with no gaps or duplicates. Slow subscribers resync from the store instead of blocking publishers. |
 
 | `backend/app/graph/backbone.py` | Backbone graph (see below). |
@@ -69,6 +69,72 @@ Design notes:
   summarizes failures for the Developer.
 - With `SANDBOX_ENABLED=false`, QA writes tests but they are not executed: results show
   `ran: false` and the task proceeds.
+
+## GitHub automation (Phase 12)
+
+DevCrew polls GitHub; it needs no webhooks, so it works on a laptop. It needs
+`GITHUB_DELIVERY_ENABLED=true` and a `GITHUB_TOKEN` with Issues, Pull requests and Contents
+read/write, plus Actions read for CI logs.
+
+**Watched repositories.** Manage them on the **GitHub** page (`/settings`). Each repository has:
+- an on/off switch;
+- a poll interval (at least 60 s; `DEFAULT_POLL_INTERVAL_S` when left empty);
+- optional *extra reviewers*.
+
+The page also lists the runs started from issues.
+
+**Issues become runs.**
+- An open issue labelled `devcrew` starts a **Full** run; `devcrew:quick` starts a **Quick
+  fix**. The issue title and body are the requirements.
+- The run still stops at plan approval.
+- At most `MAX_ISSUE_RUNS` issue runs are active at a time; other issues wait for a later
+  poll.
+- Each label event starts one run. Removing and re-adding the label starts a new run once the
+  previous one ended.
+- You can also import an issue on **New run** (Existing repository → GitHub issue, then
+  `#42` or the issue URL).
+- DevCrew keeps **one** comment on the issue and edits it in place as the run progresses:
+  planning, waiting for you, PR opened, failed.
+- The PR body says `Fixes #N`.
+
+**Follow-up on the pull request.** After the PR is opened the run keeps **watching** it (status
+`watching_pr`, `WATCH_PRS=true`). The run page shows each round to the right of the PR:
+*Round n · triage* → the round's tasks → *Round n · push & reply* → *Watching PR*.
+
+What starts a round:
+- **Review comments**: inline comments, PR conversation comments and review summaries.
+  - Only people with write, maintain or admin access, or the repository's extra reviewers,
+    are acted on. Other comments are listed as ignored.
+  - The Coordinator sorts each comment:
+    - **small**: fixed automatically;
+    - **big**: shown to you for approval (approve, or decline with a reply);
+    - **question**: answered on the PR;
+    - **not actionable**: acknowledged.
+  - Hard rules always make some comments **big**:
+    - changes to dependency, build or CI files;
+    - changes to auth or secret code;
+    - comments asking for dependency changes, migrations or redesigns.
+- **Failed checks.** Once all checks on the PR head have finished, each failed GitHub Actions
+  job's log tail goes into a CI fix task, which the crew reproduces with the project's tests.
+- **Merge conflicts.** DevCrew fetches the base branch and a task merges it into the PR branch
+  and resolves the conflicts. This is a merge, never a rebase.
+
+What a round does:
+- Its tasks run through the normal flow: developer, review, QA, merge, integration tests,
+  gates.
+- The result is pushed to the **same PR branch** without force. If the integration tests
+  fail, the round waits for your final approval instead.
+- Every handled thread gets a reply (marked with a hidden `<!-- devcrew -->` so it is never
+  picked up again), and fixed review threads are resolved.
+
+Limits and stopping:
+- After `MAX_PR_ROUNDS` (3) automatic rounds, every change needs your approval.
+- Watching ends when the PR is merged or closed, or when you click **Stop watching** on the
+  *Watching PR* node.
+
+API: `GET/POST/PATCH/DELETE /watched-repos`, `GET /issue-runs`, `POST /issues/import`.
+`GET /config` also returns `github_enabled` and `max_pr_rounds`. Resuming with `update` is
+reserved for the poller.
 
 ## Existing repositories and quality gates (Phase 11)
 

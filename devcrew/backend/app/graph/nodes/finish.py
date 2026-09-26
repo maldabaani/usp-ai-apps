@@ -123,7 +123,12 @@ def make_github_delivery(deps: GraphDeps) -> NodeFn:
             repo_created=result.repo_created,
             pushed_main=result.pushed_main,
         )
-        return Command(goto="done", update={"pr_url": result.pr_url, "delivery_error": None})
+        update: dict[str, Any] = {"pr_url": result.pr_url, "delivery_error": None}
+        if state.get("followup_active"):  # a follow-up round was pushed: reply on the PR
+            return Command(goto="report_followup", update=update)
+        if deps.settings.watch_prs:
+            return Command(goto="watch_pr", update={**update, "status": RunStatus.WATCHING.value})
+        return Command(goto="done", update=update)
 
     return github_delivery
 
