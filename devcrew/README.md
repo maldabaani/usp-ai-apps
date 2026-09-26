@@ -110,6 +110,13 @@ questions, and can chat with the crew, pause, set budgets or stop at any time.
 </tr>
 </table>
 
+<table>
+<tr>
+<td width="50%" align="center"><img src="docs/images/github-settings.png" alt="GitHub automation settings"><br><sub>Watched repositories and runs started from issues</sub></td>
+<td width="50%" align="center"><img src="docs/images/budget.png" alt="Budget reached"><br><sub>A budget stops the run before the next wave and asks you</sub></td>
+</tr>
+</table>
+
 ### 🛡️ Quality and safety built in
 
 | | |
