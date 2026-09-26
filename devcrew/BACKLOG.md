@@ -129,8 +129,8 @@ robustness, **P3** = nice to have.
 - [ ] **BL-073** (P3, from P7) Frontend unit tests cover the SSE client, API client, diff/DAG
   helpers, action panel, new-run form and run detail; there is no committed browser E2E test
   (the Playwright flow was run manually). *P9: the same flow, extended to the PR link, was
-  run again for the end-to-end demo; it is still not committed (Playwright is not a project
-  dependency).*
+  run again for the end-to-end demo. P10: rewritten for the workflow graph and run again;
+  still not committed (Playwright is not a project dependency).*
 
 ## Benchmark
 
@@ -145,6 +145,22 @@ robustness, **P3** = nice to have.
   interrupted benchmark cannot resume a run, but results are rewritten after every task.
 - [ ] **BL-096** (P3, from P9) The reference solutions used to validate the hidden suites
   are not committed. Add them with a `--validate-hidden` mode if the suites change often.
+
+## Workflow view (Phase 10)
+
+- [ ] **BL-100** (P2, from P10) Requirements documents are limited to `MAX_REQUEST_CHARS`
+  (20,000 by default) because the Planner and Architect receive the whole text. Longer
+  documents would need a summarization or chunked-planning step, or a larger `num_ctx`.
+- [ ] **BL-101** (P3, from P10) Only `.md`/`.txt` uploads (decided). `.docx`/`.pdf` would need
+  server-side parsing dependencies.
+- [ ] **BL-102** (P3, from P10) `GET /runs/{id}/workflow` recomputes the graph from the full
+  event log on every (batched) refresh. That is fine for local runs; cache or build it
+  incrementally if runs reach many thousands of events.
+- [ ] **BL-103** (P3, from P10) The Overview of a large plan (10+ tasks) is small. Consider
+  collapsing finished stages, a minimap (ngx-vflow has one) or grouping tasks by wave.
+- [ ] **BL-104** (P2, from P10) The workflow UI was verified with the scripted fake model (a
+  live Playwright walk-through from document upload to PR, including the plan assessment and
+  a developer question). Check it with real model timings and larger plans (with BL-002).
 
 ## Retrieval (RAG)
 
@@ -192,3 +208,12 @@ robustness, **P3** = nice to have.
   - The benchmark forces GitHub delivery off.
   - Extra metrics: Coordinator calls, task counts, per-role tokens, and the project's own
     integration test result.
+- [x] **BL-105** (from P10) Additions:
+  - Endpoints `GET /runs/{id}/workflow` and `GET /config`.
+  - Setting `MAX_REQUEST_CHARS`, replacing the hard-coded 20,000 limit.
+  - Optional `Design.plan_assessment`.
+  - Frontend dependencies `ngx-vflow` and its d3 peers (`d3-drag`, `d3-selection`, `d3-zoom`
+    plus their types).
+  - A dark "neon" theme (Material dark theme; design tokens in `styles.scss`) and inline-SVG
+    robot icons.
+  - The workflow graph replaces the old Tasks tab and task-DAG view.

@@ -1,5 +1,23 @@
+@use '@angular/material' as mat;
+
 // Local-first: no web fonts. Material's typescale variables all point at the system UI font.
 $app-font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+
+// DevCrew look: deep-space navy, glassy panels, neon cyan/teal accents that glow when active.
+html {
+  color-scheme: dark;
+  @include mat.theme(
+    (
+      color: (
+        theme-type: dark,
+        primary: mat.$cyan-palette,
+        tertiary: mat.$violet-palette,
+      ),
+      typography: $app-font,
+      density: 0,
+    )
+  );
+}
 
 :root {
   --mat-sys-brand-font-family: #{$app-font};
@@ -9,8 +27,124 @@ $app-font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial
       --mat-sys-#{$scale}-#{$size}-font: #{$app-font};
     }
   }
+
+  // Design tokens used by every component.
+  --dc-bg: #060a14;
+  --dc-bg-2: #0b1324;
+  --dc-panel: rgba(13, 24, 44, 0.78);
+  --dc-panel-solid: #0d182c;
+  --dc-panel-hover: rgba(22, 40, 70, 0.85);
+  --dc-border: rgba(94, 200, 255, 0.18);
+  --dc-border-strong: rgba(94, 200, 255, 0.45);
+  --dc-text: #dcecff;
+  --dc-text-dim: #8aa3c2;
+  --dc-text-faint: #5b7190;
+  --dc-cyan: #3ee6ff;
+  --dc-teal: #2de2b0;
+  --dc-blue: #4d8dff;
+  --dc-violet: #a384ff;
+  --dc-amber: #ffc14d;
+  --dc-red: #ff5a7a;
+  --dc-green: #3ddc84;
+  --dc-code-bg: #081122;
+  --dc-glow-cyan: 0 0 14px rgba(62, 230, 255, 0.45), 0 0 2px rgba(62, 230, 255, 0.9);
+  --dc-glow-teal: 0 0 14px rgba(45, 226, 176, 0.4);
+  --dc-glow-amber: 0 0 16px rgba(255, 193, 77, 0.5);
+  --dc-glow-red: 0 0 14px rgba(255, 90, 122, 0.45);
+  --dc-radius: 12px;
+  --dc-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
 }
 
-html, body { height: 100%; }
-body { margin: 0; font-family: $app-font; background: #fbfcfe; }
-code, pre { font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace; }
+html,
+body {
+  height: 100%;
+}
+body {
+  margin: 0;
+  font-family: $app-font;
+  color: var(--dc-text);
+  background:
+    radial-gradient(1200px 600px at 10% -10%, rgba(62, 230, 255, 0.1), transparent 60%),
+    radial-gradient(900px 500px at 110% 10%, rgba(163, 132, 255, 0.1), transparent 60%),
+    linear-gradient(180deg, var(--dc-bg-2), var(--dc-bg) 40%);
+  background-attachment: fixed;
+}
+code,
+pre {
+  font-family: var(--dc-mono);
+}
+a {
+  color: var(--dc-cyan);
+}
+h1,
+h2,
+h3 {
+  color: #f1f7ff;
+  letter-spacing: 0.2px;
+}
+
+// Glass panel shared by cards and side panels.
+.dc-glass {
+  background: var(--dc-panel);
+  border: 1px solid var(--dc-border);
+  border-radius: var(--dc-radius);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+}
+
+.mat-mdc-card {
+  --mat-card-elevated-container-color: var(--dc-panel);
+  --mdc-elevated-card-container-color: var(--dc-panel);
+  border: 1px solid var(--dc-border);
+}
+
+// Material tabs: keep the glow language.
+.mat-mdc-tab-group {
+  --mat-tab-header-active-label-text-color: var(--dc-cyan);
+  --mat-tab-header-active-focus-label-text-color: var(--dc-cyan);
+  --mat-tab-header-active-hover-label-text-color: var(--dc-cyan);
+  --mdc-tab-indicator-active-indicator-color: var(--dc-cyan);
+}
+
+@keyframes dc-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 6px rgba(62, 230, 255, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 22px rgba(62, 230, 255, 0.75);
+  }
+}
+@keyframes dc-pulse-amber {
+  0%,
+  100% {
+    box-shadow: 0 0 6px rgba(255, 193, 77, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 22px rgba(255, 193, 77, 0.8);
+  }
+}
+@keyframes dc-flow {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+  }
+}
+
+.mat-mdc-table {
+  --mat-table-background-color: transparent;
+}
+
+// ngx-vflow connection handles: small and quiet (the flow is read-only).
+circle.default-handle.default-handle {
+  stroke: rgba(94, 200, 255, 0.55);
+  fill: #0b1426;
+  r: 3.5px;
+}

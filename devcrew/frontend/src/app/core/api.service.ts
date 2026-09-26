@@ -4,6 +4,7 @@ import { Observable } from 'rxjs';
 
 import { environment } from '../../environments/environment';
 import {
+  ClientConfig,
   CreateRunRequest,
   DiffResponse,
   FileContent,
@@ -13,6 +14,7 @@ import {
   ResumeRequest,
   RunDetail,
   RunSummary,
+  Workflow,
 } from './api.models';
 
 /** Typed client for the DevCrew backend. The base URL comes from the environment files. */
@@ -65,6 +67,14 @@ export class ApiService {
     return this.http.get<DiffResponse>(`${this.baseUrl}/runs/${encodeURIComponent(runId)}/diff`, {
       params,
     });
+  }
+
+  workflow(runId: string): Observable<Workflow> {
+    return this.http.get<Workflow>(`${this.baseUrl}/runs/${encodeURIComponent(runId)}/workflow`);
+  }
+
+  config(): Observable<ClientConfig> {
+    return this.http.get<ClientConfig>(`${this.baseUrl}/config`);
   }
 
   health(): Observable<HealthReport> {

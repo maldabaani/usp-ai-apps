@@ -15,6 +15,27 @@ import { MarkdownPipe } from '../../shared/markdown.pipe';
           · <code>{{ c.template_id }}</code> in <code>{{ c.path }}/</code>
         }
       </p>
+      @if (d.plan_assessment; as a) {
+        @if (a.concerns.length || a.assumptions.length || a.suggested_changes.length) {
+          <section class="assessment" aria-label="Architect's plan assessment">
+            <h3>Architect's assessment of the plan</h3>
+            <p class="hint">Advisory: the plan is unchanged. Reject the design with feedback, or
+              go back to the plan, to act on it.</p>
+            @for (group of [
+              { title: 'Concerns', items: a.concerns, cls: 'concerns' },
+              { title: 'Assumptions', items: a.assumptions, cls: 'assumptions' },
+              { title: 'Suggested plan changes', items: a.suggested_changes, cls: 'changes' },
+            ]; track group.title) {
+              @if (group.items.length) {
+                <h4 [class]="group.cls">{{ group.title }}</h4>
+                <ul>
+                  @for (item of group.items; track $index) { <li>{{ item }}</li> }
+                </ul>
+              }
+            }
+          </section>
+        }
+      }
       <h3>Modules and contracts</h3>
       <div class="modules">
         @for (m of d.modules; track m.name) {
@@ -41,10 +62,16 @@ import { MarkdownPipe } from '../../shared/markdown.pipe';
   `,
   styles: `
     .modules { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 8px; }
-    .module { border: 1px solid #e0e0e0; border-radius: 8px; padding: 8px; }
+    .module { border: 1px solid var(--dc-border); border-radius: 8px; padding: 8px; background: rgba(8, 17, 34, 0.6); }
     .module code { margin-left: 8px; }
-    pre { white-space: pre-wrap; background: #f6f8fa; padding: 6px; border-radius: 6px; font-size: 12px; }
-    .markdown { border-top: 1px solid #eee; padding-top: 8px; }
+    pre { white-space: pre-wrap; background: var(--dc-code-bg); padding: 6px; border-radius: 6px; font-size: 12px; }
+    .markdown { border-top: 1px solid var(--dc-border); padding-top: 8px; }
+    .assessment { border: 1px solid rgba(163, 132, 255, 0.45); border-radius: 10px; padding: 4px 14px 8px;
+                  background: rgba(163, 132, 255, 0.07); box-shadow: 0 0 18px rgba(163, 132, 255, 0.12); }
+    .assessment h3 { color: var(--dc-violet); }
+    .hint { color: var(--dc-text-dim); font-size: 12px; margin-top: -6px; }
+    h4 { margin: 8px 0 2px; font-size: 13px; }
+    .concerns { color: var(--dc-amber); } .assumptions { color: var(--dc-cyan); } .changes { color: var(--dc-teal); }
   `,
 })
 export class DesignViewComponent {

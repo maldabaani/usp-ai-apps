@@ -64,18 +64,18 @@ export function describeEvent(e: RunEvent): string {
   `,
   styles: `
     .bar { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; }
-    .count { color: #666; font-size: 13px; }
+    .count { color: var(--dc-text-dim); font-size: 13px; }
     .timeline { list-style: none; margin: 0; padding: 0; max-height: 70vh; overflow: auto;
                 font-family: ui-monospace, monospace; font-size: 13px; }
-    .row { display: flex; gap: 10px; padding: 3px 6px; border-bottom: 1px solid #eee; }
-    .time { color: #888; min-width: 64px; }
-    .type { min-width: 110px; color: #555; }
-    .task { background: #eef3ff; padding: 0 6px; border-radius: 8px; }
+    .row { display: flex; gap: 10px; padding: 3px 6px; border-bottom: 1px solid var(--dc-border); }
+    .time { color: var(--dc-text-faint); min-width: 64px; }
+    .type { min-width: 110px; color: var(--dc-text-dim); }
+    .task { background: rgba(77, 141, 255, 0.18); padding: 0 6px; border-radius: 8px; }
     .text { white-space: pre-wrap; word-break: break-word; }
-    .error .text { color: #b3261e; }
-    .awaiting_input { background: #fff6dd; }
-    .merge .text { color: #135c2b; }
-    .empty { color: #888; padding: 8px; }
+    .error .text { color: var(--dc-red); }
+    .awaiting_input { background: rgba(255, 193, 77, 0.1); }
+    .merge .text { color: var(--dc-teal); }
+    .empty { color: var(--dc-text-faint); padding: 8px; }
   `,
 })
 export class EventTimelineComponent {

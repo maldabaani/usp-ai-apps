@@ -15,7 +15,7 @@ REPO_RE = r"^[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100}$"
 
 
 class CreateRunRequest(BaseModel):
-    request: str = Field(min_length=10, max_length=20_000)
+    request: str = Field(min_length=10)  # max length: MAX_REQUEST_CHARS, checked in the route
     repo_target: str = Field(pattern=REPO_RE, description="owner/repo on GitHub")
     create_repo: bool = False
 

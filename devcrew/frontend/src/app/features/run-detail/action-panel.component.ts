@@ -99,14 +99,14 @@ type Mode = 'none' | 'reject' | 'edit' | 'answer';
     </mat-card>
   `,
   styles: `
-    .panel { border-left: 4px solid #e8a300; margin-bottom: 12px; }
-    .panel.question { border-left-color: #6e9eff; }
-    .panel.escalation { border-left-color: #b3261e; }
+    .panel { border-left: 4px solid var(--dc-amber); margin-bottom: 12px; }
+    .panel.question { border-left-color: var(--dc-blue); }
+    .panel.escalation { border-left-color: var(--dc-red); }
     .wide { width: 100%; }
     .json { font-family: ui-monospace, monospace; font-size: 12px; }
     .question { font-size: 16px; font-weight: 500; }
-    .reason { white-space: pre-wrap; background: #fff6f5; padding: 8px; border-radius: 6px; font-size: 12px; }
-    .error, .bad { color: #b3261e; }
+    .reason { white-space: pre-wrap; background: rgba(255, 90, 122, 0.08); padding: 8px; border-radius: 6px; font-size: 12px; }
+    .error, .bad { color: var(--dc-red); }
   `,
 })
 export class ActionPanelComponent {

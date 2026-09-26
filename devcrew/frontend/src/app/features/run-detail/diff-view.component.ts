@@ -31,14 +31,14 @@ import { parseUnifiedDiff } from '../../core/diff';
     }
   `,
   styles: `
-    .file { border: 1px solid #d0d7de; border-radius: 6px; margin-bottom: 12px; overflow: hidden; }
-    header { display: flex; justify-content: space-between; background: #f6f8fa; padding: 6px 8px; }
-    .plus { color: #1b7f3b; } .minus { color: #b3261e; }
+    .file { border: 1px solid var(--dc-border); border-radius: 6px; margin-bottom: 12px; overflow: hidden; }
+    header { display: flex; justify-content: space-between; background: var(--dc-code-bg); padding: 6px 8px; }
+    .plus { color: var(--dc-green); } .minus { color: var(--dc-red); }
     table { border-collapse: collapse; width: 100%; font-family: ui-monospace, monospace; font-size: 12px; }
     td { padding: 0 6px; white-space: pre-wrap; word-break: break-all; vertical-align: top; }
-    .no { width: 1%; color: #999; text-align: right; user-select: none; }
-    .add { background: #e6ffec; } .del { background: #ffebe9; }
-    .hunk td { background: #ddf4ff; color: #555; }
+    .no { width: 1%; color: var(--dc-text-faint); text-align: right; user-select: none; }
+    .add { background: rgba(61, 220, 132, 0.12); } .del { background: rgba(255, 90, 122, 0.12); }
+    .hunk td { background: rgba(77, 141, 255, 0.15); color: var(--dc-text-dim); }
   `,
 })
 export class DiffViewComponent {

@@ -10,6 +10,7 @@ import { switchMap, timer } from 'rxjs';
 
 import { RunSummary } from '../../core/api.models';
 import { ApiService } from '../../core/api.service';
+import { requestTitle } from '../../core/requirements';
 import { StatusChipComponent } from '../../shared/status-chip.component';
 
 const REFRESH_MS = 5000;
@@ -39,7 +40,7 @@ const REFRESH_MS = 5000;
         <ng-container matColumnDef="request">
           <th mat-header-cell *matHeaderCellDef>Request</th>
           <td mat-cell *matCellDef="let run">
-            <a [routerLink]="['/runs', run.id]">{{ run.request | slice: 0 : 90 }}{{ run.request.length > 90 ? '…' : '' }}</a>
+            <a [routerLink]="['/runs', run.id]">{{ title(run.request) | slice: 0 : 90 }}{{ title(run.request).length > 90 ? '…' : '' }}</a>
           </td>
         </ng-container>
         <ng-container matColumnDef="repo">
@@ -70,7 +71,7 @@ const REFRESH_MS = 5000;
   styles: `
     .header { display: flex; align-items: center; justify-content: space-between; }
     .runs { width: 100%; }
-    .error { color: #b3261e; }
+    .error { color: var(--dc-red); }
   `,
 })
 export class RunsListComponent {
@@ -79,6 +80,7 @@ export class RunsListComponent {
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
   readonly columns = ['request', 'repo', 'status', 'pr', 'created'];
+  readonly title = requestTitle;
 
   constructor() {
     timer(0, REFRESH_MS)

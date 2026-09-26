@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     max_parallel_devs: int = Field(default=2, ge=1)
     max_dev_iterations: int = Field(default=3, ge=1)
     max_questions_per_task: int = Field(default=3, ge=0)
+    # The Planner and Architect always receive the whole request, so it must fit their context
+    # window: ~20k characters with the default num_ctx 16384. Raise together with num_ctx.
+    max_request_chars: int = Field(default=20_000, ge=100)
     max_conflict_rounds: int = Field(default=2, ge=0, description="Merge-conflict fixes per task.")
     max_coordinator_actions: int = Field(
         default=2, ge=0, description="Automatic retry/replan/split decisions per task/node."

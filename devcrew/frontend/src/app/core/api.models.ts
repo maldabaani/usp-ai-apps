@@ -61,6 +61,12 @@ export interface ModuleContract {
   interface: string;
 }
 
+export interface PlanAssessment {
+  concerns: string[];
+  assumptions: string[];
+  suggested_changes: string[];
+}
+
 export interface Design {
   stack: Stack;
   template_id: string;
@@ -69,6 +75,7 @@ export interface Design {
   modules: ModuleContract[];
   key_decisions: string[];
   design_doc: string;
+  plan_assessment?: PlanAssessment | null;
 }
 
 export interface ReviewIssue {
@@ -239,4 +246,54 @@ export interface HealthCheck {
 export interface HealthReport {
   ok: boolean;
   checks: HealthCheck[];
+}
+
+export interface ClientConfig {
+  max_request_chars: number;
+  max_dev_iterations: number;
+  max_parallel_devs: number;
+}
+
+export type WorkflowNodeStatus = 'pending' | 'running' | 'waiting' | 'done' | 'failed' | 'skipped';
+export type WorkflowNodeKind = 'input' | 'agent' | 'approval' | 'system' | 'task' | 'output';
+
+export interface WorkflowActivity {
+  at: string;
+  kind: string;
+  text: string;
+  ok: boolean | null;
+}
+
+export interface WorkflowNode {
+  id: string;
+  kind: WorkflowNodeKind;
+  label: string;
+  status: WorkflowNodeStatus;
+  detail: string | null;
+  step: string | null;
+  task_id: string | null;
+  stack: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  runs: number;
+  counters: Record<string, number>;
+  pending_interrupt_ids: string[];
+  activity: WorkflowActivity[];
+}
+
+export interface WorkflowEdge {
+  id: string;
+  source: string;
+  target: string;
+  kind: 'flow' | 'loop';
+  active: boolean;
+  label: string | null;
+}
+
+export interface Workflow {
+  run_id: string;
+  status: RunStatus;
+  nodes: WorkflowNode[];
+  edges: WorkflowEdge[];
+  attention: string[];
 }

@@ -42,8 +42,8 @@ import { Plan } from '../../core/api.models';
     .summary { font-size: 15px; }
     .story { margin-bottom: 8px; }
     .tasks { border-collapse: collapse; width: 100%; font-size: 14px; }
-    .tasks th, .tasks td { border-bottom: 1px solid #eee; padding: 6px; text-align: left; vertical-align: top; }
-    .desc { color: #666; font-size: 13px; }
+    .tasks th, .tasks td { border-bottom: 1px solid var(--dc-border); padding: 6px; text-align: left; vertical-align: top; }
+    .desc { color: var(--dc-text-dim); font-size: 13px; }
   `,
 })
 export class PlanViewComponent {

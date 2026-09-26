@@ -70,6 +70,59 @@ Design notes:
 - With `SANDBOX_ENABLED=false`, QA writes tests but they are not executed: results show
   `ran: false` and the task proceeds.
 
+## Workflow view and requirements documents (Phase 10)
+
+**Requirements input.** The New run page takes a feature request or a requirements document:
+- Type or paste into the editor; the Preview toggle renders the Markdown.
+- Or upload `.md`/`.txt` files by drag-and-drop or the file picker. Several files are joined,
+  each under a `# <file name>` heading.
+- A counter shows the size against `MAX_REQUEST_CHARS` (default 20,000 characters, served by
+  `GET /config`). The Planner and Architect always receive the whole text, so the limit must
+  fit their context window. To accept longer documents, raise `MAX_REQUEST_CHARS` together
+  with `num_ctx` in `models.yaml`.
+
+**Workflow graph.** The run page opens on an n8n-style graph drawn with
+[ngx-vflow](https://www.ngx-vflow.org/):
+- The main flow runs Requirements → Planner → Plan approval → Architect → Design approval →
+  Scaffold, then one node per plan task (wired by dependencies, parallel tasks side by side),
+  then Integration tests → Final approval → GitHub PR.
+- Each node shows a robot for the agent at work, its status and elapsed time. Task nodes
+  show dev → review → QA progress, the iteration count and Coordinator actions.
+- Node colours:
+
+  | Colour | Meaning |
+  |---|---|
+  | Cyan pulse | Working |
+  | Amber pulse, with a badge | Needs you |
+  | Teal | Done |
+  | Red | Failed |
+  | Striped | Skipped or blocked |
+
+- Edges animate while work flows into a node. Rejections show as amber loop edges
+  ("rejected 1x").
+- **Follow** (the default) zooms to the active work and moves along with it. **Overview** shows
+  the whole flow; finished runs always open in overview.
+
+**Side panel.** Clicking a node opens a panel with its output and actions:
+- **Requirements:** the document.
+- **Planner:** the plan.
+- **Architect:** the design, including the Architect's **plan assessment** (concerns,
+  assumptions and suggested plan changes). The assessment is advisory; the plan only changes
+  if you reject or edit.
+- **Task:** review, tests and diff.
+- **Integration:** test results.
+- **PR:** the link.
+- **Every node:** its live activity feed.
+
+Approvals and questions are answered right in the panel. When something newly needs you, a
+"Waiting for you" banner appears and the panel opens on that node. A panel opened this way
+moves on with the work; a node you pick stays selected.
+
+The graph comes from `GET /runs/{id}/workflow`, which is computed from the run status,
+checkpointed state, pending interrupts and the event log. It looks the same after a reload or
+a backend restart, and the UI re-fetches it (batched) as events stream in. The Timeline, Plan,
+Design, Q&A and Files tabs are still below the graph.
+
 ## Benchmark (Phase 9)
 
 `benchmarks/` holds 12 tasks: 4 per stack (Python/FastAPI, Java/Spring Boot, Angular),

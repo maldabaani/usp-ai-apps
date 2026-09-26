@@ -53,13 +53,13 @@ import { ApiService } from '../../core/api.service';
   styles: `
     .ref { width: 360px; }
     .explorer { display: grid; grid-template-columns: 320px 1fr; gap: 12px; min-height: 400px; }
-    .tree { max-height: 70vh; overflow: auto; border: 1px solid #e0e0e0; border-radius: 6px; }
+    .tree { max-height: 70vh; overflow: auto; border: 1px solid var(--dc-border); border-radius: 6px; }
     .file { display: block; width: 100%; text-align: left; background: none; border: 0; padding: 3px 8px;
             font: 13px ui-monospace, monospace; cursor: pointer; }
-    .file:hover { background: #f1f4f8; } .file.active { background: #dbe7ff; }
-    .viewer { border: 1px solid #e0e0e0; border-radius: 6px; padding: 8px; overflow: auto; max-height: 70vh; }
+    .file:hover { background: var(--dc-panel-hover); } .file.active { background: rgba(62, 230, 255, 0.15); }
+    .viewer { border: 1px solid var(--dc-border); border-radius: 6px; padding: 8px; overflow: auto; max-height: 70vh; }
     pre { margin: 0; font-size: 12px; white-space: pre; }
-    .muted { color: #888; } .error { color: #b3261e; }
+    .muted { color: var(--dc-text-faint); } .error { color: var(--dc-red); }
   `,
 })
 export class FileExplorerComponent {

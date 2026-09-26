@@ -137,6 +137,21 @@ class Component(BaseModel):
         return p
 
 
+class PlanAssessment(BaseModel):
+    """The Architect's review of the approved plan (advisory: the plan is not changed)."""
+
+    concerns: list[str] = Field(
+        default_factory=list, description="Risks, gaps or ambiguities in the plan."
+    )
+    assumptions: list[str] = Field(
+        default_factory=list, description="Assumptions the design makes where the plan is silent."
+    )
+    suggested_changes: list[str] = Field(
+        default_factory=list,
+        description="Changes to the plan you recommend (the human decides whether to apply them).",
+    )
+
+
 class Design(BaseModel):
     stack: Stack
     template_id: str
@@ -149,6 +164,9 @@ class Design(BaseModel):
     modules: list[ModuleContract] = Field(min_length=1)
     key_decisions: list[str] = Field(default_factory=list)
     design_doc: str = Field(description="Markdown design document.")
+    plan_assessment: PlanAssessment | None = Field(
+        default=None, description="Your assessment of the plan you are designing for."
+    )
 
     @model_validator(mode="after")
     def _layout_is_valid(self, info: ValidationInfo) -> Self:

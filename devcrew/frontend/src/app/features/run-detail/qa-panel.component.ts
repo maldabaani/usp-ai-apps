@@ -21,10 +21,10 @@ import { QAEntry } from '../../core/api.models';
     }
   `,
   styles: `
-    .qa { border-left: 3px solid #6e9eff; padding: 6px 10px; margin-bottom: 10px; background: #fafbff; }
-    .who { font-size: 13px; color: #555; }
-    .task { background: #eef3ff; padding: 0 6px; border-radius: 8px; margin-left: 6px; }
-    .q { margin-top: 4px; } .a { color: #135c2b; margin-top: 2px; }
+    .qa { border-left: 3px solid var(--dc-blue); padding: 6px 10px; margin-bottom: 10px; background: rgba(8, 17, 34, 0.6); }
+    .who { font-size: 13px; color: var(--dc-text-dim); }
+    .task { background: rgba(77, 141, 255, 0.18); padding: 0 6px; border-radius: 8px; margin-left: 6px; }
+    .q { margin-top: 4px; } .a { color: var(--dc-teal); margin-top: 2px; }
   `,
 })
 export class QaPanelComponent {

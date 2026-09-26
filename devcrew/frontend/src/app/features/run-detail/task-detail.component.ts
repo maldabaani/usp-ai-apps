@@ -78,14 +78,14 @@ import { DiffViewComponent } from './diff-view.component';
     }
   `,
   styles: `
-    .desc { color: #444; }
-    .meta { color: #666; font-size: 13px; }
-    pre { white-space: pre-wrap; background: #f6f8fa; padding: 8px; border-radius: 6px; font-size: 12px; }
+    .desc { color: var(--dc-text); }
+    .meta { color: var(--dc-text-dim); font-size: 13px; }
+    pre { white-space: pre-wrap; background: var(--dc-code-bg); padding: 8px; border-radius: 6px; font-size: 12px; }
     .logs { max-height: 300px; overflow: auto; }
     .issues { border-collapse: collapse; width: 100%; font-size: 13px; }
-    .issues th, .issues td { border-bottom: 1px solid #eee; padding: 4px 6px; text-align: left; }
-    .blocker td:first-child, .major td:first-child { color: #b3261e; font-weight: 600; }
-    .error { color: #b3261e; }
+    .issues th, .issues td { border-bottom: 1px solid var(--dc-border); padding: 4px 6px; text-align: left; }
+    .blocker td:first-child, .major td:first-child { color: var(--dc-red); font-weight: 600; }
+    .error { color: var(--dc-red); }
   `,
 })
 export class TaskDetailComponent {

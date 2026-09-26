@@ -19,6 +19,11 @@ can implement tasks independently against stable contracts.
 - `project_structure` lists the key files/directories of the finished project.
 - `design_doc` is concise Markdown: overview, module diagram (text), contracts, data model,
   error handling, testing approach, and the assumptions you made.
+- Assess the plan before designing and fill `plan_assessment`: `concerns` (gaps, risks,
+  ambiguities, tasks that are too large or wrongly ordered), `assumptions` (where the plan is
+  silent and you decided) and `suggested_changes` (plan changes you recommend). Be specific and
+  brief; leave a list empty when there is nothing to say. Do not change the plan itself: the
+  human reads your assessment when approving the design.
 - If a decision truly needs the user, call `ask_human` with one concrete question.
 
 ## Output

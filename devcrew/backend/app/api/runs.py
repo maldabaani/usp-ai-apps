@@ -23,6 +23,7 @@ from app.services.run_manager import (
     RunManager,
     RunNotFoundError,
 )
+from app.services.workflow import Workflow, build_workflow
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
@@ -52,6 +53,13 @@ async def detail(manager: RunManager, run_id: str) -> RunDetail:
 
 @router.post("", response_model=RunSummary, status_code=status.HTTP_201_CREATED)
 async def create_run(body: CreateRunRequest, container: ContainerDep) -> RunSummary:
+    limit = container.settings.max_request_chars
+    if len(body.request) > limit:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            f"the request has {len(body.request):,} characters; the limit is {limit:,} "
+            "(MAX_REQUEST_CHARS: the Planner and Architect must fit it in their context window)",
+        )
     run = await container.manager.start(
         request=body.request, repo_target=body.repo_target, create_repo=body.create_repo
     )
@@ -69,6 +77,27 @@ async def list_runs(
 @router.get("/{run_id}", response_model=RunDetail)
 async def get_run(run_id: str, container: ContainerDep) -> RunDetail:
     return await detail(container.manager, run_id)
+
+
+@router.get("/{run_id}/workflow", response_model=Workflow)
+async def get_workflow(run_id: str, container: ContainerDep) -> Workflow:
+    """The run as a workflow graph: stages, one node per task, statuses and activity."""
+    manager = container.manager
+    run = await _run_or_404(manager, run_id)
+    state = await manager.state(run_id)
+    pending = [] if manager.is_busy(run_id) else await manager.pending(run_id)
+    events = [e async for e in container.events.replay(run_id)]
+    return build_workflow(
+        run_id=run_id,
+        status=run.status,
+        request=run.request,
+        created_at=run.created_at,
+        state=state,
+        events=events,
+        pending=pending,
+        pr_url=run.pr_url,
+        max_dev_iterations=container.settings.max_dev_iterations,
+    )
 
 
 @router.get("/{run_id}/events")
