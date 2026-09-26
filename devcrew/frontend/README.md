@@ -1,7 +1,7 @@
 # DevCrew UI
 
 Angular 19 (standalone components, signals, OnPush, Angular Material) front end for the DevCrew
-backend. See the main [README](../README.md#web-ui-phase-7) for features.
+backend. See the main [technical guide](../docs/GUIDE.md#web-ui-phase-7) for features.
 
 ```bash
 npm ci

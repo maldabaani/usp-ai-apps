@@ -1,684 +1,312 @@
-# DevCrew
+<div align="center">
 
-A local, single-user, role-based multi-agent software development team. Five LangGraph agents
-(Planner, Architect, Developer ×N, Reviewer, QA) plan, design, implement, review and test a
-greenfield project (Python/FastAPI, Java/Spring Boot, or Angular) in Docker sandboxes, with human
-approvals for the plan, the design and the final result, then open a GitHub PR.
+# 🤖 DevCrew
 
-All LLM calls go to a **local Ollama**. There are no cloud LLM calls anywhere.
+### A local, multi-agent software development team
 
-> Status: **Phase 8**: GitHub delivery (repo creation, push, pull request) after final
-> approval, on top of the Angular UI, the HTTP API (SSE replay, resume/cancel, restart recovery)
-> and the backbone graph (five roles, parallel developers in git worktrees, LLM Coordinator,
-> agent Q&A, Docker sandboxes, starter templates, per-run RAG). The benchmark (9) comes next.
-> Open issues and deferred work: [BACKLOG.md](BACKLOG.md).
+Planner · Architect · Developers · Reviewer · QA · Coordinator. They plan, design, build,
+review and test your feature in Docker sandboxes, and you approve every important step.
 
-## Architecture
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-backend-009688?logo=fastapi&logoColor=white)
+![LangGraph](https://img.shields.io/badge/LangGraph-agents-1C3C3C?logo=langchain&logoColor=white)
+![Ollama](https://img.shields.io/badge/Ollama-local%20LLMs-000000?logo=ollama&logoColor=white)
+![Angular](https://img.shields.io/badge/Angular-19-DD0031?logo=angular&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-state-4169E1?logo=postgresql&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-sandboxes-2496ED?logo=docker&logoColor=white)
 
-| Module | Purpose |
+**100% local models: no cloud LLM calls.**
+
+</div>
+
+<p align="center">
+  <img src="docs/images/workflow-developers.png" alt="DevCrew workflow: two developers working in parallel" width="900">
+</p>
+
+---
+
+## ✨ What DevCrew does
+
+You describe a feature, upload a requirements document or label a GitHub issue. DevCrew turns
+it into a reviewed, tested pull request:
+
+1. **Plans** it into user stories and a dependency graph of tasks.
+2. **Designs** it: the Architect picks a template (or reads your existing code), defines
+   modules and contracts, and assesses the plan.
+3. **Builds** it: several developers work in parallel, each in its own git worktree. Every task
+   is reviewed against coding rules and tested by QA in a sandbox.
+4. **Checks** it: integration tests, secret scanning, dependency vulnerabilities and coverage.
+5. **Delivers** a pull request, then **follows it up** on review comments, failing CI and
+   merge conflicts.
+
+You stay in control. You approve the plan, the design and the final result, answer the agents'
+questions, and can chat with the crew, pause, set budgets or stop at any time.
+
+## 🧩 Features
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### 📄 Requirements in, workflow out
+- Type a request or drop `.md` / `.txt` requirements documents, with a live preview.
+- Works on **new projects** or **existing repositories** (Python, Java/Maven, Angular, detected
+  automatically).
+- **Full** mode (plan → design → build) or **Quick fix** (one approval).
+
+</td>
+<td width="50%"><img src="docs/images/new-run.png" alt="New run with a requirements document"></td>
+</tr>
+<tr>
+<td valign="top">
+
+### 🧭 Live workflow graph
+- n8n-style graph: every stage and every task is a node with live status, the agent at work,
+  iteration counts and activity.
+- The side panel shows the plan, the design, diffs, test logs, Q&A and approvals.
+- The Architect's **plan assessment** lists concerns, assumptions and suggested changes before
+  you approve.
+
+</td>
+<td><img src="docs/images/design-approval.png" alt="Design approval with the Architect's assessment"></td>
+</tr>
+<tr>
+<td valign="top">
+
+### 🐙 GitHub automation
+- Watches repositories: an issue labelled `devcrew` (or `devcrew:quick`) starts a run.
+- Keeps one status comment per issue, and the PR says `Fixes #N`.
+- **PR follow-up rounds**:
+  - review comments from people with write access are triaged;
+  - small fixes are pushed automatically, bigger ones wait for you;
+  - failing CI and merge conflicts are fixed;
+  - every thread gets a reply.
+
+</td>
+<td><img src="docs/images/pr-followup.png" alt="PR follow-up round waiting for approval"></td>
+</tr>
+<tr>
+<td valign="top">
+
+### 💬 Steering while it runs
+- **Chat** with the crew or a single task. Messages are applied at safe points: as notes,
+  new tasks, cancelled tasks or answers.
+- **Pause / resume** between waves and between a task's attempts.
+- Edit or withdraw a message while it still waits.
+
+</td>
+<td><img src="docs/images/chat-and-pause.png" alt="Paused run with queued chat messages"></td>
+</tr>
+<tr>
+<td valign="top">
+
+### 📊 Usage and budgets
+- Tokens per role and per task, model time, and working time vs. time spent waiting for you.
+- **Token and time budgets**: at the limit the run asks you to continue or stop.
+- **Retry** a failed run from its checkpoint, or **run again** with the same request.
+
+</td>
+<td><img src="docs/images/usage.png" alt="Usage tab"></td>
+</tr>
+</table>
+
+### 🛡️ Quality and safety built in
+
+| | |
 |---|---|
-| `backend/app/config.py` | All settings from env / `.env` (documented in `.env.example`). |
-| `backend/config/models.yaml` | Per-role model config. One shared chat model by default (no VRAM swapping). |
-| `backend/app/llm/client.py` | `LLMGateway`: ChatOllama/OllamaEmbeddings factory, a **global asyncio semaphore** (`MAX_PARALLEL_DEVS`) around every chat call, per-role token accounting. |
-| `backend/app/health.py` | DB, Chroma, Ollama, pulled models, Docker, GitHub token checks with actionable messages. Used by `GET /health` and by startup fail-fast. |
-| `backend/app/db/` | SQLAlchemy 2.0 async models: `runs` (run index), `run_events` (append-only event log), `watched_repos` and `issue_runs` (GitHub automation), `run_messages` (chat). Alembic migrations in `backend/alembic/`. |
-| `backend/app/events/` | In-process asyncio pub/sub. Events are persisted **before** fan-out. Subscribers replay from Postgres after a `Last-Event-ID`, then switch to live with no gaps or duplicates. Slow subscribers resync from the store instead of blocking publishers. |
+| 🔒 **Sandboxed execution** | Generated code runs only in Docker: no network (except fixed dependency installs), no capabilities, read-only root, CPU/memory/time limits, and a command policy. |
+| 🧪 **Tests at every level** | QA per task, the project's tests after every wave of parallel work, and full integration tests at the end. Pass/fail comes from exit codes, never from the model. |
+| 🔑 **Quality gates** | gitleaks secret scan (never allowed through), osv-scanner dependency vulnerabilities, and a coverage threshold (or no drop vs. the base branch). Failures get an automatic fix task first. |
+| 👤 **Human approvals** | Plan, design and final approval; nothing is pushed before the final approval, and the default branch of an existing repository is never pushed to. |
+| ♻️ **Crash-safe** | Every step is checkpointed in Postgres; after a restart runs continue exactly where they stopped, and the UI replays missed events. |
 
-| `backend/app/graph/backbone.py` | Backbone graph (see below). |
-| `backend/app/graph/task_subgraph.py` | Per-task subgraph dispatched with the Send API: developer → reviewer → QA → merge. |
-| `backend/app/graph/coordinator.py` | Exception handler: LLM decisions (retry / replan / split / escalate), deterministic conflict resolution, human escalation. |
-| `backend/app/graph/replan.py` | Applies Coordinator plan changes (replan / split) and re-validates the DAG. |
-| `backend/app/tools/agents.py` | `ask_agent`: one-shot questions to the Architect / Planner, routed to the human when needed. |
-| `backend/app/graph/context_builder.py` | Scoped, token-budgeted context per role (never the run history, never raw full files). |
-| `backend/app/graph/runner.py` | `RunDriver`: start / resume / continue a run, mirror status to DB + events. |
-| `backend/app/services/run_manager.py` | Background drives per run, cancel, restart recovery (used by the API). |
-| `backend/app/api/` | FastAPI routers: runs (+ SSE), workspace files/diff, health. |
-| `backend/app/llm/structured.py` | Structured-output validator: JSON-schema decoding, 2 retries with the Pydantic error fed back, then JSON extraction from raw text. |
-| `backend/app/llm/agent.py` | Tool-calling loop: one corrective retry for malformed calls, then error → Coordinator; transcript compaction to fit `num_ctx`. |
-| `backend/prompts/*.md` | One prompt file per role. |
-| `rules/*.md`, `templates/*/template.yaml` | Per-stack standards (rule ids like `PY-003`) and the starter-template catalog. |
+## 🏗️ How a run flows
 
-### Graph
-
-```
-planner ─▶ approve_plan ─▶ architect ─▶ approve_design ─▶ scaffold ─▶ schedule ─┐
-   ▲  │        │ reject        ▲  │           │ reject                          │ Send(task)
-   │  └▶ ask_human ◀───────────┘  └▶ coordinator (errors)                       ▼
-   └───────────┘                                         task_worker: prepare ─▶ developer ⇄ ask_human
-                                                                     reviewer ─(changes)─▶ developer
-                                                                     qa ─(fail)─▶ developer
- done ◀─ github_delivery ◀─ approve_final ◀─ integration ◀─ schedule ◀─ merge (1 squashed commit/task)
-                               │ reject → follow-up task → schedule        coordinator ◀─ iteration limit
-```
-
-Human input points (interrupts): plan, design and final approvals; every `ask_human`; every
-Coordinator escalation. Resume payloads: `approve`, `reject {feedback}`, `edit {artifact}`,
-`answer {text}`. Invalid payloads re-interrupt with an `error` message.
-
-Design notes:
-- **All graph state is JSON** (artifacts via `model_dump`, messages via `messages_to_dict`), so
-  checkpoints survive restarts and library upgrades.
-- **`ask_human` is a graph node, not an interrupt inside the agent loop.** LangGraph re-runs a
-  node from the top on resume, and re-running LLM calls is not deterministic. The agent saves
-  its transcript to state, the `ask_human` node interrupts, and the agent continues the same
-  conversation with the answer.
-- The Reviewer's `rule_ref`s are validated against the rule ids in `rules/<stack>.md`, and the
-  Architect's `template_id` against the template catalog, so the validator's retry loop
-  corrects bad references.
-- QA's pass/fail comes from the sandbox exit code, not from the model. The model only
-  summarizes failures for the Developer.
-- With `SANDBOX_ENABLED=false`, QA writes tests but they are not executed: results show
-  `ran: false` and the task proceeds.
-
-## Run control: usage, budgets, retries and earlier checks (Phase 14)
-
-**Usage.** The **Usage** tab shows:
-- tokens (in and out) and model calls;
-- model time;
-- **working time**, which leaves out the time the run waited for you (approvals, questions,
-  pauses);
-- a split per role and per task.
-
-The header shows the total next to the run's status. The data comes from `llm_usage` events
-(one per model call). The models are local, so there is no money cost.
-
-**Budgets.** A run can have a token budget and a working-time budget. Set them on the New run
-page under *Budget (optional)*; `RUN_TOKEN_BUDGET` and `RUN_TIME_BUDGET_MIN` are the defaults,
-and 0 means none. Before every wave of tasks, a run at its budget stops and asks:
-- **Continue** raises the limit by the budget again;
-- **Stop the run** ends it as cancelled and pushes nothing.
-
-**Tests after every wave.** Tasks are tested on their own branches. After a wave that merged
-something, and before the tasks that build on it, the project's tests also run on the
-integration branch. If they fail, a `WAVEFIX` task with the logs runs first, and the remaining
-tasks wait for it. At most `MAX_WAVE_FIX_TASKS` such tasks run per run. Set
-`WAVE_TESTS_ENABLED=false` to switch this off. The per-task secret scan now also covers the
-tests QA wrote.
-
-**Retry and run again.**
-- **Retry** is offered on failed runs. It continues from the last checkpoint: only the step
-  that failed runs again, and merged tasks are kept.
-- **Run again** is offered on every finished run. It opens New run with the same request,
-  repository and mode, for you to edit.
-
-**Steering, completed.**
-- **Pause** also stops a task before its next developer iteration, so you don't have to wait
-  for the whole wave.
-- A message that is still waiting can be **edited** or **withdrawn**.
-- Messages sent during the final approval are added to your feedback if you reject. Messages
-  sent while the PR is watched start a follow-up round. Such a round needs no second approval
-  for bigger changes, because you asked for them yourself, and it answers in the chat, never on
-  GitHub.
-- When the notes exceed `MAX_NOTES_CHARS`, the Coordinator merges them. The Chat tab lists the
-  notes the crew follows.
-
-API: `GET /runs/{id}/usage`, `POST /runs/{id}/retry`, and `PATCH` / `DELETE
-/runs/{id}/messages/{message_id}`. `POST /runs` accepts `token_budget` and `time_budget_min`.
-
-## Steering running work (Phase 13)
-
-**Chat.** The run page has a **Chat** tab, and every task panel has **Messages to this task**.
-Messages are applied at the next *safe point*; nothing interrupts an agent in the middle of a
-turn.
-
-| Message | Safe point | What happens |
-|---|---|---|
-| to the run, before planning or design | Planner / Architect start | it becomes a note the plan or design takes in |
-| to the run, later | the scheduler, before every wave | the Coordinator decides per message: **note** (every agent follows it from then on), **add a task**, **cancel** a task that has not started, or **answer** a question |
-| to a task | that task's next developer turn | the developer gets it; the reviewer checks against it |
-
-Each message shows its state: waiting, given to the developer, applied or answered. It also
-shows DevCrew's reply. Messages to a finished task are handled as run messages. Messages that
-never reach a safe point are marked *not applied* when the run ends.
-
-**Pause / Resume.** **Pause** stops the run before the next wave of tasks. Since Phase 14 a
-running task also stops before its next developer iteration. A paused run keeps its worktrees and containers. Messages sent while
-paused are applied as soon as you click **Resume**. Pause is offered until development ends.
-After that no safe point is left.
-
-API: `GET/POST /runs/{id}/messages` (`{"text", "task_id"}`) and `POST /runs/{id}/pause`
-(`{"paused": true|false}`). The run detail includes `pause_requested` and `human_notes`. New
-run status: `paused`. New task status: `cancelled`.
-
-## GitHub automation (Phase 12)
-
-DevCrew polls GitHub; it needs no webhooks, so it works on a laptop. It needs
-`GITHUB_DELIVERY_ENABLED=true` and a `GITHUB_TOKEN` with Issues, Pull requests and Contents
-read/write, plus Actions read for CI logs.
-
-**Watched repositories.** Manage them on the **GitHub** page (`/settings`). Each repository has:
-- an on/off switch;
-- a poll interval (at least 60 s; `DEFAULT_POLL_INTERVAL_S` when left empty);
-- optional *extra reviewers*.
-
-The page also lists the runs started from issues.
-
-**Issues become runs.**
-- An open issue labelled `devcrew` starts a **Full** run; `devcrew:quick` starts a **Quick
-  fix**. The issue title and body are the requirements.
-- The run still stops at plan approval.
-- At most `MAX_ISSUE_RUNS` issue runs are active at a time; other issues wait for a later
-  poll.
-- Each label event starts one run. Removing and re-adding the label starts a new run once the
-  previous one ended.
-- You can also import an issue on **New run** (Existing repository → GitHub issue, then
-  `#42` or the issue URL).
-- DevCrew keeps **one** comment on the issue and edits it in place as the run progresses:
-  planning, waiting for you, PR opened, failed.
-- The PR body says `Fixes #N`.
-
-**Follow-up on the pull request.** After the PR is opened the run keeps **watching** it (status
-`watching_pr`, `WATCH_PRS=true`). The run page shows each round to the right of the PR:
-*Round n · triage* → the round's tasks → *Round n · push & reply* → *Watching PR*.
-
-What starts a round:
-- **Review comments**: inline comments, PR conversation comments and review summaries.
-  - Only people with write, maintain or admin access, or the repository's extra reviewers,
-    are acted on. Other comments are listed as ignored.
-  - The Coordinator sorts each comment:
-    - **small**: fixed automatically;
-    - **big**: shown to you for approval (approve, or decline with a reply);
-    - **question**: answered on the PR;
-    - **not actionable**: acknowledged.
-  - Hard rules always make some comments **big**:
-    - changes to dependency, build or CI files;
-    - changes to auth or secret code;
-    - comments asking for dependency changes, migrations or redesigns.
-- **Failed checks.** Once all checks on the PR head have finished, each failed GitHub Actions
-  job's log tail goes into a CI fix task, which the crew reproduces with the project's tests.
-- **Merge conflicts.** DevCrew fetches the base branch and a task merges it into the PR branch
-  and resolves the conflicts. This is a merge, never a rebase.
-
-What a round does:
-- Its tasks run through the normal flow: developer, review, QA, merge, integration tests,
-  gates.
-- The result is pushed to the **same PR branch** without force. If the integration tests
-  fail, the round waits for your final approval instead.
-- Every handled thread gets a reply (marked with a hidden `<!-- devcrew -->` so it is never
-  picked up again), and fixed review threads are resolved.
-
-Limits and stopping:
-- After `MAX_PR_ROUNDS` (3) automatic rounds, every change needs your approval.
-- Watching ends when the PR is merged or closed, or when you click **Stop watching** on the
-  *Watching PR* node.
-
-API: `GET/POST/PATCH/DELETE /watched-repos`, `GET /issue-runs`, `POST /issues/import`.
-`GET /config` also returns `github_enabled` and `max_pr_rounds`. Resuming with `update` is
-reserved for the poller.
-
-## Existing repositories and quality gates (Phase 11)
-
-**Working on an existing repository.** On the New run page choose **Existing repository** and
-enter `owner/repo`. This needs `GITHUB_TOKEN` with read access, plus
-`GITHUB_DELIVERY_ENABLED=true`.
-
-A new **Repository** step runs before the Planner. It:
-- clones the repository's default branch;
-- detects its projects: Python (`pyproject.toml`/`setup.py`/`requirements.txt`), Java with
-  Maven (`pom.xml`) and Angular (`angular.json`), at the root or one directory below it, for
-  example `backend/` + `frontend/`;
-- indexes the code for search.
-
-Other repositories are refused with an explanation (Gradle is not supported, for example).
-
-A `.devcrew.yaml` at the repository root can list the projects and override any command:
-
-```yaml
-projects:
-  - stack: python
-    path: backend
-    test_cmd: python -m pytest -q tests/unit   # install_cmd / build_cmd / coverage_cmd too
+```mermaid
+flowchart TB
+    subgraph PLAN["1 · Plan & design"]
+        direction LR
+        R["📄 Requirements<br/>text · document · issue"] --> REPO["📂 Repository<br/>(existing repos)"]
+        REPO --> P["🤖 Planner"]
+        P --> AP{{"👤 Plan approval"}}
+        AP --> A["🤖 Architect<br/>(skipped in quick fix)"]
+        A --> AD{{"👤 Design approval"}}
+    end
+    subgraph BUILD["2 · Build & check"]
+        direction LR
+        S["📦 Scaffold"] --> T["⚙️ Tasks in parallel waves<br/>+ tests after each wave"]
+        T --> I["🧪 Integration tests"]
+        I --> G["🛡️ Quality gates"]
+    end
+    subgraph SHIP["3 · Deliver"]
+        direction LR
+        AF{{"👤 Final approval"}} --> PR["🐙 Pull request"]
+        PR --> FU["🔁 PR follow-up<br/>reviews · CI · conflicts"]
+        FU --> PR
+    end
+    PLAN --> BUILD --> SHIP
 ```
 
-Choose the mode per run:
-- **Full:** the Planner plans against the existing code (it gets a file map and the README,
-  and can read and search the code). You approve the plan. The Architect then reads the code
-  and describes the modules the change touches and any new contracts, plus the plan
-  assessment. You approve the design.
-- **Quick fix:** the Planner writes a small change plan and your single approval starts the
-  development; the Architect is skipped.
+Each task runs in its own subgraph, git worktree and sandbox container:
 
-Tasks branch off the default branch. The PR targets the default branch, which DevCrew never
-pushes to.
-
-**Quality gates.** A **Quality gates** step runs between the integration tests and the final
-approval. `GATES_ENABLED=true` by default.
-
-| Gate | Tool | Fails when |
-|---|---|---|
-| Secrets | gitleaks, on the changed files only (values redacted) | any secret in a changed file. Also checked per task, where it sends the task back to the developer like a failing test |
-| Dependencies | osv-scanner (Python: the installed `pip freeze`; Java: `pom.xml`; Angular: `package-lock.json`) | a vulnerability that is not already on the base branch |
-| Coverage | the test run with coverage (pytest-cov, JaCoCo, Karma) | new project: below `GATE_COVERAGE_MIN` (70%). Existing repo: more than `GATE_COVERAGE_TOLERANCE` points below the base branch (measured once before the tasks start) |
-
-When a gate fails, DevCrew adds an automatic fix task that carries the findings
-(`MAX_GATE_FIX_ROUNDS`, default 1), then integrates and checks again. If a gate still fails,
-the final approval shows it:
-- **approve** lets it through, and the PR body lists the accepted failures;
-- **reject** creates a follow-up task.
-
-**Secrets can never be approved.** A gate that could not run (for example osv.dev is
-unreachable) is reported as `error` and does not block the PR.
-
-Upgrade note: the sandbox images now include gitleaks and osv-scanner. Rebuild them with
-`scripts/build_sandbox_images.sh`, which first builds `devcrew-sandbox-gate-tools` (pinned
-versions, SHA-256 verified, amd64 and arm64).
-
-The dependency scan needs outbound HTTPS from the sandbox's install network to `api.osv.dev`,
-and for Maven projects also to `api.deps.dev`.
-
-## Workflow view and requirements documents (Phase 10)
-
-**Requirements input.** The New run page takes a feature request or a requirements document:
-- Type or paste into the editor; the Preview toggle renders the Markdown.
-- Or upload `.md`/`.txt` files by drag-and-drop or the file picker. Several files are joined,
-  each under a `# <file name>` heading.
-- A counter shows the size against `MAX_REQUEST_CHARS` (default 20,000 characters, served by
-  `GET /config`). The Planner and Architect always receive the whole text, so the limit must
-  fit their context window. To accept longer documents, raise `MAX_REQUEST_CHARS` together
-  with `num_ctx` in `models.yaml`.
-
-**Workflow graph.** The run page opens on an n8n-style graph drawn with
-[ngx-vflow](https://www.ngx-vflow.org/):
-- The main flow runs Requirements → Planner → Plan approval → Architect → Design approval →
-  Scaffold, then one node per plan task (wired by dependencies, parallel tasks side by side),
-  then Integration tests → Final approval → GitHub PR.
-- Each node shows a robot for the agent at work, its status and elapsed time. Task nodes
-  show dev → review → QA progress, the iteration count and Coordinator actions.
-- Node colours:
-
-  | Colour | Meaning |
-  |---|---|
-  | Cyan pulse | Working |
-  | Amber pulse, with a badge | Needs you |
-  | Teal | Done |
-  | Red | Failed |
-  | Striped | Skipped or blocked |
-
-- Edges animate while work flows into a node. Rejections show as amber loop edges
-  ("rejected 1x").
-- **Follow** (the default) zooms to the active work and moves along with it. **Overview** shows
-  the whole flow; finished runs always open in overview.
-
-**Side panel.** Clicking a node opens a panel with its output and actions:
-- **Requirements:** the document.
-- **Planner:** the plan.
-- **Architect:** the design, including the Architect's **plan assessment** (concerns,
-  assumptions and suggested plan changes). The assessment is advisory; the plan only changes
-  if you reject or edit.
-- **Task:** review, tests and diff.
-- **Integration:** test results.
-- **PR:** the link.
-- **Every node:** its live activity feed.
-
-Approvals and questions are answered right in the panel. When something newly needs you, a
-"Waiting for you" banner appears and the panel opens on that node. A panel opened this way
-moves on with the work; a node you pick stays selected.
-
-The graph comes from `GET /runs/{id}/workflow`, which is computed from the run status,
-checkpointed state, pending interrupts and the event log. It looks the same after a reload or
-a backend restart, and the UI re-fetches it (batched) as events stream in. The Timeline, Plan,
-Design, Q&A and Files tabs are still below the graph.
-
-## Benchmark (Phase 9)
-
-`benchmarks/` holds 12 tasks: 4 per stack (Python/FastAPI, Java/Spring Boot, Angular),
-from a single CRUD resource (difficulty 1) to a multi-module service (difficulty 4). Each task
-has a precise request in `benchmarks/tasks/<stack>.yaml` and a **hidden** acceptance suite in
-`benchmarks/hidden_tests/<task_id>/` that the agents never see (93 tests in total). See
-[`benchmarks/README.md`](benchmarks/README.md) for the conventions.
-
-```bash
-cd devcrew/backend && . .venv/bin/activate
-docker compose up -d chromadb            # Postgres is not needed (in-memory checkpoints)
-export OLLAMA_BASE_URL=http://localhost:11434 CHROMA_HOST=localhost
-python ../scripts/run_benchmark.py --list                     # tasks and hidden-test counts
-python ../scripts/run_benchmark.py --stack python             # or --task py-todo-crud ...
-python ../scripts/run_benchmark.py \
-    --models-config config/models.yaml --models-config /path/to/other-models.yaml   # compare
+```mermaid
+flowchart LR
+    D["👩‍💻 Developer"] --> RV["🔍 Reviewer"]
+    RV -- changes requested --> D
+    RV -- approved --> QA["✅ QA<br/>writes & runs tests"]
+    QA -- tests fail --> D
+    QA -- pass --> M["🔀 Merge<br/>1 commit per task"]
+    D -. stuck / limits .-> C["🧭 Coordinator<br/>retry · replan · split · ask you"]
+    C -.-> D
 ```
 
-Runs are headless and fully automatic:
-- Every approval is approved.
-- Every agent question is answered with "Use your best judgment and document the assumption."
-- Escalations are retried with that same guidance up to `--max-escalations` times (default 2),
-  then given up, so a stuck run always ends.
-- `--task-timeout-min` (default 120) caps a single run.
-- Nothing is pushed to GitHub, whatever `GITHUB_DELIVERY_ENABLED` says.
+### 👥 The crew
 
-Scoring: after a run, its integration branch is exported (`git archive`) to
-`$WORKSPACES_DIR/<run_id>/hidden-eval`, the hidden tests are copied in, and the suite runs in
-the sandbox like any other test command (dependency install with network, tests offline).
-Tests that never ran (for example a compile error or a missing component) count as failures
-against the suite size.
-
-Per task, `benchmarks/results/<timestamp>.json` and `.md` record:
-- run status and wall time;
-- hidden tests passed/total and pass rate;
-- dev iterations (including the attempts before an escalation retry reset the counter);
-- escalations, and questions to the human and to other agents;
-- Coordinator calls, and planned/merged/failed tasks;
-- whether the project's own tests passed at integration;
-- token counts (total and per role).
-
-A summary per models config is included, plus a comparison table when several configs are
-given. Results are rewritten after each task, so an interrupted benchmark keeps what it has.
-
-### End-to-end demo
-
-With the stack up (`docker compose up`, Ollama on the host, `GITHUB_TOKEN` set):
-
-1. Open http://localhost:4200 and click **New run**. Enter
-   "Build a FastAPI TODO API with CRUD and pytest tests" and your `owner/repo`; tick "Create the
-   repository if it is missing" if it does not exist yet.
-2. Review and approve the plan, then the design (or reject with feedback, or edit the JSON).
-3. Watch the task lanes, answer agent questions in the action panel, and inspect task diffs.
-4. Approve the final result. The integration branch is pushed and the PR link appears next to
-   the run status.
-
-## GitHub delivery (Phase 8)
-
-`backend/app/github/`. Delivery runs only after you approve the final result: the approval gate
-sets `final_approved`, and the delivery refuses to push without it.
-
-1. **Repository.** If `owner/repo` is missing and the run was started with "create repo if
-   missing", DevCrew creates it **private and empty** (`POST /user/repos` for your own account,
-   `POST /orgs/{org}/repos` for an organization). Otherwise delivery fails with an actionable
-   message.
-2. **`main`.** It is pushed **only if the remote repository is empty**, and then only the
-   template scaffold commit. A non-empty repository whose `main` is not this run's scaffold is
-   refused: DevCrew builds greenfield projects and never pushes to, or forces, an existing
-   `main`.
-3. **The run's branch.** `devcrew/<run_id>-<slug>` is pushed. It is the integration branch,
-   with one commit per task. Task branches stay local.
-4. **Pull request.** A PR is opened against `main`, or the existing open PR for the branch is
-   reused, so re-delivery is idempotent. Its body contains the request, plan summary and user
-   stories, the design document, the task list with statuses, attempts and test results, the
-   integration test results (with failing output), and the Q&A log. `pr_url` is stored in the
-   graph state and the runs table, and shown in the UI.
-
-If delivery fails (bad token, missing permission, network, non-empty repo), the run asks you
-to **retry delivery** or **finish without a PR**. The token is sent to git as an HTTP header
-through environment-based git config, scoped to `GITHUB_GIT_URL`. It never appears in remote
-URLs, `.git/config` or process arguments, and is scrubbed from error messages.
-
-Token permissions: classic `repo` scope, or fine-grained **Contents** and **Pull requests**
-read/write, plus **Administration** write if DevCrew should create repositories.
-
-## Web UI (Phase 7)
-
-`docker compose up` serves the UI at **http://localhost:4200** (nginx, static bundle). It calls
-the backend at `http://localhost:8080`, set in `frontend/src/environments/`.
-
-- **Runs list**: status, repository, PR link; refreshes every 5s.
-- **New run**: feature request, `owner/repo`, "create repo if missing" (typed reactive form
-  with validation).
-- **Run detail**:
-  - **Action panel**, one per pending interrupt. Approvals offer approve / reject with
-    feedback / edit (the plan or design as JSON). Questions get an answer box. Escalations
-    offer retry / retry with guidance / give up. Only the actions the backend allows are shown.
-  - **Timeline**: live events over SSE (toggle to include tool calls).
-  - **Tasks**: the DAG as **parallel lanes**, one column per wave with tasks in their lanes,
-    then the planned layers. Selecting a task shows its review issues (with rule refs),
-    test results and logs, developer feedback, and its **diff**.
-  - **Plan** and **Design** viewers (the design document is rendered from markdown and
-    sanitized), **Q&A** log, and a **Files** explorer for the integration branch, `main` or
-    any task branch.
-  - PR link, cancel button, and the event stream's connection state.
-- **SSE client** (`core/run-events.service.ts`):
-  - Exposes events, connection state and the last event id as signals, de-duplicated by id.
-  - The browser's `EventSource` reconnects with `Last-Event-ID`. If the connection is
-    closed, the client reconnects with exponential backoff and `?last_event_id=`.
-  - The stream closes itself once the run is finished.
-- Stack: Angular 19, standalone components, signals, `@if`/`@for`, OnPush, Angular Material,
-  no web fonts (system UI font; works offline).
-
-Development:
-```bash
-cd devcrew/frontend
-npm ci
-npx ng serve                      # http://localhost:4200, backend on :8080
-npx ng lint
-npx ng test --watch=false --browsers=ChromeHeadless
-```
-
-## HTTP API (Phase 6)
-
-The backend runs on `http://localhost:8080`. docker-compose publishes every port on
-`127.0.0.1` only, because DevCrew has no authentication by design. Interactive docs are at
-`/docs`.
-
-| Method & path | Purpose |
+| Agent | Role |
 |---|---|
-| `POST /runs` `{request, repo_target, create_repo}` | Create a run and start it in the background → `201` run summary |
-| `GET /runs` | List runs (newest first) |
-| `GET /runs/{id}` | Run detail: status, plan, design, tasks (with `wave`/`lane`), Q&A log, integration results, errors, and **`pending`** (every interrupt waiting for input: `interrupt_id`, `kind`, `title`, `artifact`, `allowed_actions`, `data`, `error`) |
-| `GET /runs/{id}/events` | **SSE** stream of run events. Replays everything after `Last-Event-ID` (header, sent automatically by `EventSource` on reconnect) or `?last_event_id=`, then streams live. Sends keepalives every 15s and closes after the run reaches a terminal status. |
-| `POST /runs/{id}/resume` `{action, feedback?, artifact?, answer?, interrupt_id?}` | Answer the pending interrupt → `202`. `interrupt_id` is required when several questions are pending (parallel tasks). `409` if the run is busy, finished or not waiting; `422` if the action is not allowed for that interrupt or required fields are missing. |
-| `POST /runs/{id}/cancel` | Stop the run, mark it `cancelled`, and remove its containers, per-run volumes, worktrees and Chroma collection |
-| `GET /runs/{id}/files?ref=` | Files tracked on `integration` (default), `main` or `task:<id>` |
-| `GET /runs/{id}/files/{path}?ref=` | File content from git (binary-safe, size-capped, no path traversal, refs limited to the run's own branches) |
-| `GET /runs/{id}/diff?task_id=` | A task's changes (its branch vs. where it forked from integration), or the whole run's changes (integration vs. the scaffold on `main`) |
-| `GET /health` | DB, Chroma, Ollama, models, Docker, sandbox images, GitHub token |
+| 🤖 **Planner** | Turns the request into user stories and a validated dependency graph of tasks. |
+| 🤖 **Architect** | Chooses the template or reads the existing code; defines modules and contracts, and assesses the plan. |
+| 👩‍💻 **Developer ×N** | Implements one task in its own worktree; can read, write, search code, run commands and ask the Architect, the Planner or you. |
+| 🔍 **Reviewer** | Reviews the diff against the design and the per-stack rules (`rules/*.md`, e.g. `PY-003`). |
+| ✅ **QA** | Writes tests for the task and runs them in the sandbox. |
+| 🧭 **Coordinator** | Handles failures (retry, replan, split, escalate), sorts PR review comments and applies your chat messages. |
 
-**Execution model.** `RunManager` runs at most one background drive per run (start, resume
-or continue); the API returns immediately and progress arrives over SSE.
+## 🧱 Architecture
 
-**Restarts.** The graph is checkpointed in Postgres. On startup the backend continues every
-run that was mid-flight (statuses `planning` … `delivering`) from its last checkpoint. Runs
-waiting for human input keep waiting, and their pending questions are still listed by
-`GET /runs/{id}`. Clients reconnect to `/events` with `Last-Event-ID` to replay what they
-missed. This has been tested by `kill -9` of the backend mid-run.
-
-## Parallel execution, Coordinator and agent Q&A (Phase 5)
-
-**Scheduling in waves.** The scheduler dispatches every task whose dependencies are merged, up
-to `MAX_PARALLEL_DEVS` at once, as parallel `task_worker` subgraphs (LangGraph `Send`). When
-the wave finishes, it applies Coordinator plan changes and dispatches the next wave. Each task
-records its `wave` and `lane` for the UI's parallel lanes. LLM calls are bounded by the same
-semaphore. Because a wave ends only when all of its tasks end, a task waiting on a human
-question delays the next wave (BL-050).
-
-**Worktrees.** Each task works in `WORKSPACES_DIR/<run_id>/worktrees/<task_id>` on its own
-branch `devcrew/<run>/task-<id>`, with its own sandbox container. The main repository
-(`<run_id>/repo`) stays on the integration branch. Worktree add/remove, merges and
-re-indexing are serialized with a per-repository lock. A worktree is removed after its task
-merges; the branch is kept.
-
-**Merges and conflicts.** Each task is squash-merged, so the integration branch gets one
-commit per task. On a conflict the merge is aborted, and the Coordinator merges the
-integration branch into the task's worktree and assigns the Developer to resolve the conflict
-there. The Developer is told which files conflict; commits containing conflict markers are
-refused. The resolved change then goes through review and QA again before re-merging. After
-`MAX_CONFLICT_ROUNDS` the Coordinator escalates to the human.
-
-**Coordinator.** It is not a persona, and it uses the LLM only for exceptions, through a
-validated `CoordinatorDecision`:
-
-| Exception | Allowed actions |
-|---|---|
-| Task hit `MAX_DEV_ITERATIONS` | `replan` (rewrite the task, restart from integration), `split` (2–4 subtasks; dependents are rewired to all subtasks), `escalate` |
-| Agent error (malformed tool calls after one retry, invalid structured output) | `retry` with guidance, `replan`, `escalate` |
-| Planner/Architect failure | `retry` with guidance, `escalate` |
-| Merge conflict | deterministic: a Developer resolves it (see above) |
-
-- Plan changes flow to the scheduler through an append-only `plan_changes` channel, so
-  parallel tasks never write the plan concurrently. The resulting plan is re-validated as a
-  DAG.
-- After `MAX_COORDINATOR_ACTIONS` automatic decisions, or when no valid decision can be
-  obtained, it escalates to the human.
-- The decision and the human interrupt are separate nodes (`coordinator` / `escalate`), so
-  the LLM decision never re-runs on resume.
-
-**Agent Q&A.**
-- `ask_agent(architect|planner, question)` (Developer) is a scoped one-shot structured call.
-  It sends the target role's prompt without its output section, the question, and only the
-  relevant artifacts (design contracts and doc for the Architect; stories and tasks for the
-  Planner). It does not run the target's node.
-- If the target answers `needs_human`, the question is routed to the human and the answer
-  resumes the Developer.
-- `ask_agent` and `ask_human` share `MAX_QUESTIONS_PER_TASK`. Every Q&A is logged to
-  `qa_log` and emitted as `question`/`answer` events.
-- Parallel tasks can have questions pending at the same time; each is resumed independently
-  with its interrupt id (`RunDriver.resume(..., interrupt_id)`), including after a restart.
-
-## Sandbox (Phase 3)
-
-Generated code only ever runs inside Docker, never on the host.
-
-| Image | Contents | Used for |
-|---|---|---|
-| `devcrew-sandbox-python` | Python 3.12, pytest, ruff | `python` projects |
-| `devcrew-sandbox-java` | Temurin 21, Maven 3.9 | `java` projects |
-| `devcrew-sandbox-node` | Node 20, Angular CLI 19, Chromium | `angular` projects |
-| `devcrew-sandbox-mixed` | all of the above | `mixed` designs (only needed for those) |
-
-```bash
-scripts/build_sandbox_images.sh                 # all four
-scripts/build_sandbox_images.sh python java     # a subset
-# base images are build args (PYTHON_IMAGE, MAVEN_IMAGE, NODE_IMAGE), e.g. to use a mirror:
-scripts/build_sandbox_images.sh -- --build-arg PYTHON_IMAGE=mirror.gcr.io/library/python:3.12-slim
+```mermaid
+flowchart LR
+    UI["🖥️ Angular 19 UI<br/>:4200"] -- "REST + SSE" --> API["⚡ FastAPI<br/>:8080"]
+    API --> LG["🧠 LangGraph<br/>backbone + task subgraphs"]
+    LG -- "chat & embeddings" --> OL["🦙 Ollama (local)"]
+    LG -- "commands & tests" --> SB["🐳 Docker sandboxes<br/>python · java · node"]
+    LG -- "code search" --> CH[("🔎 ChromaDB<br/>per-run index")]
+    API --> PG[("🐘 PostgreSQL<br/>runs · events · checkpoints")]
+    LG -- "branch · PR · replies" --> GH["🐙 GitHub"]
+    WA["⏱️ GitHub watcher"] -- polling --> GH
+    WA --> API
 ```
 
-How commands run (`backend/app/sandbox/`):
-- **One container per task worktree**, created on first use and removed after the task
-  merges or fails. All of a run's containers and per-run volumes are removed when the run
-  completes. The workspace is bind-mounted at `/workspace`.
-- **The network is off** (`network_mode=none`) for every agent command and test run. The only
-  networked step is **dependency install**: the template's fixed `install_cmd` (never an
-  agent-chosen command) runs in a short-lived container on the bridge network. It runs at
-  scaffold time and again whenever a manifest changes (`pyproject.toml`, `pom.xml`,
-  `package.json`).
-- **Dependencies live in volumes**: a per-run Python venv and `node_modules`, plus shared
-  Maven (`devcrew-m2`) and npm caches. Maven runs in offline mode (`-o`) outside the
-  install step.
-- **Limits and hardening**: a per-command timeout (`timeout -s KILL` inside the container
-  plus an outer watchdog), CPU/memory/pids limits, all capabilities dropped,
-  `no-new-privileges`, and a read-only root filesystem. Commands run as the backend's
-  uid:gid, which is root inside the compose backend container.
-- **Policy** (`policy.py`): denies `rm -rf /` (and `~`, `--no-preserve-root`), `curl|sh`-style
-  download-and-execute, `docker`, `sudo`/`su`, including when nested in `sh -c`, `$(...)`,
-  backticks, `env`/`timeout` wrappers. Working directories must be inside `WORKSPACES_DIR`
-  (allowlist), and `cwd` must stay inside the project.
-- Tools: the Developer and QA get `run_command` (sandboxed). QA's pass/fail is the test
-  command's exit code.
+## 🛠️ Technology
 
-## Code retrieval / RAG (Phase 4)
+| Layer | Technology |
+|---|---|
+| **Agents & orchestration** | LangGraph (StateGraph, `Send` for parallel tasks, interrupts for human input, Postgres checkpointer), LangChain Ollama |
+| **Models** | Ollama, local only: `qwen2.5-coder:14b` for chat (one model, per-role settings in `models.yaml`) and `nomic-embed-text` for embeddings |
+| **Backend** | Python 3.12, FastAPI, Pydantic v2, SQLAlchemy 2 (async), Alembic, httpx, Server-Sent Events |
+| **Storage** | PostgreSQL (runs, event log, checkpoints, chat, GitHub watch list), ChromaDB (per-run code index) |
+| **Retrieval** | Code-aware chunking (Python `ast`, brace matching for Java/TypeScript, Markdown headings), incremental re-indexing after every merge |
+| **Sandbox** | Docker (one container per task), images for Python 3.12, Java 21 + Maven, Node 20 + Angular CLI + Chromium, plus gitleaks and osv-scanner |
+| **Frontend** | Angular 19 (standalone components, signals, OnPush), Angular Material dark theme, ngx-vflow workflow graph, inline-SVG robot icons |
+| **Git & GitHub** | git worktrees and squash merges, GitHub REST and GraphQL (issues, PRs, reviews, checks, thread resolution) |
+| **Starter templates** | FastAPI · Spring Boot 3.5 (Java 21) · Angular 19 standalone |
+| **Quality** | ruff, mypy (strict), pytest (342 tests, Ollama always mocked), ESLint, Karma/Jasmine (66 specs), a benchmark with 12 tasks and 93 hidden tests |
 
-`backend/app/rag/`: one ChromaDB collection per run, `run_<run_id>`.
+## 🚀 Quick start
 
-- **What is indexed**: the tracked files of the integration branch (template, `docs/design.md`,
-  every merged task), plus `rules/<stack>.md` for the stacks in the design. Lockfiles,
-  binaries, empty files and files over `RAG_MAX_FILE_BYTES` are skipped.
-- **Code-aware chunking**:
-  - Python is split with `ast` (functions and classes, decorators included; large classes
-    are split into their methods).
-  - Java, TypeScript and JavaScript are split by brace matching that ignores strings and
-    comments. Units are classes, methods, functions, consts, and Jasmine `describe`/`it`
-    blocks, with multi-line decorators such as `@Component({...})` kept with their class.
-  - Markdown is split by heading.
-  - Anything else, and any unit still longer than `RAG_CHUNK_MAX_LINES`, becomes line
-    windows with overlap.
-  - Metadata per chunk: `path`, `language`, line range, `symbol`, `commit_sha`,
-    `file_hash`, `source`.
-- **Incremental**: indexing runs at scaffold and again after every merge into the
-  integration branch. Only files whose content hash changed are re-embedded, and chunks of
-  deleted files are removed.
-- **Embeddings**: `nomic-embed-text` via Ollama, with its `search_document:` /
-  `search_query:` prefixes.
-- **`search_codebase(query, k, path_filter?)`** (Developer, Reviewer, QA): returns chunks with
-  path and line ranges. `path_filter` is a directory prefix (`app/`) or a glob
-  (`*.spec.ts`).
-- **Context builders** add retrieved chunks as a budgeted section, never whole files:
-  related code for the Developer and Reviewer, and existing tests (to copy fixtures and
-  style) for QA.
-- **No cross-run memory**: the collection is deleted when the run completes, fails or is
-  cancelled, together with the sandbox containers and volumes.
-
-### Starter templates (`templates/<stack>/`)
-
-| id | Stack | Sample test | Test command |
-|---|---|---|---|
-| `python-fastapi` | FastAPI + pydantic-settings, routers/schemas/services | `GET /health` via TestClient | `pytest -q` |
-| `java-spring-boot` | Spring Boot 3.5, Java 21, controller/service/repository/dto | `@WebMvcTest` MockMvc | `mvn -q test` |
-| `angular-standalone` | Angular 19 standalone, OnPush + signals, router | TestBed component spec | `npx ng test --watch=false --browsers=ChromeHeadless` |
-
-Each `template.yaml` has `id`, `stack`, `description`, `install_cmd`, `build_cmd`, `test_cmd`.
-Multi-stack projects use `stack: mixed` with `components` (one template per sub-directory,
-e.g. `backend/` + `frontend/`). Each stack's commands run in its own sub-directory, in the
-`mixed` image.
-
-## Prerequisites
-
-- Docker + docker compose
-- [Ollama](https://ollama.com) on the host, with the models pulled:
-  ```bash
-  ollama pull qwen2.5-coder:14b
-  ollama pull nomic-embed-text
-  ```
-- **`OLLAMA_NUM_PARALLEL` must be at least `MAX_PARALLEL_DEVS`** (default 2), otherwise parallel
-  developers queue inside Ollama. Ollama must also listen on an address the backend container
-  can reach:
-  ```bash
-  OLLAMA_NUM_PARALLEL=2 OLLAMA_HOST=0.0.0.0 ollama serve
-  ```
-  With a 16–24GB GPU, keep one chat model for all roles. Each parallel slot multiplies the
-  KV-cache for `num_ctx`, so lower `num_ctx` in `models.yaml` if you raise parallelism.
-
-## Run
+**Prerequisites:** Docker with docker compose, and [Ollama](https://ollama.com) on the host.
 
 ```bash
+# 1. Models (all local)
+ollama pull qwen2.5-coder:14b
+ollama pull nomic-embed-text
+OLLAMA_NUM_PARALLEL=2 OLLAMA_HOST=0.0.0.0 ollama serve     # NUM_PARALLEL >= MAX_PARALLEL_DEVS
+
+# 2. Sandbox images (once)
 cd devcrew
-cp .env.example .env          # set POSTGRES_PASSWORD, DATABASE_URL, WORKSPACES_DIR, GITHUB_TOKEN
+scripts/build_sandbox_images.sh
+
+# 3. Configure and start
+cp .env.example .env        # set POSTGRES_PASSWORD, DATABASE_URL, WORKSPACES_DIR, GITHUB_TOKEN
 mkdir -p "$(grep ^WORKSPACES_DIR .env | cut -d= -f2)"
 docker compose up --build
-curl -s localhost:8080/health | jq
 ```
 
-The backend container runs `alembic upgrade head` on start. With `STARTUP_HEALTH_STRICT=true`
-(default) it refuses to start when a critical dependency is down and logs how to fix it.
-`GITHUB_TOKEN` is reported but is not critical: it is only needed for PR delivery.
+| Service | URL |
+|---|---|
+| 🖥️ Web UI | http://localhost:4200 |
+| ⚡ API + interactive docs | http://localhost:8080/docs |
+| ❤️ Health check | http://localhost:8080/health |
 
-The UI is served at http://localhost:4200.
+All ports are bound to `127.0.0.1`: DevCrew is a single-user local tool without
+authentication.
 
-Note that `WORKSPACES_DIR` is mounted at the **same absolute path** in the backend container.
-Sandbox containers are started through the host Docker socket, so their bind mounts must be
-host paths.
+## ⚙️ Configuration highlights
 
-## Backend development (on the host)
-
-```bash
-cd devcrew/backend
-uv venv -p 3.12 && uv pip install -e ".[dev]"     # or: python3.12 -m venv .venv && pip install -e ".[dev]"
-docker compose up -d postgres chromadb
-alembic upgrade head
-uvicorn app.main:app --reload --port 8080
-
-# quality gates
-ruff check . && ruff format --check . && mypy app tests alembic/env.py
-pytest                                               # Ollama is always mocked
-TEST_DATABASE_URL=postgresql+asyncpg://devcrew:<pw>@localhost:5432/devcrew_test pytest   # + Postgres tests
-```
-
-## Run from the terminal (Phase 2)
-
-```bash
-cd devcrew/backend && . .venv/bin/activate
-docker compose up -d postgres            # or use --memory
-../scripts/build_sandbox_images.sh       # once
-alembic upgrade head
-export OLLAMA_BASE_URL=http://localhost:11434 DATABASE_URL=postgresql+asyncpg://devcrew:<pw>@localhost:5432/devcrew
-python ../scripts/run_local.py "Build a FastAPI TODO API with CRUD and pytest tests"
-# Ctrl-C / crash at any point, then:
-python ../scripts/run_local.py --resume <run_id>
-```
-
-At each interrupt you can approve, reject (with feedback), edit (opens `$EDITOR` on the
-artifact JSON) or answer. `--auto` approves everything and answers questions with "Use your
-best judgment and document the assumption." The generated project lives in
-`$WORKSPACES_DIR/<run_id>/repo` on branch `devcrew/<run_id>-<slug>`.
-
-## Configuration
-
-Every variable is documented in [`.env.example`](.env.example). Model settings (per-role
-overrides, `num_ctx`, `temperature`, `num_predict`) live in
+Every variable is documented in [`.env.example`](.env.example); model settings are in
 [`backend/config/models.yaml`](backend/config/models.yaml).
+
+| Variable | Default | What it controls |
+|---|---|---|
+| `MAX_PARALLEL_DEVS` | `2` | Developers working at the same time (and concurrent model calls) |
+| `MAX_DEV_ITERATIONS` | `3` | Attempts per task before the Coordinator steps in |
+| `GITHUB_TOKEN`, `GITHUB_DELIVERY_ENABLED` | – | Pull requests and GitHub automation |
+| `GATES_ENABLED`, `GATE_COVERAGE_MIN` | `true`, `70` | Quality gates and the coverage threshold |
+| `WATCH_PRS`, `MAX_PR_ROUNDS` | `true`, `3` | PR follow-up rounds after delivery |
+| `RUN_TOKEN_BUDGET`, `RUN_TIME_BUDGET_MIN` | `0` (off) | Default budgets per run |
+| `WAVE_TESTS_ENABLED` | `true` | Project tests after every wave of tasks |
+| `MAX_REQUEST_CHARS` | `20000` | Size limit of a request or requirements document |
+
+## 📁 Project structure
+
+```text
+devcrew/
+├── backend/            FastAPI app, LangGraph graph, agents, sandbox, RAG, GitHub, API
+│   ├── app/            api · graph · llm · db · events · sandbox · rag · gates · github · services
+│   ├── prompts/        one prompt file per role
+│   ├── config/         models.yaml (per-role model settings)
+│   ├── alembic/        database migrations
+│   └── tests/          pytest suite (fake models, fake GitHub, Postgres tests)
+├── frontend/           Angular 19 UI (workflow graph, chat, usage, settings)
+├── templates/          starter templates: python-fastapi · java-spring-boot · angular-standalone
+├── rules/              per-stack coding standards the Reviewer enforces
+├── sandbox/            Dockerfiles of the sandbox images (+ gate tools)
+├── benchmarks/         12 tasks with hidden acceptance tests
+├── scripts/            build_sandbox_images.sh · run_local.py · run_benchmark.py
+└── docs/               technical guide and screenshots
+```
+
+## 🧑‍💻 Development
+
+```bash
+# Backend
+cd devcrew/backend
+uv venv -p 3.12 && uv pip install -e ".[dev]"
+docker compose up -d postgres chromadb && alembic upgrade head
+uvicorn app.main:app --reload --port 8080
+ruff check . && ruff format --check . && mypy app tests alembic/env.py && pytest
+
+# Frontend
+cd devcrew/frontend
+npm ci && npx ng serve                      # http://localhost:4200
+npx ng lint && npx ng test --watch=false --browsers=ChromeHeadless
+```
+
+There is also a terminal client (`scripts/run_local.py`) and a benchmark runner
+(`scripts/run_benchmark.py`). Both are described in the guide.
+
+## 📚 Documentation
+
+| Document | Contents |
+|---|---|
+| 📘 [Technical guide](docs/GUIDE.md) | Architecture, graph and design notes, HTTP API, sandbox, RAG, GitHub delivery and automation, steering, budgets, benchmark, and every run/dev command |
+| 🗂️ [Backlog](BACKLOG.md) | Open issues, deferred work and decisions, by priority |
+| 🧪 [Benchmark](benchmarks/README.md) | Benchmark tasks and hidden-test conventions |
+| ⚙️ [`.env.example`](.env.example) | Every setting, documented |
+
+## 🗺️ Status
+
+| Phase | Delivered |
+|---|---|
+| 1–2 | Infrastructure, settings, health checks; the LangGraph backbone with five roles and human approvals |
+| 3–4 | Docker sandboxes and starter templates; per-run code retrieval (RAG) |
+| 5 | Parallel developers in git worktrees, the Coordinator, agent-to-agent Q&A |
+| 6–7 | HTTP API with SSE replay and restart recovery; the Angular UI |
+| 8–9 | GitHub delivery (repository, branch, PR); benchmark with hidden tests |
+| 10 | Requirements documents, the workflow graph UI, the Architect's plan assessment, neon theme |
+| 11 | Existing repositories (auto-detected), Full / Quick fix modes, quality gates |
+| 12 | GitHub automation: issue intake by label, PR follow-up on reviews, CI and conflicts |
+| 13 | Steering: chat with the crew or a task, pause / resume |
+| 14 | Usage and budgets, tests after every wave, retry / run again, steering completed |
+
+**Next:** a first run against real Ollama models and GitHub, then Phases 15–16 (GitHub
+efficiency, real-run robustness, UI and features). See the [backlog](BACKLOG.md).
