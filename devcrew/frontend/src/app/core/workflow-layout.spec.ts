@@ -60,6 +60,9 @@ describe('workflow layout', () => {
     expect(iconKind(node('approve_plan', { kind: 'approval' }))).toBe('approval');
     expect(iconKind(node('requirements', { kind: 'input' }))).toBe('requirements');
     expect(iconKind(node('delivery', { kind: 'output' }))).toBe('delivery');
+    expect(iconKind(node('prepare_repo'))).toBe('repository');
+    expect(iconKind(node('gates'))).toBe('gates');
+    expect(iconKind(node('scaffold'))).toBe('system');
   });
 
   it('formats durations and elapsed times', () => {

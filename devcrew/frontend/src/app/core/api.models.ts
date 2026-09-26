@@ -2,6 +2,7 @@
 
 export type RunStatus =
   | 'pending'
+  | 'preparing'
   | 'planning'
   | 'awaiting_plan_approval'
   | 'designing'
@@ -9,6 +10,7 @@ export type RunStatus =
   | 'scaffolding'
   | 'executing'
   | 'integrating'
+  | 'checking'
   | 'awaiting_final_approval'
   | 'delivering'
   | 'needs_human'
@@ -67,6 +69,15 @@ export interface PlanAssessment {
   suggested_changes: string[];
 }
 
+export interface ExistingProject {
+  stack: TaskStack;
+  path: string;
+  install_cmd: string;
+  build_cmd: string;
+  test_cmd: string;
+  coverage_cmd: string | null;
+}
+
 export interface Design {
   stack: Stack;
   template_id: string;
@@ -76,6 +87,7 @@ export interface Design {
   key_decisions: string[];
   design_doc: string;
   plan_assessment?: PlanAssessment | null;
+  existing_projects?: ExistingProject[];
 }
 
 export interface ReviewIssue {
@@ -160,7 +172,39 @@ export interface RunSummary {
   busy: boolean;
 }
 
+export type RunTarget = 'new' | 'existing';
+export type RunMode = 'full' | 'quick';
+
+export interface RepoInfo {
+  base_branch: string;
+  projects: ExistingProject[];
+  source: string;
+  notes: string[];
+  file_count: number;
+  tree: string;
+  readme: string;
+  commit: string;
+}
+
+export interface GateResult {
+  name: 'secrets' | 'dependencies' | 'coverage';
+  status: 'passed' | 'failed' | 'skipped' | 'error';
+  summary: string;
+  details: string[];
+  allowable: boolean;
+}
+
+export interface GateReport {
+  results: GateResult[];
+  round: number;
+}
+
 export interface RunDetail extends RunSummary {
+  target?: RunTarget;
+  mode?: RunMode;
+  base_branch?: string | null;
+  repo_info?: RepoInfo | null;
+  gates?: GateReport | null;
   plan: Plan | null;
   design: Design | null;
   tasks: Record<string, TaskState>;
@@ -176,6 +220,8 @@ export interface CreateRunRequest {
   request: string;
   repo_target: string;
   create_repo: boolean;
+  target?: RunTarget;
+  mode?: RunMode;
 }
 
 export interface ResumeRequest {

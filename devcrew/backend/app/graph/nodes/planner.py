@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from langgraph.types import Command
@@ -19,9 +20,27 @@ from app.graph.runtime import (
 from app.graph.state import Plan, dump
 from app.llm.models_config import Role
 from app.llm.structured import StructuredOutputError, generate_structured
+from app.tools.base import ToolSpec
 from app.tools.human import ask_human_tool
+from app.tools.search import search_codebase_tool
+from app.tools.workspace import Workspace, read_file_tool
 
 NODE = "planner"
+
+
+def repo_tools(deps: GraphDeps, state: dict[str, Any]) -> list[ToolSpec]:
+    """Existing repositories: let the agent read and search the checked-out code."""
+    if not state.get("repo_info") or not state.get("workspace"):
+        return []
+    tools = [read_file_tool(Workspace(Path(state["workspace"])))]
+    if deps.rag is not None:
+        tools.append(search_codebase_tool(deps.rag, state["run_id"]))
+    return tools
+
+
+def plan_validation_context(state: dict[str, Any]) -> dict[str, Any]:
+    projects = (state.get("repo_info") or {}).get("projects") or []
+    return {"allowed_stacks": {p["stack"] for p in projects}} if projects else {}
 
 
 def make_planner(deps: GraphDeps) -> NodeFn:
@@ -39,6 +58,8 @@ def make_planner(deps: GraphDeps) -> NodeFn:
                 feedback=state.get("plan_feedback"),
                 previous_plan=previous,
                 qa=qa_entries(qa_log, asker=NODE),
+                repo=state.get("repo_info"),
+                mode=state.get("mode"),
             )
 
         outcome = await agent_turn(
@@ -49,7 +70,7 @@ def make_planner(deps: GraphDeps) -> NodeFn:
             task_id=None,
             system=system,
             build_context=context,
-            tools=[ask_human_tool(limit_reached=limit_reached)],
+            tools=[ask_human_tool(limit_reached=limit_reached), *repo_tools(deps, state)],
             saved=state.get("scratch", {}).get(NODE),
         )
         if outcome.kind == "ask_human":
@@ -69,6 +90,7 @@ def make_planner(deps: GraphDeps) -> NodeFn:
                 Role.PLANNER,
                 outcome.messages[:-1],
                 Plan,
+                context=plan_validation_context(state),
                 first_response=outcome.final_text,
             )
         except StructuredOutputError as exc:

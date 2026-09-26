@@ -1,6 +1,8 @@
 # DevCrew sandbox: Python 3.12 + pytest. Build from devcrew/sandbox:
 #   docker build -f python/Dockerfile -t devcrew-sandbox-python .
 ARG PYTHON_IMAGE=python:3.12-slim
+ARG GATE_TOOLS_IMAGE=devcrew-sandbox-gate-tools:latest
+FROM ${GATE_TOOLS_IMAGE} AS gatetools
 FROM ${PYTHON_IMAGE}
 
 # /deps/venv is re-mounted as a per-run volume (initialized from this image), so dependencies
@@ -18,6 +20,12 @@ RUN python -m venv /deps/venv \
     && mkdir -p /home/sandbox /workspace \
     && chmod -R a+rwX /deps \
     && chmod 1777 /home/sandbox /workspace
+
+# Quality-gate tools (gitleaks, osv-scanner) from the gate-tools image (see gatetools/).
+COPY --from=gatetools /gate-tools/ /tmp/gate-tools/
+RUN tar -xzf /tmp/gate-tools/gitleaks.tar.gz -C /usr/local/bin gitleaks \
+    && install -m 0755 /tmp/gate-tools/osv-scanner /usr/local/bin/osv-scanner \
+    && rm -rf /tmp/gate-tools
 
 WORKDIR /workspace
 CMD ["sleep", "infinity"]

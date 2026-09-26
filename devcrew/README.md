@@ -70,6 +70,66 @@ Design notes:
 - With `SANDBOX_ENABLED=false`, QA writes tests but they are not executed: results show
   `ran: false` and the task proceeds.
 
+## Existing repositories and quality gates (Phase 11)
+
+**Working on an existing repository.** On the New run page choose **Existing repository** and
+enter `owner/repo`. This needs `GITHUB_TOKEN` with read access, plus
+`GITHUB_DELIVERY_ENABLED=true`.
+
+A new **Repository** step runs before the Planner. It:
+- clones the repository's default branch;
+- detects its projects: Python (`pyproject.toml`/`setup.py`/`requirements.txt`), Java with
+  Maven (`pom.xml`) and Angular (`angular.json`), at the root or one directory below it, for
+  example `backend/` + `frontend/`;
+- indexes the code for search.
+
+Other repositories are refused with an explanation (Gradle is not supported, for example).
+
+A `.devcrew.yaml` at the repository root can list the projects and override any command:
+
+```yaml
+projects:
+  - stack: python
+    path: backend
+    test_cmd: python -m pytest -q tests/unit   # install_cmd / build_cmd / coverage_cmd too
+```
+
+Choose the mode per run:
+- **Full:** the Planner plans against the existing code (it gets a file map and the README,
+  and can read and search the code). You approve the plan. The Architect then reads the code
+  and describes the modules the change touches and any new contracts, plus the plan
+  assessment. You approve the design.
+- **Quick fix:** the Planner writes a small change plan and your single approval starts the
+  development; the Architect is skipped.
+
+Tasks branch off the default branch. The PR targets the default branch, which DevCrew never
+pushes to.
+
+**Quality gates.** A **Quality gates** step runs between the integration tests and the final
+approval. `GATES_ENABLED=true` by default.
+
+| Gate | Tool | Fails when |
+|---|---|---|
+| Secrets | gitleaks, on the changed files only (values redacted) | any secret in a changed file. Also checked per task, where it sends the task back to the developer like a failing test |
+| Dependencies | osv-scanner (Python: the installed `pip freeze`; Java: `pom.xml`; Angular: `package-lock.json`) | a vulnerability that is not already on the base branch |
+| Coverage | the test run with coverage (pytest-cov, JaCoCo, Karma) | new project: below `GATE_COVERAGE_MIN` (70%). Existing repo: more than `GATE_COVERAGE_TOLERANCE` points below the base branch (measured once before the tasks start) |
+
+When a gate fails, DevCrew adds an automatic fix task that carries the findings
+(`MAX_GATE_FIX_ROUNDS`, default 1), then integrates and checks again. If a gate still fails,
+the final approval shows it:
+- **approve** lets it through, and the PR body lists the accepted failures;
+- **reject** creates a follow-up task.
+
+**Secrets can never be approved.** A gate that could not run (for example osv.dev is
+unreachable) is reported as `error` and does not block the PR.
+
+Upgrade note: the sandbox images now include gitleaks and osv-scanner. Rebuild them with
+`scripts/build_sandbox_images.sh`, which first builds `devcrew-sandbox-gate-tools` (pinned
+versions, SHA-256 verified, amd64 and arm64).
+
+The dependency scan needs outbound HTTPS from the sandbox's install network to `api.osv.dev`,
+and for Maven projects also to `api.deps.dev`.
+
 ## Workflow view and requirements documents (Phase 10)
 
 **Requirements input.** The New run page takes a feature request or a requirements document:

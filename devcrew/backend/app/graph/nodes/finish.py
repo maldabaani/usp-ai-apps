@@ -10,6 +10,7 @@ from langgraph.types import Command
 
 from app.db.models import RunStatus
 from app.events.types import EventType
+from app.gates.checks import parse_coverage
 from app.github.delivery import DeliveryError
 from app.graph.interrupts import InterruptKind, InterruptRequest, ResumeAction, request_input
 from app.graph.layout import resolve_layout, sandbox_target
@@ -32,8 +33,12 @@ def make_integration(deps: GraphDeps) -> NodeFn:
         tasks = {tid: TaskState.model_validate(t) for tid, t in state["tasks"].items()}
 
         results: dict[str, Any] = {}
+        coverage: dict[str, float | None] = {}
+        gates_on = deps.settings.gates_enabled
         for stack, entry in layout.items():
-            command = entry.template.test_cmd
+            # With gates on, the coverage variant runs the same tests and reports coverage.
+            measure = gates_on and bool(entry.template.coverage_cmd)
+            command = (entry.template.coverage_cmd or "") if measure else entry.template.test_cmd
             await deps.emit(
                 run_id,
                 EventType.TOOL_CALL,
@@ -45,6 +50,8 @@ def make_integration(deps: GraphDeps) -> NodeFn:
                 result = TestResult(ran=False, passed=True, command=command, logs_excerpt=NOT_RUN)
             else:
                 out = await deps.sandbox.exec(target, layout, command, cwd=entry.path)
+                if measure:
+                    coverage[stack] = parse_coverage(stack, out.output)
                 result = TestResult(
                     ran=True,
                     passed=out.ok,
@@ -67,10 +74,10 @@ def make_integration(deps: GraphDeps) -> NodeFn:
             "failed": sorted(t for t, s in tasks.items() if s.status is TaskStatus.FAILED),
             "blocked": sorted(t for t, s in tasks.items() if s.status is TaskStatus.BLOCKED),
             "tests": results,
+            "coverage": coverage,
         }
         return Command(
-            goto="approve_final",
-            update={"integration": summary, "status": RunStatus.AWAITING_FINAL_APPROVAL.value},
+            goto="gates", update={"integration": summary, "status": RunStatus.CHECKING.value}
         )
 
     return integration

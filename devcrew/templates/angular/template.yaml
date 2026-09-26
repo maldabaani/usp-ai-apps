@@ -4,3 +4,4 @@ description: Angular 19 standalone app (signals, OnPush, router) with Karma/Jasm
 install_cmd: npm install --no-audit --no-fund
 build_cmd: npx ng build
 test_cmd: npx ng test --watch=false --browsers=ChromeHeadless
+coverage_cmd: npx ng test --watch=false --browsers=ChromeHeadless --code-coverage

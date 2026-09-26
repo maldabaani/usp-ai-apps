@@ -32,6 +32,7 @@ DEVELOPMENT = "development"  # placeholder stage until the plan (and so the task
 # (node id, kind, label, graph node that emits its events)
 STAGES: list[tuple[str, NodeKind, str, str | None]] = [
     ("requirements", "input", "Requirements", None),
+    ("prepare_repo", "system", "Repository", "prepare_repo"),
     ("planner", "agent", "Planner", "planner"),
     ("approve_plan", "approval", "Plan approval", "approve_plan"),
     ("architect", "agent", "Architect", "architect"),
@@ -39,6 +40,7 @@ STAGES: list[tuple[str, NodeKind, str, str | None]] = [
     ("scaffold", "system", "Scaffold", "scaffold"),
     (DEVELOPMENT, "system", "Development", None),
     ("integration", "system", "Integration tests", "integration"),
+    ("gates", "system", "Quality gates", "gates"),
     ("approve_final", "approval", "Final approval", "approve_final"),
     ("delivery", "output", "GitHub PR", "github_delivery"),
 ]
@@ -52,6 +54,8 @@ GRAPH_NODE_TO_STAGE = {graph: sid for sid, _, _, graph in STAGES if graph} | {
 
 STATUS_STAGE: dict[RunStatus, tuple[str, NodeStatus]] = {
     RunStatus.PENDING: ("planner", "pending"),
+    RunStatus.PREPARING: ("prepare_repo", "running"),
+    RunStatus.CHECKING: ("gates", "running"),
     RunStatus.PLANNING: ("planner", "running"),
     RunStatus.AWAITING_PLAN_APPROVAL: ("approve_plan", "waiting"),
     RunStatus.DESIGNING: ("architect", "running"),
@@ -216,9 +220,10 @@ def build_workflow(
     task_ids = [str(t["id"]) for t in plan_tasks]
     task_ids += [tid for tid in task_states if tid not in task_ids]  # e.g. split parents
 
+    existing = state.get("target") == "existing"
     nodes: dict[str, WorkflowNode] = {}
     for sid, kind, label, _ in STAGES:
-        if sid == DEVELOPMENT and task_ids:
+        if (sid == DEVELOPMENT and task_ids) or (sid == "prepare_repo" and not existing):
             continue
         nodes[sid] = WorkflowNode(id=sid, kind=kind, label=label)
     plan_by_id = {str(t["id"]): t for t in plan_tasks}
@@ -240,6 +245,10 @@ def build_workflow(
     requirements.status = "done"
     requirements.started_at = requirements.finished_at = created_at
     requirements.detail = f"{len(request):,} characters"
+    if existing:
+        mode = "quick fix" if state.get("mode") == "quick" else "full"
+        requirements.detail += f" · {mode} change"
+    _apply_repository_and_gates(nodes, state, run_status)
 
     attention: list[str] = []
     for p in pending:
@@ -257,6 +266,37 @@ def build_workflow(
         edges=edges,
         attention=list(dict.fromkeys(attention)),
     )
+
+
+def _apply_repository_and_gates(
+    nodes: dict[str, WorkflowNode], state: Mapping[str, Any], status: RunStatus
+) -> None:
+    repo = state.get("repo_info") or {}
+    if "prepare_repo" in nodes and repo:
+        projects = ", ".join(f"{p['stack']} ({p['path']})" for p in repo.get("projects") or [])
+        nodes["prepare_repo"].detail = f"{projects} · base {repo.get('base_branch')}"
+    if state.get("target") == "existing" and state.get("mode") == "quick":
+        for sid in ("architect", "approve_design"):
+            nodes[sid].status = "skipped"
+            nodes[sid].detail = "quick fix: no design step"
+    gates = state.get("gates") or {}
+    results = gates.get("results") or []
+    if results:
+        counts: dict[str, int] = {}
+        for r in results:
+            counts[r["status"]] = counts.get(r["status"], 0) + 1
+        node = nodes["gates"]
+        node.detail = ", ".join(f"{n} {s}" for s, n in sorted(counts.items()))
+        node.counters["fix_rounds"] = int(state.get("gate_fix_rounds") or 0)
+        if counts.get("failed") and node.status == "done" and status is not RunStatus.CHECKING:
+            node.status = (
+                "failed"
+                if any(r["status"] == "failed" and not r.get("allowable", True) for r in results)
+                else "done"
+            )
+            node.detail = "failed: " + ", ".join(
+                r["name"] for r in results if r["status"] == "failed"
+            )
 
 
 def _event_target(event: Event, nodes: Mapping[str, WorkflowNode], last_agent: str) -> str | None:
@@ -422,10 +462,19 @@ def _edges(
                 WorkflowEdge(id=f"{source}->{target}", source=source, target=target, active=active)
             )
 
-    chain = ["requirements", "planner", "approve_plan", "architect", "approve_design", "scaffold"]
+    chain = [
+        "requirements",
+        "prepare_repo",
+        "planner",
+        "approve_plan",
+        "architect",
+        "approve_design",
+        "scaffold",
+    ]
+    chain = [c for c in chain if c in nodes]
     for a, b in pairwise(chain):
         add(a, b)
-    tail = ["integration", "approve_final", "delivery"]
+    tail = ["integration", "gates", "approve_final", "delivery"]
     for a, b in pairwise(tail):
         add(a, b)
 
@@ -456,7 +505,18 @@ def _edges(
                     label=f"rejected {nodes[sid].runs - 1}x",
                 )
             )
-    integration_runs = nodes["integration"].runs
+    fix_tasks = [t for t in task_ids if t.startswith("GATEFIX")]
+    if fix_tasks:
+        edges.append(
+            WorkflowEdge(
+                id=f"gates->{task_node_id(fix_tasks[0])}:loop",
+                source="gates",
+                target=task_node_id(fix_tasks[0]),
+                kind="loop",
+                label=f"auto-fix {len(fix_tasks)}x",
+            )
+        )
+    integration_runs = nodes["integration"].runs - len(fix_tasks)
     if integration_runs > 1:
         first = task_node_id(task_ids[-1]) if task_ids else DEVELOPMENT
         edges.append(

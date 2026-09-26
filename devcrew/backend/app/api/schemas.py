@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -18,6 +18,13 @@ class CreateRunRequest(BaseModel):
     request: str = Field(min_length=10)  # max length: MAX_REQUEST_CHARS, checked in the route
     repo_target: str = Field(pattern=REPO_RE, description="owner/repo on GitHub")
     create_repo: bool = False
+    target: Literal["new", "existing"] = Field(
+        default="new", description="new: build a new project; existing: change this repository"
+    )
+    mode: Literal["full", "quick"] = Field(
+        default="full",
+        description="existing repositories: full (with the Architect) or quick (one approval)",
+    )
 
     @field_validator("request")
     @classmethod
@@ -90,6 +97,11 @@ class PendingInput(BaseModel):
 
 
 class RunDetail(RunSummary):
+    target: str = "new"
+    mode: str = "full"
+    base_branch: str | None = None
+    repo_info: dict[str, Any] | None = None
+    gates: dict[str, Any] | None = None
     plan: dict[str, Any] | None = None
     design: dict[str, Any] | None = None
     tasks: dict[str, dict[str, Any]] = Field(default_factory=dict)

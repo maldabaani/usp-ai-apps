@@ -2,9 +2,11 @@
 
 Rules (from the spec):
 - Only called after final approval (the graph gate enforces it; this module re-checks).
-- `main` is pushed ONLY when the remote repository is empty, and then only the template
-  scaffold commit. Otherwise `main` is never touched (no force, no update).
-- The run's branch `devcrew/<run_id>-<slug>` is pushed and a PR is opened against `main`.
+- New projects: `main` is pushed ONLY when the remote repository is empty, and then only the
+  template scaffold commit. Otherwise `main` is never touched (no force, no update).
+- Existing repositories (Phase 11): the base branch is never pushed; the run branch is based
+  on it and the PR targets it.
+- The run's branch `devcrew/<run_id>-<slug>` is pushed and a PR is opened against the base.
   Re-delivery is idempotent: an already pushed branch and an open PR are reused.
 - The token never appears in URLs, git config or process arguments: git receives it as an
   HTTP header through environment-based config (scoped to the GitHub host).
@@ -83,6 +85,33 @@ class GitHubDelivery:
                 heads[ref.removeprefix("refs/heads/")] = sha
         return heads
 
+    async def default_branch(self, owner: str, name: str) -> str:
+        client = self._client_factory()
+        try:
+            repo = await client.get_repo(owner, name)
+        except GitHubError as exc:
+            raise DeliveryError(str(exc)) from exc
+        finally:
+            await client.aclose()
+        if repo is None:
+            raise DeliveryError(
+                f"repository {owner}/{name} does not exist or the token cannot read it"
+            )
+        return str(repo.get("default_branch") or BASE_BRANCH)
+
+    async def clone(self, owner: str, name: str, branch: str, dest: Path) -> None:
+        """Clone `branch` of an existing repository into `dest` (read access only)."""
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        await self._git(
+            GitRepo(dest.parent),
+            "clone",
+            "--no-tags",
+            "--branch",
+            branch,
+            self.remote_url(owner, name),
+            str(dest),
+        )
+
     async def deliver(
         self, state: Mapping[str, Any], *, progress: Progress | None = None
     ) -> DeliveryResult:
@@ -97,6 +126,8 @@ class GitHubDelivery:
         owner, _, name = str(state["repo_target"]).partition("/")
         branch = str(state["integration_branch"])
         repo = GitRepo(Path(state["workspace"]))
+        if state.get("target") == "existing":
+            return await self._deliver_existing(state, owner, name, branch, repo, say)
         client = self._client_factory()
         try:
             created = False
@@ -147,6 +178,45 @@ class GitHubDelivery:
                 )
             return DeliveryResult(
                 pr_url=pr_url, repo_created=created, pushed_main=pushed_main, branch=branch
+            )
+        except GitHubError as exc:
+            raise DeliveryError(str(exc)) from exc
+        finally:
+            await client.aclose()
+
+    async def _deliver_existing(
+        self,
+        state: Mapping[str, Any],
+        owner: str,
+        name: str,
+        branch: str,
+        repo: GitRepo,
+        say: Callable[[str], Awaitable[None]],
+    ) -> DeliveryResult:
+        base = str(state.get("base_branch") or BASE_BRANCH)
+        if branch == base:
+            raise DeliveryError(f"refusing to push the base branch {base}")
+        url = self.remote_url(owner, name)
+        client = self._client_factory()
+        try:
+            heads = await self._remote_heads(repo, url)
+            if base not in heads:
+                raise DeliveryError(f"{owner}/{name} has no branch {base} to open the PR against")
+            await say(f"pushing {branch}")
+            await self._git(repo, "push", url, f"refs/heads/{branch}:refs/heads/{branch}")
+            pr_url = await client.find_open_pr(owner, name, branch, base)
+            if pr_url is None:
+                await say(f"opening the pull request against {base}")
+                pr_url = await client.create_pr(
+                    owner,
+                    name,
+                    title=pr_title(str(state.get("request", ""))),
+                    head=branch,
+                    base=base,
+                    body=pr_body(state),
+                )
+            return DeliveryResult(
+                pr_url=pr_url, repo_created=False, pushed_main=False, branch=branch
             )
         except GitHubError as exc:
             raise DeliveryError(str(exc)) from exc

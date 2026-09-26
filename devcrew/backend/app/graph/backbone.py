@@ -32,8 +32,10 @@ from app.graph.nodes.finish import (
     make_github_delivery,
     make_integration,
 )
+from app.graph.nodes.gates import make_gates
 from app.graph.nodes.human import make_ask_human
 from app.graph.nodes.planner import make_planner
+from app.graph.nodes.repository import make_prepare_repo
 from app.graph.nodes.scaffold import make_scaffold
 from app.graph.replan import apply_changes
 from app.graph.runtime import GraphDeps, NodeFn, instrument
@@ -140,8 +142,9 @@ def build_graph(
 ) -> CompiledStateGraph[Any, Any, Any, Any]:
     g = StateGraph(RunState)
     nodes: dict[str, tuple[NodeFn, tuple[str, ...]]] = {
+        "prepare_repo": (make_prepare_repo(deps), ("planner", "escalate")),
         "planner": (make_planner(deps), ("approve_plan", "ask_human", "coordinator")),
-        "approve_plan": (make_approve_plan(deps), ("architect", "planner")),
+        "approve_plan": (make_approve_plan(deps), ("architect", "planner", "scaffold")),
         "architect": (make_architect(deps), ("approve_design", "ask_human", "coordinator")),
         "approve_design": (make_approve_design(deps), ("scaffold", "architect")),
         "ask_human": (
@@ -149,10 +152,11 @@ def build_graph(
             ("planner", "architect"),
         ),
         "coordinator": (make_run_coordinator(deps), ("planner", "architect", "escalate")),
-        "escalate": (make_run_escalate(deps), ("planner", "architect", END)),
+        "escalate": (make_run_escalate(deps), ("prepare_repo", "planner", "architect", END)),
         "scaffold": (make_scaffold(deps), ("schedule",)),
         "schedule": (make_schedule(deps), ("task_worker", "integration")),
-        "integration": (make_integration(deps), ("approve_final",)),
+        "integration": (make_integration(deps), ("gates",)),
+        "gates": (make_gates(deps), ("approve_final", "schedule")),
         "approve_final": (make_approve_final(deps), ("github_delivery", "schedule")),
         "github_delivery": (make_github_delivery(deps), ("done", "delivery_failed")),
         "delivery_failed": (make_delivery_failed(deps), ("github_delivery", "done")),
@@ -161,18 +165,38 @@ def build_graph(
     for name, (fn, destinations) in nodes.items():
         g.add_node(name, cast(Any, instrument(deps, name, fn)), destinations=destinations)
     g.add_node("task_worker", build_task_subgraph(deps))
-    g.add_edge(START, "planner")
+    g.add_conditional_edges(START, start_node, ["prepare_repo", "planner"])
     g.add_edge("task_worker", "schedule")
     return g.compile(checkpointer=checkpointer)
 
 
-def initial_state(run_id: str, request: str, repo_target: str, create_repo: bool) -> RunState:
-    return RunState(
+def start_node(state: dict[str, Any]) -> str:
+    """Existing repositories are cloned and analyzed before planning."""
+    return "prepare_repo" if state.get("target") == "existing" else "planner"
+
+
+def initial_state(
+    run_id: str,
+    request: str,
+    repo_target: str,
+    create_repo: bool,
+    *,
+    target: str = "new",
+    mode: str = "full",
+) -> RunState:
+    existing = target == "existing"
+    state = RunState(
         run_id=run_id,
         request=request,
         repo_target=repo_target,
-        create_repo=create_repo,
-        status=RunStatus.PLANNING.value,
+        create_repo=create_repo and not existing,
+        target=target,
+        mode=mode if existing else "full",
+        repo_info=None,
+        gate_baseline=None,
+        gates=None,
+        gate_fix_rounds=0,
+        status=(RunStatus.PREPARING if existing else RunStatus.PLANNING).value,
         plan=None,
         design=None,
         tasks={},
@@ -190,3 +214,6 @@ def initial_state(run_id: str, request: str, repo_target: str, create_repo: bool
         plan_changes_applied=0,
         coordinator_retries={},
     )
+    if not existing:
+        state["base_branch"] = "main"
+    return state

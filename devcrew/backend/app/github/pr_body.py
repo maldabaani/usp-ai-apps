@@ -46,8 +46,16 @@ def pr_body(state: Mapping[str, Any]) -> str:
         stack = design.get("stack", "")
         template = design.get("template_id", "")
         doc = _clip(design.get("design_doc", ""), MAX_DESIGN)
+        where = (
+            "Change to the existing "
+            + ", ".join(
+                f"`{p['stack']}` project at `{p['path']}`" for p in design["existing_projects"]
+            )
+            if design.get("existing_projects")
+            else f"Stack `{stack}`, template `{template}`"
+        )
         parts.append(
-            f"## Design\n\nStack `{stack}`, template `{template}`.\n\n"
+            f"## Design\n\n{where}.\n\n"
             f"<details><summary>Design document</summary>\n\n{doc}\n\n</details>"
         )
 
@@ -65,6 +73,25 @@ def pr_body(state: Mapping[str, Any]) -> str:
             f"{t.get('status', '')} | {t.get('iterations', 0)} | {result} |"
         )
     parts.append("## Tasks\n\n" + "\n".join(rows))
+
+    gates = state.get("gates") or {}
+    if gates.get("results"):
+        icon = {"passed": "✅", "failed": "⚠️", "skipped": "⏭️", "error": "❓"}
+        lines = ["| Gate | Result | Summary |", "|---|---|---|"]
+        for g in gates["results"]:
+            lines.append(
+                f"| {g['name']} | {icon.get(g['status'], '')} {g['status']} | "
+                f"{_cell(g.get('summary', ''))} |"
+            )
+        failed = [g for g in gates["results"] if g["status"] == "failed"]
+        if failed:
+            lines.append(
+                "\n**Accepted by the reviewer despite failing gates:** "
+                + ", ".join(g["name"] for g in failed)
+            )
+            for g in failed:
+                lines += [f"- {_cell(d)}" for d in g.get("details", [])[:10]]
+        parts.append("## Quality gates\n\n" + "\n".join(lines))
 
     tests: Mapping[str, Mapping[str, Any]] = integration.get("tests") or {}
     if tests:

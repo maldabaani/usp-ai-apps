@@ -30,21 +30,42 @@ describe('NewRunComponent', () => {
   it('validates the form and starts a run', () => {
     const { fixture, router } = setup();
     const form = fixture.componentInstance.form;
-    form.setValue({ request: 'short', repo_target: 'no slash', create_repo: false });
+    form.patchValue({ request: 'short', repo_target: 'no slash', create_repo: false });
     expect(form.valid).toBeFalse();
-    form.setValue({ request: 'Build a FastAPI TODO API', repo_target: 'octocat/todo-api', create_repo: true });
+    form.patchValue({ request: 'Build a FastAPI TODO API', repo_target: 'octocat/todo-api', create_repo: true });
     expect(form.valid).toBeTrue();
     fixture.componentInstance.submit();
     expect(api.createRun).toHaveBeenCalledWith({
       request: 'Build a FastAPI TODO API', repo_target: 'octocat/todo-api', create_repo: true,
+      target: 'new', mode: 'full',
     });
     expect(router.navigate).toHaveBeenCalledWith(['/runs', 'r9']);
+  });
+
+  it('works on an existing repository with a change mode, never creating the repo', () => {
+    const { fixture } = setup();
+    const c = fixture.componentInstance;
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.textContent).toContain('Create the repository if it is missing');
+    c.form.patchValue({
+      request: 'Add a discount field to orders', repo_target: 'acme/shop', create_repo: true,
+      target: 'existing', mode: 'quick',
+    });
+    fixture.detectChanges();
+    expect(c.existing()).toBeTrue();
+    expect(el.textContent).not.toContain('Create the repository if it is missing');
+    expect(el.textContent).toContain('Quick fix: you approve one change plan');
+    c.submit();
+    expect(api.createRun).toHaveBeenCalledWith({
+      request: 'Add a discount field to orders', repo_target: 'acme/shop', create_repo: false,
+      target: 'existing', mode: 'quick',
+    });
   });
 
   it('enforces the server limit and shows the character count', () => {
     const { fixture } = setup();
     const c = fixture.componentInstance;
-    c.form.setValue({ request: 'x'.repeat(61), repo_target: 'octocat/todo-api', create_repo: false });
+    c.form.patchValue({ request: 'x'.repeat(61), repo_target: 'octocat/todo-api', create_repo: false });
     fixture.detectChanges();
     const el = fixture.nativeElement as HTMLElement;
     expect(c.tooLong()).toBeTrue();

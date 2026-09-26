@@ -4,3 +4,4 @@ description: FastAPI 0.115+ app (routers/schemas/services layout, pydantic-setti
 install_cmd: pip install -q -e ".[dev]"
 build_cmd: python -m compileall -q app
 test_cmd: pytest -q
+coverage_cmd: pytest -q --cov=app --cov-report=term

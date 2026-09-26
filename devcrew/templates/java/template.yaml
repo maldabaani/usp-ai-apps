@@ -2,7 +2,9 @@ id: java-spring-boot
 stack: java
 description: Spring Boot 3.5 (Java 21, Maven) web app with controller/service/repository packages, Bean Validation and JUnit 5.
 # Resolve dependencies and plugins, plus surefire's JUnit provider (normally fetched lazily at
-# test time). Tests later run with the network disabled, in Maven offline mode.
-install_cmd: mvn -q dependency:resolve dependency:resolve-plugins && mvn -q dependency:get -Dartifact=org.apache.maven.surefire:surefire-junit-platform:$(mvn -q help:evaluate -Dexpression=maven-surefire-plugin.version -DforceStdout)
+# test time), and the JaCoCo coverage plugin/agent (a coverage run with no tests). Tests later
+# run with the network disabled, in Maven offline mode.
+install_cmd: mvn -q dependency:resolve dependency:resolve-plugins && mvn -q dependency:get -Dartifact=org.apache.maven.surefire:surefire-junit-platform:$(mvn -q help:evaluate -Dexpression=maven-surefire-plugin.version -DforceStdout) && mvn -q org.jacoco:jacoco-maven-plugin:0.8.12:prepare-agent test -Dtest=DevCrewNoSuchTest -Dsurefire.failIfNoSpecifiedTests=false org.jacoco:jacoco-maven-plugin:0.8.12:report
 build_cmd: mvn -q -DskipTests package
 test_cmd: mvn -q test
+coverage_cmd: mvn -q org.jacoco:jacoco-maven-plugin:0.8.12:prepare-agent test org.jacoco:jacoco-maven-plugin:0.8.12:report && awk -F, '$1 != "GROUP" {m += $8; c += $9} END {if (m + c > 0) printf "COVERAGE_LINES %.2f\n", 100 * c / (m + c)}' target/site/jacoco/jacoco.csv

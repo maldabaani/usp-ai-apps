@@ -71,7 +71,14 @@ class Plan(BaseModel):
     tasks: list[PlanTask] = Field(min_length=1)
 
     @model_validator(mode="after")
-    def _valid_dag(self) -> Self:
+    def _valid_dag(self, info: ValidationInfo) -> Self:
+        allowed: set[str] | None = (info.context or {}).get("allowed_stacks")
+        if allowed:
+            wrong = sorted({t.stack for t in self.tasks} - allowed)
+            if wrong:
+                raise ValueError(
+                    f"tasks use {wrong} but this repository only has {sorted(allowed)} projects"
+                )
         ids = [t.id for t in self.tasks]
         dupes = sorted({i for i in ids if ids.count(i) > 1})
         if dupes:
@@ -152,6 +159,35 @@ class PlanAssessment(BaseModel):
     )
 
 
+class ExistingProject(BaseModel):
+    """A project detected in an existing repository (filled by DevCrew, not by the model)."""
+
+    stack: Literal["python", "java", "angular"]
+    path: str = "."
+    install_cmd: str
+    build_cmd: str = ""
+    test_cmd: str
+    coverage_cmd: str | None = None
+
+    @field_validator("path")
+    @classmethod
+    def _path(cls, v: str) -> str:
+        p = _check_relative_path(v).strip("/")
+        return p or "."
+
+
+class ExistingDesignDraft(BaseModel):
+    """What the Architect writes for an existing repository (layout fields are filled in)."""
+
+    project_structure: list[str] = Field(description="Existing and new paths involved.")
+    modules: list[ModuleContract] = Field(min_length=1)
+    key_decisions: list[str] = Field(default_factory=list)
+    design_doc: str = Field(description="Markdown design document for the change.")
+    plan_assessment: PlanAssessment | None = Field(
+        default=None, description="Your assessment of the plan you are designing for."
+    )
+
+
 class Design(BaseModel):
     stack: Stack
     template_id: str
@@ -167,10 +203,30 @@ class Design(BaseModel):
     plan_assessment: PlanAssessment | None = Field(
         default=None, description="Your assessment of the plan you are designing for."
     )
+    existing_projects: list[ExistingProject] = Field(
+        default_factory=list,
+        description="Filled in by DevCrew for existing repositories. Always leave empty.",
+    )
 
     @model_validator(mode="after")
     def _layout_is_valid(self, info: ValidationInfo) -> Self:
         context = info.context or {}
+        if self.existing_projects:
+            # Existing repository: the layout comes from detection, not from templates.
+            found: list[str] = [p.stack for p in self.existing_projects]
+            paths = [p.path for p in self.existing_projects]
+            if len(set(found)) != len(found) or len(set(paths)) != len(paths):
+                raise ValueError("existing projects must have distinct stacks and paths")
+            expected = Stack.MIXED if len(found) > 1 else Stack(found[0])
+            if self.stack is not expected:
+                raise ValueError(f"stack must be {expected.value} for this repository")
+            wanted: set[str] | None = context.get("task_stacks")
+            if wanted and not wanted <= set(found):
+                raise ValueError(
+                    f"the plan has {sorted(wanted - set(found))} tasks but the repository "
+                    f"only contains {sorted(found)} projects"
+                )
+            return self
         if self.stack is Stack.MIXED:
             if len(self.components) < 2:
                 raise ValueError("stack 'mixed' needs at least two components (template + path)")
@@ -432,6 +488,15 @@ class RunState(TypedDict, total=False):
     plan_changes: Annotated[list[dict[str, Any]], operator.add]
     plan_changes_applied: int
     coordinator_retries: Annotated[dict[str, Any], merge_dicts]
+
+    # Phase 11: existing repositories and quality gates.
+    target: str  # "new" | "existing"
+    mode: str  # "full" | "quick" (existing repositories only)
+    base_branch: str  # PR base: "main" for new projects, the default branch otherwise
+    repo_info: dict[str, Any] | None  # detected projects + repository summary
+    gate_baseline: dict[str, Any] | None  # coverage / known vulnerabilities on the base branch
+    gates: dict[str, Any] | None  # latest GateReport (integration)
+    gate_fix_rounds: int
 
 
 class TaskWorkerState(TypedDict, total=False):

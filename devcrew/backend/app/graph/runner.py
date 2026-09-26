@@ -69,10 +69,18 @@ class RunDriver:
         return {"configurable": {"thread_id": run_id}, "recursion_limit": RECURSION_LIMIT}
 
     async def start(
-        self, run_id: str, request: str, repo_target: str, create_repo: bool = False
+        self,
+        run_id: str,
+        request: str,
+        repo_target: str,
+        create_repo: bool = False,
+        *,
+        target: str = "new",
+        mode: str = "full",
     ) -> RunOutcome:
-        await self._set_status(run_id, RunStatus.PLANNING)
-        return await self._drive(run_id, initial_state(run_id, request, repo_target, create_repo))
+        state = initial_state(run_id, request, repo_target, create_repo, target=target, mode=mode)
+        await self._set_status(run_id, RunStatus(state["status"]))
+        return await self._drive(run_id, state)
 
     async def resume(
         self, run_id: str, payload: ResumePayload, interrupt_id: str | None = None

@@ -403,9 +403,13 @@ def make_run_escalate(deps: GraphDeps) -> NodeFn:
             )
         update: dict[str, Any] = {"escalation": None, "coordinator_retries": {node: 0}}
         if payload.action is ResumeAction.ANSWER:
-            update[FEEDBACK_KEYS.get(node, "plan_feedback")] = payload.answer
+            if node in FEEDBACK_KEYS:
+                update[FEEDBACK_KEYS[node]] = payload.answer
             update["qa_log"] = [_qa(None, reason, payload.answer or "")]
-        status = RunStatus.PLANNING.value if node == "planner" else RunStatus.DESIGNING.value
+        status = {
+            "prepare_repo": RunStatus.PREPARING.value,
+            "planner": RunStatus.PLANNING.value,
+        }.get(node, RunStatus.DESIGNING.value)
         return Command(goto=node, update={**update, "status": status})
 
     return escalate

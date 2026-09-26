@@ -11,6 +11,7 @@ import { MatInputModule } from '@angular/material/input';
 import { Router } from '@angular/router';
 import { catchError, of } from 'rxjs';
 
+import { RunMode, RunTarget } from '../../core/api.models';
 import { ApiService } from '../../core/api.service';
 import {
   ACCEPTED_EXTENSIONS,
@@ -46,6 +47,29 @@ export const DEFAULT_MAX_REQUEST_CHARS = 20_000;
     <mat-card>
       <mat-card-content>
         <form [formGroup]="form" (ngSubmit)="submit()" class="form">
+          <div class="target">
+            <mat-button-toggle-group formControlName="target" aria-label="What to work on" hideSingleSelectionIndicator>
+              <mat-button-toggle value="new">New project</mat-button-toggle>
+              <mat-button-toggle value="existing">Existing repository</mat-button-toggle>
+            </mat-button-toggle-group>
+            @if (existing()) {
+              <mat-button-toggle-group formControlName="mode" aria-label="Change flow" hideSingleSelectionIndicator>
+                <mat-button-toggle value="full" title="Plan, Architect design, then development">Full</mat-button-toggle>
+                <mat-button-toggle value="quick" title="One change-plan approval, no design step">Quick fix</mat-button-toggle>
+              </mat-button-toggle-group>
+            }
+          </div>
+          <p class="target-hint">
+            @if (existing()) {
+              DevCrew clones the repository (Python, Java/Maven or Angular), plans the change
+              against the existing code and opens a PR against its default branch.
+              {{ form.controls.mode.value === 'quick'
+                ? 'Quick fix: you approve one change plan, then it is implemented.'
+                : 'Full: you approve the plan and the Architect’s design.' }}
+            } @else {
+              DevCrew builds a new project from a starter template and opens a PR.
+            }
+          </p>
           <div class="req-head">
             <span class="req-label">Requirements</span>
             <mat-button-toggle-group [value]="mode()" (change)="mode.set($event.value)" aria-label="Editor mode" hideSingleSelectionIndicator>
@@ -91,7 +115,9 @@ export const DEFAULT_MAX_REQUEST_CHARS = 20_000;
               <mat-error>Use the form owner/repo.</mat-error>
             }
           </mat-form-field>
-          <mat-checkbox formControlName="create_repo">Create the repository if it is missing (private)</mat-checkbox>
+          @if (!existing()) {
+            <mat-checkbox formControlName="create_repo">Create the repository if it is missing (private)</mat-checkbox>
+          }
           @if (error(); as e) {
             <p class="error" role="alert">{{ e }}</p>
           }
@@ -111,6 +137,8 @@ export const DEFAULT_MAX_REQUEST_CHARS = 20_000;
     .crew { display: flex; gap: 6px; padding: 8px 12px; border-radius: 14px; border: 1px solid var(--dc-border);
             background: rgba(8, 17, 34, 0.7); box-shadow: 0 0 24px rgba(62, 230, 255, 0.12); }
     .form { display: flex; flex-direction: column; gap: 8px; max-width: 980px; }
+    .target { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+    .target-hint { color: var(--dc-text-dim); font-size: 13px; margin: 2px 0 8px; }
     .req-head { display: flex; justify-content: space-between; align-items: center; }
     .req-label { font-weight: 600; color: var(--dc-cyan); letter-spacing: 0.4px; }
     .drop { border: 1px dashed var(--dc-border-strong); border-radius: 12px; padding: 12px; transition: all 0.15s; }
@@ -145,7 +173,13 @@ export class NewRunComponent {
     request: ['', [Validators.required, Validators.minLength(10)]],
     repo_target: ['', [Validators.required, Validators.pattern(REPO_PATTERN)]],
     create_repo: [false],
+    target: ['new' as RunTarget],
+    mode: ['full' as RunMode],
   });
+  private readonly targetValue = toSignal(this.form.controls.target.valueChanges, {
+    initialValue: this.form.controls.target.value,
+  });
+  readonly existing = computed(() => this.targetValue() === 'existing');
 
   private readonly config = toSignal(this.api.config().pipe(catchError(() => of(null))), {
     initialValue: null,
@@ -198,7 +232,13 @@ export class NewRunComponent {
     }
     this.submitting.set(true);
     this.error.set(null);
-    this.api.createRun(this.form.getRawValue()).subscribe({
+    const value = this.form.getRawValue();
+    const existing = value.target === 'existing';
+    this.api.createRun({
+      ...value,
+      create_repo: existing ? false : value.create_repo,
+      mode: existing ? value.mode : 'full',
+    }).subscribe({
       next: (run) => void this.router.navigate(['/runs', run.id]),
       error: (err: { error?: { detail?: unknown } }) => {
         this.submitting.set(false);

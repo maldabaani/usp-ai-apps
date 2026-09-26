@@ -12,6 +12,8 @@ export const ICON_STYLE: Record<string, { color: string; emblem: string; robot: 
   approval: { color: '#ffc14d', emblem: '', robot: false },
   system: { color: '#6fb6ff', emblem: '', robot: false },
   delivery: { color: '#3ddc84', emblem: '', robot: false },
+  repository: { color: '#8fd3ff', emblem: '', robot: false },
+  gates: { color: '#2de2b0', emblem: '', robot: false },
 };
 
 /**
@@ -59,6 +61,18 @@ export const ICON_STYLE: Record<string, { color: string; emblem: string; robot: 
             <line x1="14" y1="14.5" x2="14" y2="33.5" [attr.stroke]="style().color" stroke-width="2.4" />
             <path d="M34 33.5V20a6 6 0 0 0-6-6h-6" fill="none" [attr.stroke]="style().color" stroke-width="2.4" />
             <path d="M25 10l-4 4 4 4" fill="none" [attr.stroke]="style().color" stroke-width="2.4" />
+          }
+          @case ('repository') {
+            <path d="M9 7a3 3 0 0 1 3-3h24v34H12a3 3 0 0 0-3 3z" fill="#0b1426" [attr.stroke]="style().color" stroke-width="2" />
+            <path d="M9 41a3 3 0 0 1 3-3h24v6H12a3 3 0 0 1-3-3z" fill="none" [attr.stroke]="style().color" stroke-width="2" />
+            <circle cx="18" cy="13" r="2.6" fill="none" [attr.stroke]="style().color" stroke-width="2" />
+            <circle cx="18" cy="29" r="2.6" fill="none" [attr.stroke]="style().color" stroke-width="2" />
+            <circle cx="28" cy="18" r="2.6" fill="none" [attr.stroke]="style().color" stroke-width="2" />
+            <path d="M18 15.6v10.8M28 20.6c0 4-10 3-10 5.8" fill="none" [attr.stroke]="style().color" stroke-width="2" />
+          }
+          @case ('gates') {
+            <path d="M24 4l16 6v12c0 11-7 18-16 22C15 40 8 33 8 22V10z" fill="#0b1426" [attr.stroke]="style().color" stroke-width="2" />
+            <path d="M17 24l5 5 9-10" fill="none" [attr.stroke]="style().color" stroke-width="2.6" />
           }
           @default {
             <path d="M24 5l17 9v20l-17 9-17-9V14z" fill="#0b1426" [attr.stroke]="style().color" stroke-width="2" />

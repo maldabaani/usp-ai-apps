@@ -1,6 +1,8 @@
 # DevCrew sandbox: Node 20 + Angular CLI + Chromium. Build from devcrew/sandbox:
 #   docker build -f node/Dockerfile -t devcrew-sandbox-node .
 ARG NODE_IMAGE=node:20-bookworm-slim
+ARG GATE_TOOLS_IMAGE=devcrew-sandbox-gate-tools:latest
+FROM ${GATE_TOOLS_IMAGE} AS gatetools
 FROM ${NODE_IMAGE}
 
 RUN apt-get update \
@@ -22,6 +24,12 @@ ENV HOME=/home/sandbox \
 RUN mkdir -p /cache/npm /home/sandbox /workspace \
     && chmod -R a+rwX /cache \
     && chmod 1777 /home/sandbox /workspace
+
+# Quality-gate tools (gitleaks, osv-scanner) from the gate-tools image (see gatetools/).
+COPY --from=gatetools /gate-tools/ /tmp/gate-tools/
+RUN tar -xzf /tmp/gate-tools/gitleaks.tar.gz -C /usr/local/bin gitleaks \
+    && install -m 0755 /tmp/gate-tools/osv-scanner /usr/local/bin/osv-scanner \
+    && rm -rf /tmp/gate-tools
 
 WORKDIR /workspace
 CMD ["sleep", "infinity"]

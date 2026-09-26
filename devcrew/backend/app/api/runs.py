@@ -27,7 +27,19 @@ from app.services.workflow import Workflow, build_workflow
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
-STATE_FIELDS = ("plan", "design", "qa_log", "integration", "integration_branch", "errors")
+STATE_FIELDS = (
+    "plan",
+    "design",
+    "qa_log",
+    "integration",
+    "integration_branch",
+    "errors",
+    "target",
+    "mode",
+    "base_branch",
+    "repo_info",
+    "gates",
+)
 
 
 async def _run_or_404(manager: RunManager, run_id: str) -> Any:
@@ -60,8 +72,18 @@ async def create_run(body: CreateRunRequest, container: ContainerDep) -> RunSumm
             f"the request has {len(body.request):,} characters; the limit is {limit:,} "
             "(MAX_REQUEST_CHARS: the Planner and Architect must fit it in their context window)",
         )
+    if body.target == "existing" and container.deps.github is None:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "working on an existing repository needs GitHub access: set GITHUB_TOKEN and "
+            "GITHUB_DELIVERY_ENABLED=true",
+        )
     run = await container.manager.start(
-        request=body.request, repo_target=body.repo_target, create_repo=body.create_repo
+        request=body.request,
+        repo_target=body.repo_target,
+        create_repo=body.create_repo and body.target == "new",
+        target=body.target,
+        mode=body.mode,
     )
     return RunSummary.of(run, busy=True)
 

@@ -1,4 +1,4 @@
-import { DatePipe } from '@angular/common';
+import { DatePipe, NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 
@@ -13,13 +13,16 @@ import { TaskDetailComponent } from './task-detail.component';
 
 const ROLE_TEXT: Record<string, string> = {
   requirements: 'Your feature request or requirements document, as the Planner receives it.',
+  prepare_repo: 'Clones the repository, detects its projects and test commands, and indexes the code.',
   planner: 'Turns the requirements into user stories and a dependency graph of tasks.',
   approve_plan: 'You approve, reject (with feedback) or edit the plan before any design work.',
   architect: 'Assesses the plan, picks the template and defines modules and contracts.',
   approve_design: 'You approve the design (and read the plan assessment) before development starts.',
   scaffold: 'Creates the repository from the template, installs dependencies and indexes the code.',
   development: 'Developers work on tasks in parallel; each task is reviewed and tested.',
-  integration: "Runs the project's full test suite on the integrated branch.",
+  integration: "Runs the project's full test suite (with coverage) on the integrated branch.",
+  gates:
+    'Secret scan, dependency vulnerabilities and coverage. Failures get one automatic fix, then you decide.',
   approve_final: 'You approve the result; rejecting adds a follow-up task.',
   delivery: 'Pushes the branch and opens the pull request on GitHub.',
 };
@@ -28,7 +31,7 @@ const ROLE_TEXT: Record<string, string> = {
 @Component({
   selector: 'app-workflow-panel',
   imports: [
-    DatePipe, MatButtonModule, AgentIconComponent, MarkdownPipe, ActionPanelComponent,
+    DatePipe, NgTemplateOutlet, MatButtonModule, AgentIconComponent, MarkdownPipe, ActionPanelComponent,
     PlanViewComponent, DesignViewComponent, TaskDetailComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -63,7 +66,31 @@ const ROLE_TEXT: Record<string, string> = {
       @case ('task') {
         <app-task-detail [runId]="run().id" [task]="planTask()" [state]="taskState()" />
       }
+      @case ('repository') {
+        @if (run().repo_info; as r) {
+          <p>Base branch <code>{{ r.base_branch }}</code> · {{ r.file_count }} files ·
+            {{ run().mode === 'quick' ? 'quick fix' : 'full' }} mode ·
+            {{ r.source === 'detected' ? 'detected automatically' : 'configured in ' + r.source }}</p>
+          <table class="grid">
+            <thead><tr><th>Project</th><th>Path</th><th>Tests</th></tr></thead>
+            <tbody>
+              @for (p of r.projects; track p.path) {
+                <tr><td>{{ p.stack }}</td><td><code>{{ p.path }}</code></td><td><code>{{ p.test_cmd }}</code></td></tr>
+              }
+            </tbody>
+          </table>
+          @for (note of r.notes; track $index) { <p class="warn">{{ note }}</p> }
+          @if (r.readme) {
+            <h4>README</h4>
+            <article class="markdown doc" [innerHTML]="r.readme | markdown"></article>
+          }
+        }
+      }
+      @case ('gates') {
+        <ng-container [ngTemplateOutlet]="gatesTable" />
+      }
       @case ('integration') {
+        @if (node().id === 'approve_final') { <ng-container [ngTemplateOutlet]="gatesTable" /> }
         @if (run().integration; as i) {
           <p>Merged: {{ i.merged.join(', ') || '—' }} · failed: {{ i.failed.join(', ') || '—' }}
              · blocked: {{ i.blocked.join(', ') || '—' }}</p>
@@ -80,6 +107,27 @@ const ROLE_TEXT: Record<string, string> = {
         @if (run().integration_branch; as b) { <p>Branch <code>{{ b }}</code> → {{ run().repo_target }}</p> }
       }
     }
+
+    <ng-template #gatesTable>
+      @if (run().gates; as g) {
+        @if (g.round) { <p class="muted">After {{ g.round }} automatic fix round(s).</p> }
+        <ul class="gates">
+          @for (r of g.results; track r.name) {
+            <li [class]="r.status">
+              <span class="gname">{{ r.name }}</span>
+              <span class="gstatus">{{ r.status }}</span>
+              <span>{{ r.summary }}</span>
+              @if (r.status === 'failed' && !r.allowable) { <span class="never">cannot be allowed</span> }
+              @if (r.details.length) {
+                <ul>@for (d of r.details; track $index) { <li>{{ d }}</li> }</ul>
+              }
+            </li>
+          }
+        </ul>
+      } @else {
+        <p class="muted">Gates run after the integration tests.</p>
+      }
+    </ng-template>
 
     <h3>Activity</h3>
     @if (n.activity.length) {
@@ -116,6 +164,18 @@ const ROLE_TEXT: Record<string, string> = {
     .activity li.merge { border-left-color: var(--dc-teal); }
     time { color: var(--dc-text-faint); font-family: var(--dc-mono); margin-right: 4px; }
     .muted { color: var(--dc-text-faint); font-size: 13px; }
+    .warn { color: var(--dc-amber); font-size: 13px; }
+    .grid { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+    .grid th, .grid td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--dc-border); }
+    .gates { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+    .gates > li { padding: 8px 10px; border-radius: 8px; background: rgba(8, 17, 34, 0.7); border-left: 3px solid var(--dc-text-faint); font-size: 13px; }
+    .gates > li.passed { border-left-color: var(--dc-teal); } .gates > li.failed { border-left-color: var(--dc-red); }
+    .gates > li.error { border-left-color: var(--dc-amber); }
+    .gates ul { margin: 4px 0 0; padding-left: 18px; font-size: 12px; color: var(--dc-text-dim); word-break: break-word; }
+    .gname { font-weight: 700; text-transform: capitalize; margin-right: 8px; }
+    .gstatus { text-transform: uppercase; font-size: 10.5px; font-weight: 700; margin-right: 8px; color: var(--dc-text-dim); }
+    .passed .gstatus { color: var(--dc-teal); } .failed .gstatus { color: var(--dc-red); } .error .gstatus { color: var(--dc-amber); }
+    .never { margin-left: 8px; font-size: 11px; color: var(--dc-red); border: 1px solid rgba(255, 90, 122, 0.5); border-radius: 8px; padding: 0 6px; }
   `,
 })
 export class WorkflowPanelComponent {
@@ -147,6 +207,10 @@ export class WorkflowPanelComponent {
       case 'integration':
       case 'approve_final':
         return 'integration';
+      case 'prepare_repo':
+        return 'repository';
+      case 'gates':
+        return 'gates';
       case 'delivery':
         return 'delivery';
       default:

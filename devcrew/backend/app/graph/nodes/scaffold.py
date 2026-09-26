@@ -16,6 +16,7 @@ from langgraph.types import Command
 from app.db.models import RunStatus
 from app.events.types import EventType
 from app.graph.layout import resolve_layout, sandbox_target
+from app.graph.nodes.gates import take_baseline
 from app.graph.runtime import GraphDeps, NodeFn, reindex
 from app.graph.state import TaskState, dump, get_design, get_plan
 from app.llm.tokens import tail_text
@@ -50,19 +51,26 @@ def make_scaffold(deps: GraphDeps) -> NodeFn:
         repo = GitRepo(root)
         branch = integration_branch_name(run_id, state["request"])
 
+        if design.existing_projects:
+            # Existing repository (cloned by prepare_repo): branch off the base, change nothing.
+            base = state.get("base_branch") or "main"
+            if not await repo.branch_exists(branch):
+                await repo.checkout(branch, create_from=base)
+            else:
+                await repo.checkout(branch)
         # Every step is idempotent so a re-run after a crash converges.
-        if not await repo.is_repo():
+        elif not await repo.is_repo():
             root.mkdir(parents=True, exist_ok=True)
             for entry in layout.values():
                 shutil.copytree(
                     entry.template.path, root / entry.path, dirs_exist_ok=True, ignore=COPY_IGNORE
                 )
             await repo.init()
-        if not await repo.branch_exists("main"):
+        if not design.existing_projects and not await repo.branch_exists("main"):
             # main must exist even if a template is empty: it is the PR base.
             ids = ", ".join(e.template.id for e in layout.values())
             await repo.commit_all(f"Scaffold from template {ids}", allow_empty=True)
-        if not await repo.branch_exists(branch):
+        if not design.existing_projects and not await repo.branch_exists(branch):
             await repo.checkout(branch, create_from="main")
             docs = root / "docs" / "design.md"
             docs.parent.mkdir(parents=True, exist_ok=True)
@@ -105,6 +113,16 @@ def make_scaffold(deps: GraphDeps) -> NodeFn:
                     message=f"indexing rules failed: {exc}",
                 )
 
+        extra: dict[str, Any] = {}
+        if (
+            design.existing_projects
+            and deps.settings.gates_enabled
+            and deps.sandbox is not None
+            and state.get("gate_baseline") is None
+        ):
+            target = sandbox_target(run_id, None, root, design, layout)
+            extra["gate_baseline"] = await take_baseline(deps, run_id, target, layout)
+
         existing = state.get("tasks") or {}
         tasks = {t.id: dump(TaskState(id=t.id)) for t in plan.tasks if t.id not in existing}
         return Command(
@@ -114,6 +132,7 @@ def make_scaffold(deps: GraphDeps) -> NodeFn:
                 "integration_branch": branch,
                 "tasks": tasks,
                 "status": RunStatus.EXECUTING.value,
+                **extra,
             },
         )
 

@@ -58,6 +58,10 @@ const REFRESH_DEBOUNCE_MS = 300;
           <div class="meta">
             <app-status-chip [status]="run.status" />
             <span>{{ run.repo_target }}</span>
+            @if (run.target === 'existing') {
+              <span class="badge">existing repo · {{ run.mode === 'quick' ? 'quick fix' : 'full' }}
+                @if (run.base_branch) { · base {{ run.base_branch }} }</span>
+            }
             @if (run.integration_branch) { <code>{{ run.integration_branch }}</code> }
             @if (run.pr_url) {
               <a [href]="run.pr_url" target="_blank" rel="noopener" class="pr">Pull request ↗</a>
@@ -124,6 +128,8 @@ const REFRESH_DEBOUNCE_MS = 300;
     .meta { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; color: var(--dc-text-dim); font-size: 13px; }
     .stream { font-size: 12px; color: var(--dc-text-faint); } .stream.open { color: var(--dc-teal); } .stream.reconnecting { color: var(--dc-amber); }
     .pr { font-weight: 600; }
+    .badge { font-size: 12px; padding: 1px 10px; border-radius: 12px; color: var(--dc-violet);
+             border: 1px solid rgba(163, 132, 255, 0.5); background: rgba(163, 132, 255, 0.1); }
     .error { color: var(--dc-red); }
     .attention { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0 0; padding: 8px 12px;
                  border-radius: 10px; border: 1px solid rgba(255, 193, 77, 0.5); background: rgba(255, 193, 77, 0.08);

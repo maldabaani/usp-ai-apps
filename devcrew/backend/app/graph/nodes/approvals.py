@@ -9,7 +9,10 @@ from langgraph.types import Command
 from pydantic import ValidationError
 
 from app.db.models import RunStatus
+from app.gates.checks import GateReport
 from app.graph.interrupts import InterruptKind, InterruptRequest, ResumeAction, request_input
+from app.graph.nodes.planner import plan_validation_context
+from app.graph.nodes.repository import quick_design
 from app.graph.runtime import GraphDeps, NodeFn
 from app.graph.state import (
     Design,
@@ -22,6 +25,22 @@ from app.graph.state import (
 )
 
 APPROVE_REJECT_EDIT = [ResumeAction.APPROVE, ResumeAction.REJECT, ResumeAction.EDIT]
+
+
+def after_plan(state: dict[str, Any], plan: Plan) -> Command[str]:
+    """Full runs go to the Architect; quick fixes on existing repositories skip it."""
+    if state.get("mode") == "quick" and state.get("repo_info"):
+        return Command(
+            goto="scaffold",
+            update={
+                "plan": dump(plan),
+                "design": dump(quick_design(state, plan)),
+                "status": RunStatus.SCAFFOLDING.value,
+            },
+        )
+    return Command(
+        goto="architect", update={"plan": dump(plan), "status": RunStatus.DESIGNING.value}
+    )
 
 
 def make_approve_plan(deps: GraphDeps) -> NodeFn:
@@ -40,20 +59,20 @@ def make_approve_plan(deps: GraphDeps) -> NodeFn:
                 )
             )
             if payload.action is ResumeAction.APPROVE:
-                return Command(goto="architect", update={"status": RunStatus.DESIGNING.value})
+                return after_plan(state, plan)
             if payload.action is ResumeAction.REJECT:
                 return Command(
                     goto="planner",
                     update={"plan_feedback": payload.feedback, "status": RunStatus.PLANNING.value},
                 )
             try:
-                edited = Plan.model_validate(payload.artifact)
+                edited = Plan.model_validate(
+                    payload.artifact, context=plan_validation_context(state)
+                )
             except ValidationError as exc:
                 error = f"edited plan is invalid: {exc}"
                 continue
-            return Command(
-                goto="architect", update={"plan": dump(edited), "status": RunStatus.DESIGNING.value}
-            )
+            return after_plan(state, edited)
 
     return approve_plan
 
@@ -117,16 +136,29 @@ def followup_task(plan: Plan, feedback: str, number: int) -> PlanTask:
 def make_approve_final(deps: GraphDeps) -> NodeFn:
     async def approve_final(state: dict[str, Any]) -> Command[str]:
         plan = get_plan(state)
+        gates = GateReport.model_validate(state.get("gates") or {})
+        blocked = bool(gates.blocking)
         payload = request_input(
             InterruptRequest(
                 kind=InterruptKind.APPROVAL,
                 artifact="final",
-                title="Approve the final result",
-                allowed_actions=[ResumeAction.APPROVE, ResumeAction.REJECT],
+                title=(
+                    "Secrets found: reject to have them removed"
+                    if blocked
+                    else "Approve the final result"
+                    + (" (quality gates failed)" if gates.failed else "")
+                ),
+                # A failed gate can be allowed (it is noted in the PR), except secrets.
+                allowed_actions=(
+                    [ResumeAction.REJECT]
+                    if blocked
+                    else [ResumeAction.APPROVE, ResumeAction.REJECT]
+                ),
                 data={
                     "integration_branch": state.get("integration_branch"),
                     "tasks": state.get("tasks", {}),
                     "integration": state.get("integration"),
+                    "gates": state.get("gates"),
                 },
             )
         )

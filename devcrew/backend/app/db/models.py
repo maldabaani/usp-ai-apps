@@ -16,6 +16,7 @@ from app.db.base import Base
 
 class RunStatus(StrEnum):
     PENDING = "pending"
+    PREPARING = "preparing"  # existing repository: clone, detect, index
     PLANNING = "planning"
     AWAITING_PLAN_APPROVAL = "awaiting_plan_approval"
     DESIGNING = "designing"
@@ -23,6 +24,7 @@ class RunStatus(StrEnum):
     SCAFFOLDING = "scaffolding"
     EXECUTING = "executing"
     INTEGRATING = "integrating"
+    CHECKING = "checking"  # quality gates
     AWAITING_FINAL_APPROVAL = "awaiting_final_approval"
     DELIVERING = "delivering"
     NEEDS_HUMAN = "needs_human"

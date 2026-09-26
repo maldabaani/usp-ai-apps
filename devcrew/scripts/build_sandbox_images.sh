@@ -11,7 +11,12 @@ while [[ $# -gt 0 && "$1" != "--" ]]; do stacks+=("$1"); shift; done
 [[ "${1:-}" == "--" ]] && shift
 [[ ${#stacks[@]} -eq 0 ]] && stacks=(python java node mixed)
 
+# Gate tools first: every sandbox image copies gitleaks and osv-scanner from it.
+echo ">> building ${PREFIX}-gate-tools"
+docker build -f gatetools/Dockerfile -t "${PREFIX}-gate-tools:latest" "$@" .
+
 for stack in "${stacks[@]}"; do
   echo ">> building ${PREFIX}-${stack}"
-  docker build -f "${stack}/Dockerfile" -t "${PREFIX}-${stack}:latest" "$@" .
+  docker build -f "${stack}/Dockerfile" -t "${PREFIX}-${stack}:latest" \
+    --build-arg "GATE_TOOLS_IMAGE=${PREFIX}-gate-tools:latest" "$@" .
 done

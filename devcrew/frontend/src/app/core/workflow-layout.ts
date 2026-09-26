@@ -112,7 +112,10 @@ export function iconKind(node: WorkflowNode): string {
     case 'output':
       return 'delivery';
     default:
-      return 'system';
+      if (node.id === 'prepare_repo') {
+        return 'repository';
+      }
+      return node.id === 'gates' ? 'gates' : 'system';
   }
 }
 

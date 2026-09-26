@@ -32,7 +32,8 @@ async def _repo_state(container: Any, run_id: str) -> tuple[GitRepo, dict[str, A
 
 def _allowed_refs(state: dict[str, Any]) -> dict[str, str]:
     """Only refs the run owns may be read (no arbitrary git revision syntax)."""
-    refs = {"main": "main"}
+    base = state.get("base_branch") or "main"
+    refs = {"main": base, "base": base}  # "main" is the UI's name for the PR base
     if state.get("integration_branch"):
         refs["integration"] = state["integration_branch"]
         refs[state["integration_branch"]] = state["integration_branch"]
@@ -107,9 +108,10 @@ async def diff(
     """A task's changes (task branch vs. where it forked from the integration branch), or the
     whole run's changes (integration branch vs. the scaffold on main)."""
     repo, state = await _repo_state(container, run_id)
-    integration = state.get("integration_branch") or "main"
+    run_base = state.get("base_branch") or "main"
+    integration = state.get("integration_branch") or run_base
     if task_id is None:
-        base, head = "main", integration
+        base, head = run_base, integration
     else:
         task = (state.get("tasks") or {}).get(task_id)
         if task is None:

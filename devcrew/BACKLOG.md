@@ -169,7 +169,7 @@ repositories ("greenfield only" no longer applies), and it may perform the GitHu
 below (read issues and PRs, comment, push follow-up commits to its own PR branches). It still
 never pushes to the default branch of an existing repo, and never pushes before your approval.
 
-- **Phase 11: existing repositories + quality gates**
+- **Phase 11: existing repositories + quality gates** *(done in P11)*
   - Work on existing Python/Java (Maven)/Angular repos. The stack is auto-detected; other repos
     are refused.
   - Per-run mode: "Full" (plan -> Architect assesses the existing design -> development) or
@@ -195,6 +195,28 @@ never pushes to the default branch of an existing repo, and never pushes before 
 
 - [ ] **BL-117** (P3, from the P10 gap review) Static analysis (SAST: semgrep/bandit) as an
   additional gate; not selected for Phase 11.
+
+## Existing repositories and gates (Phase 11)
+
+- [ ] **BL-120** (P1, from P11) Rebuild all sandbox images with the gate tools
+  (`scripts/build_sandbox_images.sh`). The Python and Java images were rebuilt and verified
+  here; node/mixed still cannot be built in the dev sandbox (BL-003).
+- [ ] **BL-121** (P2, from P11) The dependency scan was verified only up to the network call:
+  osv.dev and deps.dev are blocked in the dev sandbox, so the scan reported `error` there.
+  - Check a real finding end to end, and the osv-scanner v2 JSON parsing, on your machine.
+  - If your network blocks those hosts, allow them or set `GATES_ENABLED` accordingly.
+- [ ] **BL-122** (P3, from P11) Coverage for existing Python repositories uses `--cov=.`, which
+  also counts test files. Set a narrower `coverage_cmd` in `.devcrew.yaml` if that skews
+  results; consider detecting the source package.
+- [ ] **BL-123** (P3, from P11) Existing repositories:
+  - Only one project per stack (a second one needs `.devcrew.yaml`).
+  - Detection looks at the root and one level below.
+  - Gradle, Poetry-only or pnpm/yarn-lock-only setups use defaults that may not fit.
+- [ ] **BL-124** (P2, from P11) The per-task secret scan only covers files changed by the
+  developer before QA runs. Tests QA adds are scanned at integration, not per task.
+- [ ] **BL-125** (P3, from P11) A coverage baseline and a dependency scan of the base branch
+  run once per existing-repository run (one extra test run). Consider caching them per base
+  commit.
 
 ## Parity with commercial coding agents (from the P10 gap review)
 
@@ -277,3 +299,16 @@ steering and security gates.
   - A dark "neon" theme (Material dark theme; design tokens in `styles.scss`) and inline-SVG
     robot icons.
   - The workflow graph replaces the old Tasks tab and task-DAG view.
+- [x] **BL-126** (from P11) Additions:
+  - Run fields `target`/`mode`/`base_branch`/`repo_info`/`gates`, and new statuses
+    `preparing` and `checking`.
+  - New graph nodes `prepare_repo` and `gates`.
+  - `Design.existing_projects` and the `ExistingDesignDraft` Architect output
+    (`prompts/architect_existing.md`).
+  - `.devcrew.yaml`.
+  - Template `coverage_cmd` entries, `pytest-cov` in the Python template, and the JaCoCo
+    prefetch in the Java install step.
+  - Settings `GATES_ENABLED`, `GATE_COVERAGE_MIN`, `GATE_COVERAGE_TOLERANCE`,
+    `MAX_GATE_FIX_ROUNDS`.
+  - The `devcrew-sandbox-gate-tools` image.
+  - The locked "greenfield only" rule is lifted for existing repositories, with your approval.

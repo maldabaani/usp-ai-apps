@@ -11,9 +11,10 @@ truncatable section) or through the agents' read_file / search_codebase tools.
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import PurePosixPath
+from typing import Any
 
 from app.graph.state import Design, Plan, PlanTask, QAEntry, TaskState
 from app.llm.tokens import estimate_tokens, truncate_to_tokens
@@ -121,6 +122,42 @@ def render_qa(entries: Sequence[QAEntry]) -> str:
 # --------------------------------------------------------------------------------------------
 # Role contexts
 # --------------------------------------------------------------------------------------------
+QUICK_FIX_NOTE = (
+    "Quick-fix mode: there is no design step. Produce the smallest change plan that satisfies "
+    "the request: usually 1-3 tasks, each naming the existing files it changes (plus the tests "
+    "it adds or updates)."
+)
+
+
+def render_repository(repo: Mapping[str, Any]) -> str:
+    projects = "\n".join(
+        f"- {p['stack']} project at `{p['path']}` (tests: `{p['test_cmd']}`)"
+        for p in repo.get("projects") or []
+    )
+    parts = [
+        f"Base branch: {repo.get('base_branch')}. Detected projects:\n{projects}",
+        "You are CHANGING this existing codebase, not creating a new one: keep its structure, "
+        "naming and conventions, reuse existing modules, and use real paths from the listing "
+        "below in target_files. Use read_file / search_codebase to look at the code.",
+    ]
+    for note in repo.get("notes") or []:
+        parts.append(f"Note: {note}")
+    return "\n\n".join(parts)
+
+
+def repository_sections(repo: Mapping[str, Any] | None, mode: str | None) -> list[Section]:
+    if not repo:
+        return []
+    sections = [
+        Section("Existing repository", render_repository(repo), priority=0, required=True),
+        Section("Repository files", str(repo.get("tree", "")), priority=4),
+        Section("README", str(repo.get("readme", "")), priority=5),
+    ]
+    if mode == "quick":
+        sections.append(Section("Mode", QUICK_FIX_NOTE, priority=0, required=True))
+    return sections
+
+
 def planner_context(
     request: str,
     budget: int,
@@ -128,8 +165,11 @@ def planner_context(
     feedback: str | None = None,
     previous_plan: Plan | None = None,
     qa: Sequence[QAEntry] = (),
+    repo: Mapping[str, Any] | None = None,
+    mode: str | None = None,
 ) -> str:
     sections = [Section("Feature request", request, priority=0, required=True)]
+    sections += repository_sections(repo, mode)
     if feedback:
         sections.append(
             Section(
@@ -154,10 +194,12 @@ def architect_context(
     feedback: str | None = None,
     previous_design: Design | None = None,
     qa: Sequence[QAEntry] = (),
+    repo: Mapping[str, Any] | None = None,
 ) -> str:
     stacks = sorted({t.stack for t in plan.tasks})
     sections = [
         Section("Feature request", request, priority=0, required=True),
+        *repository_sections(repo, None),
         Section("Plan summary", plan.summary, priority=1),
         Section("Stacks used by tasks", ", ".join(stacks), priority=0, required=True),
         Section("Tasks", render_plan_tasks(plan), priority=1, required=True),

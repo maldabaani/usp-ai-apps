@@ -86,11 +86,24 @@ class RunManager:
         return await task if task is not None else None
 
     # ------------------------------------------------------------------------------ commands
-    async def start(self, *, request: str, repo_target: str, create_repo: bool) -> Run:
+    async def start(
+        self,
+        *,
+        request: str,
+        repo_target: str,
+        create_repo: bool,
+        target: str = "new",
+        mode: str = "full",
+    ) -> Run:
         run = await self.runs.create(
             request=request, repo_target=repo_target, create_repo=create_repo
         )
-        self._spawn(run.id, lambda: self.driver.start(run.id, request, repo_target, create_repo))
+        self._spawn(
+            run.id,
+            lambda: self.driver.start(
+                run.id, request, repo_target, create_repo, target=target, mode=mode
+            ),
+        )
         return run
 
     async def resume(

@@ -7,6 +7,8 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.types import Command
 
 from app.events.types import EventType
+from app.gates.checks import secrets_gate
+from app.gates.runner import scan_secrets
 from app.graph.context_builder import budget_for, qa_context, qa_report_context
 from app.graph.nodes.task_common import (
     TEST_GLOBS,
@@ -94,6 +96,36 @@ async def run_tests(deps: GraphDeps, ctx: TaskCtx, command: str) -> TestResult:
     )
 
 
+async def secret_findings(deps: GraphDeps, ctx: TaskCtx, changed: list[str]) -> list[str]:
+    """gitleaks on the task worktree; findings in files this task changed (redacted)."""
+    if not deps.settings.gates_enabled or deps.sandbox is None:
+        return []
+    scan = await scan_secrets(deps.sandbox, ctx.target, changed)
+    if scan.errors:
+        await deps.emit(
+            ctx.run_id,
+            EventType.TOOL_RESULT,
+            node=NODE,
+            task_id=ctx.task.id,
+            tool="secret_scan",
+            ok=True,
+            skipped=True,
+            result="; ".join(scan.errors),
+        )
+        return []
+    gate = secrets_gate(scan.findings, changed)
+    await deps.emit(
+        ctx.run_id,
+        EventType.TOOL_RESULT,
+        node=NODE,
+        task_id=ctx.task.id,
+        tool="secret_scan",
+        ok=gate.status == "passed",
+        result=gate.summary,
+    )
+    return gate.details if gate.status == "failed" else []
+
+
 def qa_tools(deps: GraphDeps, ctx: TaskCtx) -> list[ToolSpec]:
     tools = [
         read_file_tool(ctx.workspace),
@@ -151,7 +183,17 @@ def make_qa(deps: GraphDeps) -> NodeFn:
 
         ctx.ts.test_results = await run_tests(deps, ctx, command)
         if ctx.ts.test_results.passed:
-            return Command(goto="merge", update=ctx.update())
+            leaks = await secret_findings(deps, ctx, changed)
+            if not leaks:
+                return Command(goto="merge", update=ctx.update())
+            # Secrets block the merge like a failing test (and can never be allowed through).
+            ctx.ts.status = TaskStatus.IN_PROGRESS
+            ctx.ts.feedback = (
+                "The secret scan found credentials in files you changed. Remove them and read "
+                "them from environment variables or configuration instead:\n"
+                + "\n".join(f"- {d}" for d in leaks)
+            )
+            return Command(goto="developer", update=ctx.update())
         ctx.ts.status = TaskStatus.IN_PROGRESS
         failed = ", ".join(ctx.ts.test_results.failed) or "see log"
         ctx.ts.feedback = f"Tests failed ({failed}).\n{ctx.ts.test_results.logs_excerpt}"

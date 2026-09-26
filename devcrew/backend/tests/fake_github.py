@@ -67,7 +67,16 @@ class FakeGitHub:
             return httpx.Response(200, json={"login": self.login})
         if method == "GET" and parts[0] == "repos" and len(parts) == 3:
             if self.bare(parts[1], parts[2]).exists():
-                return httpx.Response(200, json={"full_name": f"{parts[1]}/{parts[2]}"})
+                head = subprocess.run(
+                    ["git", "symbolic-ref", "--short", "HEAD"],
+                    cwd=self.bare(parts[1], parts[2]),
+                    capture_output=True,
+                    text=True,
+                ).stdout.strip()
+                return httpx.Response(
+                    200,
+                    json={"full_name": f"{parts[1]}/{parts[2]}", "default_branch": head or "main"},
+                )
             return httpx.Response(404, json={"message": "Not Found"})
         if (method == "POST" and path in ("/user/repos",)) or (
             method == "POST" and parts[0] == "orgs"

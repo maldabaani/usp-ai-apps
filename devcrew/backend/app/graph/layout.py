@@ -18,6 +18,23 @@ class LayoutEntry:
 
 
 def resolve_layout(design: Design, templates: TemplatesCatalog) -> dict[str, LayoutEntry]:
+    if design.existing_projects:
+        return {
+            p.stack: LayoutEntry(
+                p.stack,
+                p.path,
+                TemplateInfo(
+                    id=f"existing-{p.stack}",
+                    stack=p.stack,
+                    description="existing repository",
+                    install_cmd=p.install_cmd,
+                    build_cmd=p.build_cmd,
+                    test_cmd=p.test_cmd,
+                    coverage_cmd=p.coverage_cmd,
+                ),
+            )
+            for p in design.existing_projects
+        }
     if design.stack is Stack.MIXED:
         entries = [(templates.get(c.template_id), c.path) for c in design.components]
     else:
