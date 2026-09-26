@@ -13,7 +13,9 @@ robustness, **P3** = nice to have.
   The dev sandbox could not build it (no apt access from build containers).
 - [ ] **BL-002** (P1, from P2) First real run against Ollama `qwen2.5-coder:14b`: all runs so far
   used scripted fake models. Tune prompts, `num_ctx`/`num_predict`, and check tool-calling and
-  JSON-schema output quality per role.
+  JSON-schema output quality per role. *A first real run with `qwen2.5:3b` on CPU (no GPU
+  available) found and fixed five bugs; see [docs/REAL-RUN.md](docs/REAL-RUN.md) and BL-180 to
+  BL-187. The intended 14B-on-GPU setup is still unverified.*
 - [ ] **BL-003** (P1, from P3) Build `devcrew-sandbox-node` and `devcrew-sandbox-mixed` and run
   the Angular template's `ng test` inside the node image (only verified on the host so far;
   `deb.debian.org` was blocked in the dev sandbox).
@@ -312,6 +314,29 @@ never pushes to the default branch of an existing repo, and never pushes before 
   localStorage (not shared between browsers).
 - [ ] **BL-175** (P3, from P16) Line comments exist only at final approval (the whole run's
   diff); not on task diffs during development, and they are not posted to GitHub.
+
+## First real-model run (see docs/REAL-RUN.md)
+
+- [ ] **BL-180** (P2) Small models ask questions the request or their own tools answer (10 in one
+  run). Consider a stricter prompt ("ask only about product requirements") or checking a
+  question against the request before interrupting the human.
+- [ ] **BL-181** (P2) The Reviewer used 47% of all tokens; single review calls took up to 11
+  minutes on CPU. Trim its context (diff and touched files, rules only for the task's stack) and
+  give it a smaller `num_predict`.
+- [ ] **BL-182** (P2) The Planner does not know the template layouts and put files at the
+  repository root. Give it the template list/layout, or let the Architect remap `target_files`.
+- [ ] **BL-183** (P2) The Architect's example code contradicted the rules (Pydantic v1 `class
+  Config`), and the Reviewer then kept asking for `ConfigDict`. Give the Architect the stack
+  rules, or check the design's code blocks against them.
+- [ ] **BL-184** (P2) QA wrote tests importing names that did not exist, and edited the
+  template's existing `tests/test_health.py`. Give QA the task's public names; protect existing
+  tests unless the task targets them.
+- [ ] **BL-185** (P3) After a split, the sub-tasks followed the latest review complaint instead
+  of the original task goal. Give the Coordinator the original task and plan when splitting.
+- [ ] **BL-186** (P3) Identical tool calls inside one answer are all executed; the repeat guard
+  only covers consecutive steps. De-duplicate calls within one answer.
+- [ ] **BL-187** (P3) CPU-only is a smoke test: a small API did not finish in 4 hours with a 3B
+  model. Document the minimum hardware; consider a smaller default `num_predict` for CPU.
 
 ## Parity with commercial coding agents (from the P10 gap review)
 

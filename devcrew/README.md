@@ -314,6 +314,7 @@ There is also a terminal client (`scripts/run_local.py`) and a benchmark runner
 | Document | Contents |
 |---|---|
 | 🧭 [End-to-end example](docs/EXAMPLE.md) | One run step by step: requirements → plan → design → parallel tasks → review/QA → gates → PR |
+| 🔬 [First real-model run](docs/REAL-RUN.md) | What a run with a small local model (qwen2.5 3B, CPU) did, the bugs it found and fixed, and what is still open |
 | 📘 [Technical guide](docs/GUIDE.md) | Architecture, graph and design notes, HTTP API, sandbox, RAG, GitHub delivery and automation, steering, budgets, benchmark, and every run/dev command |
 | 🗂️ [Backlog](BACKLOG.md) | Open issues, deferred work and decisions, by priority |
 | 🧪 [Benchmark](benchmarks/README.md) | Benchmark tasks and hidden-test conventions |
@@ -336,4 +337,4 @@ There is also a terminal client (`scripts/run_local.py`) and a benchmark runner
 | 15 | GitHub efficiency (conditional requests, quiet-PR backoff), base-branch test baselines, long requirements documents, finer pause |
 | 16 | Live preview of the generated app, models per run, line comments at final approval, compact overview with minimap, run report, notifications, presets, runtime UI config |
 
-**Next:** a first run against real Ollama models and GitHub. See the [backlog](BACKLOG.md).
+**Next:** a run with the intended 14B model on a GPU and real GitHub (a first small-model run on CPU is written up in [docs/REAL-RUN.md](docs/REAL-RUN.md)). See the [backlog](BACKLOG.md).
