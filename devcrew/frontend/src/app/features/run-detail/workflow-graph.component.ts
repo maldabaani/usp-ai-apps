@@ -16,6 +16,8 @@ import { Edge, Node, Vflow, VflowComponent } from 'ngx-vflow';
 
 import { TERMINAL_STATUSES, Workflow, WorkflowEdge, WorkflowNode } from '../../core/api.models';
 import {
+  GROUP_PREFIX,
+  compactWorkflow,
   iconKind,
   layoutWorkflow,
   nodeElapsed,
@@ -49,13 +51,18 @@ const STATUS_LABEL: Record<string, string> = {
                 title="Zoom to the steps that are running or waiting for you">Follow</button>
         <button type="button" [class.on]="!following()" (click)="setFollow(false)"
                 title="Show the whole workflow">Overview</button>
+        <span class="sep"></span>
+        <button type="button" [class.on]="compact()" (click)="setCompact(!compact())"
+                title="Fold finished stages, task waves and PR rounds into one node each (click a folded node to open it)">Compact</button>
+        <button type="button" [class.on]="minimap()" (click)="minimap.set(!minimap())" title="Show a minimap">Map</button>
       </div>
       <vflow view="auto" [nodes]="nodes()" [edges]="edges()" [minZoom]="0.2" [maxZoom]="1.2"
              [background]="{ type: 'dots', gap: 22, size: 1, color: 'rgba(94, 200, 255, 0.16)', backgroundColor: 'transparent' }">
         <ng-template let-ctx nodeHtml>
           @let n = ctx.data();
           <div class="node" [class]="'node ' + n.kind + ' ' + n.status" [class.selected]="n.id === selected()"
-               (click)="nodeSelected.emit(n.id)" (keydown.enter)="nodeSelected.emit(n.id)"
+               [class.group]="isGroup(n.id)"
+               (click)="clicked(n.id)" (keydown.enter)="clicked(n.id)"
                tabindex="0" role="button" [attr.aria-label]="n.label + ': ' + statusLabel(n.status)"
                [attr.data-node]="n.id">
             <handle type="target" position="left" />
@@ -71,6 +78,7 @@ const STATUS_LABEL: Record<string, string> = {
               @if (n.pending_interrupt_ids.length && n.status === 'waiting') { <span class="badge" title="Waiting for you">!</span> }
             </div>
             @if (n.detail) { <div class="detail" [title]="n.detail">{{ n.detail }}</div> }
+            @if (isGroup(n.id)) { <div class="unfold">▸ click to open</div> }
             @if (n.kind === 'task') {
               <div class="steps">
                 @for (s of taskSteps; track s.key) {
@@ -95,6 +103,10 @@ const STATUS_LABEL: Record<string, string> = {
         <ng-template let-ctx edgeLabelHtml>
           <span class="edge-label">{{ ctx.label.data?.text }}</span>
         </ng-template>
+        @if (minimap()) {
+          <mini-map position="bottom-left" maskColor="rgba(6, 12, 24, 0.85)" strokeColor="rgba(94, 200, 255, 0.5)"
+                    [scaleOnHover]="true" />
+        }
       </vflow>
     </div>
   `,
@@ -108,9 +120,13 @@ const STATUS_LABEL: Record<string, string> = {
     .tools button { font: inherit; font-size: 12px; cursor: pointer; border: 0; border-radius: 7px; padding: 4px 10px;
                     color: var(--dc-text-dim); background: transparent; }
     .tools button.on { color: #04121c; background: var(--dc-cyan); box-shadow: var(--dc-glow-cyan); }
+    .tools .sep { width: 1px; background: var(--dc-border); margin: 2px 2px; }
+    .node.group { border-style: dashed; background: rgba(10, 30, 36, 0.9); }
+    .unfold { font-size: 10.5px; color: var(--dc-text-faint); margin-top: auto; }
+    :host ::ng-deep default-node { background: rgba(45, 226, 176, 0.35); border-color: rgba(45, 226, 176, 0.7); }
     .node { box-sizing: border-box; width: 100%; height: 100%; padding: 9px 11px; cursor: pointer;
             border-radius: 12px; color: var(--dc-text); background: rgba(12, 22, 40, 0.92);
-            border: 1px solid var(--dc-border); display: flex; flex-direction: column; gap: 5px;
+            border: 1px solid var(--dc-border); display: flex; flex-direction: column; gap: 5px; overflow: hidden;
             transition: border-color 0.2s, box-shadow 0.2s; outline: none; }
     .node:hover, .node:focus-visible { border-color: var(--dc-border-strong); }
     .node.selected { border-color: var(--dc-cyan); box-shadow: var(--dc-glow-cyan); }
@@ -133,7 +149,7 @@ const STATUS_LABEL: Record<string, string> = {
     .badge { position: absolute; top: -4px; right: -4px; width: 18px; height: 18px; border-radius: 50%;
              background: var(--dc-amber); color: #231600; font-weight: 800; font-size: 12px;
              display: grid; place-items: center; box-shadow: var(--dc-glow-amber); }
-    .detail { font-size: 11.5px; color: var(--dc-text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .detail { max-width: 100%; min-width: 0; font-size: 11.5px; color: var(--dc-text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .steps { display: flex; gap: 4px; align-items: center; margin-top: auto; }
     .step { font-size: 10px; padding: 1px 7px; border-radius: 9px; color: var(--dc-text-faint);
             border: 1px solid rgba(94, 200, 255, 0.14); }
@@ -153,6 +169,10 @@ export class WorkflowGraphComponent {
   readonly workflow = input.required<Workflow>();
   readonly selected = input<string | null>(null);
   readonly nodeSelected = output<string>();
+  /** Fold finished parts (BL-103/136); groups the user opened stay open. */
+  readonly compact = signal(true);
+  readonly minimap = signal(false);
+  private readonly unfolded = signal<ReadonlySet<string>>(new Set());
 
   readonly nodes = signal<Node<WorkflowNode>[]>([]);
   readonly edges = signal<Edge<WorkflowEdge>[]>([]);
@@ -178,7 +198,13 @@ export class WorkflowGraphComponent {
   constructor() {
     effect(() => {
       const wf = this.workflow();
-      untracked(() => this.sync(wf));
+      const compact = this.compact();
+      const keep = new Set(this.unfolded());
+      const selected = this.selected();
+      if (selected) {
+        keep.add(selected);
+      }
+      untracked(() => this.sync(compact ? this.fold(wf, keep) : wf));
     });
     // Outside the zone, so the ticking never keeps the app "unstable"; the signal update still
     // schedules change detection for this OnPush component.
@@ -203,6 +229,30 @@ export class WorkflowGraphComponent {
     const order = this.taskSteps.map((s) => s.key);
     const current = order.indexOf(node.step ?? '');
     return current > order.indexOf(step);
+  }
+
+  isGroup(id: string): boolean {
+    return id.startsWith(GROUP_PREFIX);
+  }
+
+  /** A folded node opens; any other node is selected. */
+  clicked(id: string): void {
+    if (this.isGroup(id)) {
+      this.unfolded.update((set) => new Set([...set, id]));
+      return;
+    }
+    this.nodeSelected.emit(id);
+  }
+
+  setCompact(on: boolean): void {
+    this.compact.set(on);
+    this.unfolded.set(new Set());
+    this.focusKey = '';
+  }
+
+  private fold(wf: Workflow, keep: ReadonlySet<string>): Workflow {
+    const view = compactWorkflow(wf.nodes, wf.edges, keep);
+    return { ...wf, nodes: view.nodes, edges: view.edges };
   }
 
   setFollow(on: boolean): void {

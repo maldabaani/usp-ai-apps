@@ -15,6 +15,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
 
+import httpx
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage
 from langchain_ollama import ChatOllama, OllamaEmbeddings
@@ -24,6 +25,7 @@ from app.llm.models_config import ModelsConfig, ModelSpec, Role
 logger = logging.getLogger(__name__)
 
 ChatFactory = Callable[[ModelSpec], BaseChatModel]
+ModelLister = Callable[[], Awaitable[set[str]]]
 
 
 @dataclass(frozen=True)
@@ -33,6 +35,8 @@ class CallScope:
     run_id: str
     node: str
     task_id: str | None = None
+    # the run's own model per role (Phase 16), as (role, model) pairs
+    models: tuple[tuple[str, str], ...] = ()
 
 
 llm_scope: ContextVar[CallScope | None] = ContextVar("llm_scope", default=None)
@@ -105,6 +109,24 @@ class LLMGateway:
         self._chat_cache: dict[ModelSpec, BaseChatModel] = {}
         self.usage = UsageTracker()
         self.on_usage: UsageHook | None = None  # per-call usage (run usage and budgets)
+        # the models installed in Ollama (the per-run model picker); None: unknown
+        self.model_lister: ModelLister | None = None if chat_factory else self._ollama_models
+
+    async def _ollama_models(self) -> set[str]:
+        async with httpx.AsyncClient(timeout=5.0) as http:
+            resp = await http.get(f"{self.base_url}/api/tags")
+            resp.raise_for_status()
+            return {m["name"] for m in resp.json().get("models", [])}
+
+    async def installed_models(self) -> set[str] | None:
+        """Models installed in Ollama, or None when unknown (Ollama unreachable)."""
+        if self.model_lister is None:
+            return None
+        try:
+            return await self.model_lister()
+        except Exception as exc:  # the picker falls back to free text
+            logger.warning("could not list Ollama models: %s", exc)
+            return None
 
     def _default_chat_factory(self, spec: ModelSpec) -> BaseChatModel:
         return ChatOllama(
@@ -117,7 +139,14 @@ class LLMGateway:
         )
 
     def spec(self, role: Role) -> ModelSpec:
-        return self.models.for_role(role)
+        """The role's model; a run can choose its own model per role (other settings kept)."""
+        spec = self.models.for_role(role)
+        scope = llm_scope.get()
+        if scope is not None and scope.models:
+            chosen = dict(scope.models).get(role.value)
+            if chosen and chosen != spec.model:
+                return spec.model_copy(update={"model": chosen})
+        return spec
 
     def chat_model(self, role: Role) -> BaseChatModel:
         spec = self.spec(role)

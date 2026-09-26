@@ -48,9 +48,9 @@ robustness, **P3** = nice to have.
   different versions than the real build (it resolves deps/plugins and fetches surefire's JUnit
   provider explicitly). Re-verify on Spring Boot upgrades; consider a Maven settings/offline
   profile instead.
-- [ ] **BL-013** (P2, from P4) Indexing failures are non-fatal (error event, search serves the
+- [x] **BL-013** (P2, from P4) Indexing failures are non-fatal (error event, search serves the
   previous index, empty retrieval sections if Chroma is down). Consider surfacing a degraded
-  "RAG unavailable" status in the UI.
+  "RAG unavailable" status in the UI. *Done in P16: the run page shows "code search unavailable" (with the error) when indexing or search fails, from the RAG service or, after a restart, the event log.*
 - [x] **BL-014** (P3, from P1) *Decided in P8:* `GITHUB_TOKEN` stays non-critical at startup
   (only delivery needs it, and a missing or invalid token becomes a "retry / finish without PR"
   decision at delivery time). `/health` is fully green only with a valid token.
@@ -117,15 +117,15 @@ robustness, **P3** = nice to have.
 
 ## Web UI
 
-- [ ] **BL-070** (P2, from P7) The UI's backend URL is fixed at build time
+- [x] **BL-070** (P2, from P7) The UI's backend URL is fixed at build time
   (`frontend/src/environments/*.ts`, default `http://localhost:8080`). Add a runtime
-  `config.json` if the backend ever runs on another host or port.
+  `config.json` if the backend ever runs on another host or port. *Done in P16: the UI reads `config.json` at startup; the container writes it from `DEVCREW_API_URL`.*
 - [ ] **BL-071** (P2, from P7) UI verified with scripted models only (Playwright run through the
   whole flow). Check rendering with real model output: very long design docs and large diffs
   (the diff viewer renders every line; add virtual scrolling if needed).
-- [ ] **BL-072** (P3, from P7) The timeline keeps every event of the run in memory and the file
+- [x] **BL-072** (P3, from P7) The timeline keeps every event of the run in memory and the file
   explorer is a flat, indented list. Both are fine for local runs; window/tree them if runs grow
-  large.
+  large. *Done in P16: the timeline is virtualized (CDK) with a filter and a detail view; Files is a folder tree with a filter.*
 - [ ] **BL-073** (P3, from P7) Frontend unit tests cover the SSE client, API client, diff/DAG
   helpers, action panel, new-run form and run detail; there is no committed browser E2E test
   (the Playwright flow was run manually). *P9: the same flow, extended to the PR link, was
@@ -156,8 +156,8 @@ robustness, **P3** = nice to have.
 - [x] **BL-102** (P3, from P10) `GET /runs/{id}/workflow` recomputes the graph from the full
   event log on every (batched) refresh. That is fine for local runs; cache or build it
   incrementally if runs reach many thousands of events. *Done in P15: per-run event lists are cached in memory and extended incrementally.*
-- [ ] **BL-103** (P3, from P10) The Overview of a large plan (10+ tasks) is small. Consider
-  collapsing finished stages, a minimap (ngx-vflow has one) or grouping tasks by wave.
+- [x] **BL-103** (P3, from P10) The Overview of a large plan (10+ tasks) is small. Consider
+  collapsing finished stages, a minimap (ngx-vflow has one) or grouping tasks by wave. *Done in P16: Compact mode (default) folds finished stages, finished task waves and PR rounds into one node each (click to open); a minimap toggle.*
 - [ ] **BL-104** (P2, from P10) The workflow UI was verified with the scripted fake model (a
   live Playwright walk-through from document upload to PR, including the plan assessment and
   a developer question). Check it with real model timings and larger plans (with BL-002).
@@ -244,8 +244,8 @@ never pushes to the default branch of an existing repo, and never pushes before 
 - [x] **BL-135** (P3, from P12) Removing the label does not cancel a run that already started;
   cancel it in the UI. A declined big change is not proposed again unless the reviewer writes
   a new comment. *Done in P15: removing the label cancels the run before plan approval (`CANCEL_ON_UNLABEL`). A declined change is still not proposed again.*
-- [ ] **BL-136** (P3, from P12) The Overview of a run with many rounds is one long row.
-  Collapse finished rounds (with BL-103).
+- [x] **BL-136** (P3, from P12) The Overview of a run with many rounds is one long row.
+  Collapse finished rounds (with BL-103). *Done in P16 (with BL-103).*
 
 ## Steering (Phase 13)
 
@@ -293,18 +293,38 @@ never pushes to the default branch of an existing repo, and never pushes before 
 - [ ] **BL-163** (P3, from P15) The ETag cache lives in memory, so it restarts empty with the
   backend. The quiet-PR wait also resets on restart.
 
+## UI and preview (Phase 16)
+
+- [ ] **BL-170** (P2, from P16) The live preview was verified with the Python template in real
+  Docker (install, start, `/health` through the proxy, no outbound network, cleanup). The Java
+  (`spring-boot:run`, offline Maven) and Angular (`ng serve`) previews are configured but not
+  run here (the node image was not built in this environment).
+- [ ] **BL-171** (P3, from P16) A preview runs until you stop it, the run ends, or the backend
+  restarts (leftover previews are removed at startup). There is no idle timeout and no limit on
+  previews of different runs at the same time. A preview started after a run finished recreates
+  the run's dependency volumes; stopping it removes them again.
+- [ ] **BL-172** (P3, from P16) Model routing (strong model for hard tasks) and a fallback model
+  on repeated failures (rest of BL-112).
+- [ ] **BL-173** (P3, from P16) A browser the agents can drive against the preview for end-to-end
+  checks (rest of BL-110).
+- [ ] **BL-174** (P3, from P16) Browser notifications only fire while the run page is open in a
+  background tab (no service worker, no email/Slack). Presets live in the browser's
+  localStorage (not shared between browsers).
+- [ ] **BL-175** (P3, from P16) Line comments exist only at final approval (the whole run's
+  diff); not on task diffs during development, and they are not posted to GitHub.
+
 ## Parity with commercial coding agents (from the P10 gap review)
 
 Deferred by the user. Phase 11 covers existing repos, issue triggers, PR follow-up, mid-run
 steering and security gates.
 
-- [ ] **BL-110** (P2) Live app preview: start the generated app in the sandbox with a port
+- [x] **BL-110** (P2) Live app preview: start the generated app in the sandbox with a port
   exposed to the host and show it in the UI; optionally a browser the agent can drive for
-  end-to-end checks.
+  end-to-end checks. *Done in P16: "Preview" runs the template's `preview_cmd` (or `.devcrew.yaml`'s) in the sandbox on an internal Docker network, behind a proxy published on 127.0.0.1 only. A browser the agent drives is not done (BL-173).*
 - [x] **BL-111** (P2) Cost and usage in the UI: tokens per run, per role and per task, wall
   time, and budgets (stop or ask after N tokens or minutes). *Done in P14: Usage tab, token and working-time budgets. There is no money cost, because the models are local.*
-- [ ] **BL-112** (P3) Model choice per run from the UI, routing (strong model for hard tasks,
-  small model for easy ones) and a fallback model on repeated failures.
+- [x] **BL-112** (P3) Model choice per run from the UI, routing (strong model for hard tasks,
+  small model for easy ones) and a fallback model on repeated failures. *P16: model per role for a run (New run → Models; validated against Ollama). Routing and a fallback model are not done (BL-172).*
 - [ ] **BL-113** (P3) Memory across runs: repository rules files (`AGENTS.md`-style) and
   lessons learned. *Changes a locked decision ("no cross-run memory"): needs your approval.*
 - [ ] **BL-114** (P3) Teams and enterprise: authentication/SSO, roles, several users, audit
@@ -314,10 +334,12 @@ steering and security gates.
 - [ ] **BL-116** (P3) Conveniences:
   - re-run or fork a run from any step (*P14: Retry for failed runs and "Run again" with the
     same request are done; see BL-152*);
-  - turn diff comments in the UI into developer feedback;
-  - run presets or templates;
-  - notifications (desktop, email, Slack) when input is needed;
-  - export a run report;
+  - turn diff comments in the UI into developer feedback (*done in P16: line comments at final
+    approval become the follow-up task's feedback*);
+  - run presets or templates (*done in P16: presets in this browser*);
+  - notifications (desktop, email, Slack) when input is needed (*P16: browser notifications;
+    email and Slack are not done*);
+  - export a run report (*done in P16: Markdown report*);
   - mobile-friendly approvals.
 
 ## Retrieval (RAG)

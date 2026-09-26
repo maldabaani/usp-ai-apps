@@ -82,6 +82,10 @@ type Mode = 'none' | 'reject' | 'edit' | 'answer';
 
         @switch (mode()) {
           @case ('reject') {
+            @if (extraFeedback()) {
+              <p class="muted">Your line comments are included:</p>
+              <pre class="extra">{{ extraFeedback() }}</pre>
+            }
             <mat-form-field appearance="outline" class="wide">
               <mat-label>{{ labels().rejectPrompt }}</mat-label>
               <textarea matInput rows="4" [ngModel]="text()" (ngModelChange)="text.set($event)"></textarea>
@@ -121,7 +125,7 @@ type Mode = 'none' | 'reject' | 'edit' | 'answer';
           }
           @if (allows('reject')) {
             <button mat-stroked-button (click)="mode.set('reject')" [disabled]="busy()">
-              {{ labels().reject }}
+              {{ extraFeedback() && pending().artifact === 'final' ? 'Request changes' : labels().reject }}
             </button>
           }
         } @else {
@@ -147,12 +151,16 @@ type Mode = 'none' | 'reject' | 'edit' | 'answer';
     blockquote { margin: 4px 0 0; padding: 4px 8px; border-left: 2px solid var(--dc-border-strong); color: var(--dc-text-dim);
                  font-size: 12.5px; white-space: pre-wrap; }
     .muted { color: var(--dc-text-faint); font-size: 12.5px; }
+    .extra { white-space: pre-wrap; font-size: 12px; background: var(--dc-code-bg); padding: 8px; border-radius: 6px;
+             max-height: 220px; overflow: auto; }
   `,
 })
 export class ActionPanelComponent {
   readonly pending = input.required<PendingInput>();
   readonly busy = input(false);
   readonly tasks = input<Record<string, TaskState>>({});
+  /** Feedback gathered elsewhere (line comments at final approval), sent with a rejection. */
+  readonly extraFeedback = input('');
   readonly resumeRequested = output<ResumeRequest>();
 
   readonly mode = signal<Mode>('none');
@@ -239,7 +247,10 @@ export class ActionPanelComponent {
   }
 
   canSubmit(): boolean {
-    return this.mode() === 'edit' ? this.json().trim().length > 0 : this.text().trim().length > 0;
+    if (this.mode() === 'edit') {
+      return this.json().trim().length > 0;
+    }
+    return this.text().trim().length > 0 || (this.mode() === 'reject' && this.extraFeedback().trim().length > 0);
   }
 
   startEdit(): void {
@@ -258,7 +269,11 @@ export class ActionPanelComponent {
     const base = { interrupt_id: this.pending().interrupt_id };
     switch (this.mode()) {
       case 'reject':
-        this.resumeRequested.emit({ ...base, action: 'reject', feedback: this.text().trim() });
+        this.resumeRequested.emit({
+          ...base,
+          action: 'reject',
+          feedback: [this.text().trim(), this.extraFeedback().trim()].filter(Boolean).join('\n\n'),
+        });
         break;
       case 'answer':
         this.resumeRequested.emit({ ...base, action: 'answer', answer: this.text().trim() });

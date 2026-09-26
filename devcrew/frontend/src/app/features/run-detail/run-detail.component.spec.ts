@@ -6,6 +6,7 @@ import { of } from 'rxjs';
 
 import { RunDetail, RunEvent, RunMessage, Workflow, WorkflowNode } from '../../core/api.models';
 import { ApiService } from '../../core/api.service';
+import { NotifyService } from '../../core/notify.service';
 import { RunEventStream, RunEventsService } from '../../core/run-events.service';
 import { RunDetailComponent } from './run-detail.component';
 
@@ -52,8 +53,9 @@ describe('RunDetailComponent', () => {
   beforeEach(() => {
     api = jasmine.createSpyObj<ApiService>('ApiService', [
       'getRun', 'workflow', 'resume', 'cancel', 'diff', 'listFiles', 'messages', 'sendMessage', 'pause',
-      'usage', 'retry', 'editMessage', 'withdrawMessage',
+      'usage', 'retry', 'editMessage', 'withdrawMessage', 'reportUrl', 'preview',
     ]);
+    api.reportUrl.and.callFake((id: string) => `http://api/runs/${id}/report.md`);
     api.usage.and.returnValue(of({
       calls: 3, input_tokens: 1200, output_tokens: 300, total_tokens: 1500, model_seconds: 4,
       elapsed_s: 400, waiting_s: 100, active_s: 300, by_role: [], by_task: [], budget: null,
@@ -90,6 +92,40 @@ describe('RunDetailComponent', () => {
     expect(api.resume).toHaveBeenCalledWith('r1', { action: 'approve', interrupt_id: 'i1' });
     expect(api.getRun).toHaveBeenCalledTimes(2); // refreshed after resuming
     expect(api.workflow).toHaveBeenCalledTimes(2);
+  });
+
+  it('links the report and shows the run models and a broken code search', () => {
+    const el = fixture.nativeElement as HTMLElement;
+    const report = [...el.querySelectorAll('a')].find((a) => a.textContent?.includes('Report'));
+    expect(report?.getAttribute('href')).toBe('http://api/runs/r1/report.md');
+    expect(report?.hasAttribute('download')).toBeTrue();
+    expect(el.querySelector('.badge.warn')).toBeNull();
+    api.getRun.and.returnValue(of({
+      ...RUN, models: { developer: 'qwen-coder:32b' },
+      code_search: { status: 'unavailable', detail: 'chroma is down' },
+    }));
+    fixture.componentInstance['load']();
+    fixture.detectChanges();
+    expect(el.querySelector('.badge.models')?.textContent).toContain('developer qwen-coder:32b');
+    const warn = el.querySelector('.badge.warn') as HTMLElement;
+    expect(warn.textContent).toContain('code search unavailable');
+    expect(warn.title).toBe('chroma is down');
+  });
+
+  it('notifies when something new needs you or the run ends', () => {
+    const notify = TestBed.inject(NotifyService);
+    const spy = spyOn(notify, 'notify').and.returnValue(true);
+    fixture.componentInstance['load']();
+    expect(spy).not.toHaveBeenCalled(); // already known
+    api.workflow.and.returnValue(of({
+      ...WORKFLOW, attention: ['approve_plan', 'task:T1'],
+      nodes: [...WORKFLOW.nodes, wfNode('task:T1', { kind: 'task', label: 'T1 · Todo model', status: 'waiting' })],
+    }));
+    fixture.componentInstance['load']();
+    expect(spy).toHaveBeenCalledWith('DevCrew needs you: TODO API', 'T1 · Todo model', 'devcrew-r1', jasmine.any(Function));
+    api.getRun.and.returnValue(of({ ...RUN, status: 'completed', pending: [], pr_url: 'https://github.com/me/todo/pull/1' }));
+    fixture.componentInstance['load']();
+    expect(spy).toHaveBeenCalledWith('DevCrew run completed: TODO API', 'https://github.com/me/todo/pull/1', 'devcrew-r1');
   });
 
   it('closing the panel keeps it closed until something new needs attention', () => {
@@ -144,7 +180,7 @@ describe('RunDetailComponent', () => {
   it('pauses and resumes the run', () => {
     const el = fixture.nativeElement as HTMLElement;
     const button = (label: string) =>
-      [...el.querySelectorAll('.controls button')].find((b) => b.textContent?.trim() === label) as HTMLButtonElement | undefined;
+      [...el.querySelectorAll('.controls button:not(.notify)')].find((b) => b.textContent?.trim() === label) as HTMLButtonElement | undefined;
     api.pause.and.returnValue(of({ status: 'executing', pause_requested: true }));
     api.getRun.and.returnValue(of({ ...RUN, status: 'executing', pending: [], pause_requested: true }));
     button('Pause')?.click();
@@ -197,9 +233,9 @@ describe('RunDetailComponent', () => {
     api.retry.and.returnValue(of({ ...RUN, status: 'executing' }));
     fixture.componentInstance['load']();
     fixture.detectChanges();
-    const buttons = () => [...el.querySelectorAll('.controls button')].map((b) => b.textContent?.trim());
+    const buttons = () => [...el.querySelectorAll('.controls button:not(.notify)')].map((b) => b.textContent?.trim());
     expect(buttons()).toEqual(['Retry', 'Run again']);
-    (el.querySelector('.controls button') as HTMLButtonElement).click();
+    (el.querySelector('.controls button:not(.notify)') as HTMLButtonElement).click();
     expect(api.retry).toHaveBeenCalledWith('r1');
     fixture.componentInstance.runAgain();
     expect(router.navigate).toHaveBeenCalledWith(['/runs/new'], { queryParams: { from: 'r1' } });

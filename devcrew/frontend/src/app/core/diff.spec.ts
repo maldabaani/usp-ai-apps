@@ -1,4 +1,4 @@
-import { parseUnifiedDiff } from './diff';
+import { commentsAsFeedback, parseUnifiedDiff } from './diff';
 
 const DIFF = `diff --git a/app/main.py b/app/main.py
 index 1..2 100644
@@ -35,5 +35,18 @@ describe('parseUnifiedDiff', () => {
 
   it('returns nothing for an empty diff', () => {
     expect(parseUnifiedDiff('')).toEqual([]);
+  });
+});
+
+describe('commentsAsFeedback', () => {
+  it('lists line comments by file and line, with the code', () => {
+    const text = commentsAsFeedback([
+      { id: 2, path: 'b.py', line: 3, side: 'new', code: 'x = 1', text: 'rename x' },
+      { id: 1, path: 'a.py', line: 9, side: 'old', code: '', text: 'keep this\nplease' },
+    ]);
+    expect(text).toBe(
+      'Review comments on the changes:\n- a.py:9 (removed line)\n  keep this\n  please\n- b.py:3\n  `x = 1`\n  rename x',
+    );
+    expect(commentsAsFeedback([])).toBe('');
   });
 });

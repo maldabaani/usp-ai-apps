@@ -39,16 +39,17 @@ import { AgentIconComponent } from '../../shared/agent-icon.component';
       }
       <div class="tables">
         <table>
-          <thead><tr><th>Role</th><th>Calls</th><th>Tokens</th><th>Model time</th></tr></thead>
+          <thead><tr><th>Role</th><th>Model</th><th>Calls</th><th>Tokens</th><th>Model time</th></tr></thead>
           <tbody>
             @for (r of u.by_role; track r.key) {
               <tr>
                 <td class="role"><app-agent-icon [kind]="r.key" [size]="20" />{{ r.key }}</td>
+                <td><code>{{ (r.models ?? []).join(', ') }}</code></td>
                 <td>{{ r.calls }}</td><td>{{ total(r) | number }}
                   <span class="share">{{ percent(total(r), u.total_tokens) | number: '1.0-0' }}%</span></td>
                 <td>{{ duration(r.model_seconds) }}</td>
               </tr>
-            } @empty { <tr><td colspan="4" class="hint">No model calls yet.</td></tr> }
+            } @empty { <tr><td colspan="5" class="hint">No model calls yet.</td></tr> }
           </tbody>
         </table>
         <table>

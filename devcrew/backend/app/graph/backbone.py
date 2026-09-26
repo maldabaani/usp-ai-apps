@@ -156,6 +156,7 @@ def make_schedule(deps: GraphDeps) -> NodeFn:
                         "integration_branch": state["integration_branch"],
                         "tasks": {tid: dump(ts)},
                         "human_notes": state.get("human_notes") or [],
+                        "models": state.get("models") or {},
                     },
                 )
             )
@@ -242,6 +243,7 @@ def initial_state(
     mode: str = "full",
     issue: dict[str, Any] | None = None,
     budget: dict[str, int] | None = None,
+    models: dict[str, str] | None = None,
 ) -> RunState:
     existing = target == "existing"
     state = RunState(
@@ -279,6 +281,7 @@ def initial_state(
         coordinator_retries={},
         budget=budget,
         budget_limit=None,
+        models=models or {},
     )
     if not existing:
         state["base_branch"] = "main"

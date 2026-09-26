@@ -13,7 +13,9 @@ from app.llm.models_config import load_models_config
 from app.prompts import PromptLibrary
 from app.rag.embeddings import Embedder
 from app.rag.service import RagService, chroma_http_client
+from app.sandbox.docker_preview import DockerPreviewBackend
 from app.sandbox.docker_runner import DockerSandboxRunner
+from app.sandbox.preview import PreviewManager
 from app.sandbox.service import Sandbox
 from app.tools.catalog import RulesCatalog, TemplatesCatalog
 
@@ -37,10 +39,12 @@ def build_deps(
     github: GitHubDelivery | None = None,
     steering: SteeringStore | None = None,
 ) -> GraphDeps:
+    preview = None
     if sandbox is None and settings.sandbox_enabled:
-        sandbox = Sandbox(
-            DockerSandboxRunner(settings), state_dir=settings.workspaces_dir / ".sandbox-state"
-        )
+        runner = DockerSandboxRunner(settings)
+        sandbox = Sandbox(runner, state_dir=settings.workspaces_dir / ".sandbox-state")
+        if settings.preview_enabled:
+            preview = PreviewManager(DockerPreviewBackend(runner), sandbox, settings)
     llm = llm or build_llm(settings)
     if rag is None and settings.rag_enabled:
         rag = RagService(
@@ -70,4 +74,5 @@ def build_deps(
         rag=rag,
         github=github,
         steering=steering if steering is not None else InMemorySteeringStore(),
+        preview=preview,
     )

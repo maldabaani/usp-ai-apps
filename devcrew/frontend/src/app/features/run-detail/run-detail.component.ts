@@ -28,6 +28,7 @@ import {
   WorkflowNode,
 } from '../../core/api.models';
 import { ApiService } from '../../core/api.service';
+import { NotifyService } from '../../core/notify.service';
 import { requestTitle } from '../../core/requirements';
 import { formatDuration } from '../../core/workflow-layout';
 import { RunEventStream, RunEventsService } from '../../core/run-events.service';
@@ -35,6 +36,7 @@ import { StatusChipComponent } from '../../shared/status-chip.component';
 import { ActionPanelComponent } from './action-panel.component';
 import { ChatComponent } from './chat.component';
 import { UsageViewComponent } from './usage-view.component';
+import { PreviewComponent } from './preview.component';
 import { DesignViewComponent } from './design-view.component';
 import { EventTimelineComponent } from './event-timeline.component';
 import { FileExplorerComponent } from './file-explorer.component';
@@ -52,7 +54,7 @@ const REFRESH_DEBOUNCE_MS = 300;
     RouterLink, MatTabsModule, MatButtonModule, MatProgressBarModule, StatusChipComponent,
     EventTimelineComponent, PlanViewComponent, DesignViewComponent, QaPanelComponent,
     FileExplorerComponent, WorkflowGraphComponent, WorkflowPanelComponent, ChatComponent,
-    ActionPanelComponent, UsageViewComponent, DecimalPipe,
+    ActionPanelComponent, UsageViewComponent, DecimalPipe, PreviewComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -84,20 +86,25 @@ const REFRESH_DEBOUNCE_MS = 300;
                   · {{ workingTime() }} working</span>
               }
             }
+            @if (modelsText(); as m) { <span class="badge models" [title]="'Models chosen for this run: ' + m">models: {{ m }}</span> }
+            @if (run.code_search?.status === 'unavailable') {
+              <span class="badge warn" [title]="run.code_search?.detail ?? ''">⚠ code search unavailable</span>
+            }
             <span class="stream" [class]="'stream ' + streamState()">events: {{ streamState() }}</span>
           </div>
         </div>
-        @if (terminal()) {
-          <div class="controls">
+        <div class="controls">
+          @if (notify.permission() === 'default') {
+            <button mat-button class="notify" (click)="notify.enable()" title="Get a browser notification when this run needs you (while the tab is in the background)">🔔 Notify me</button>
+          }
+          <a mat-stroked-button [href]="reportUrl()" download title="Download the whole run as Markdown">Report ↓</a>
+          @if (terminal()) {
             @if (run.status === 'failed') {
               <button mat-flat-button class="resume" (click)="retry()" [disabled]="submitting()"
                       title="Continue from the last checkpoint: the failed step runs again">Retry</button>
             }
             <button mat-stroked-button (click)="runAgain()" title="New run with the same request (you can edit it)">Run again</button>
-          </div>
-        }
-        @if (!terminal()) {
-          <div class="controls">
+          } @else {
             @if (run.status === 'paused') {
               <button mat-flat-button class="resume" (click)="setPaused(false)" [disabled]="submitting()">Resume</button>
             } @else if (run.pause_requested) {
@@ -107,8 +114,8 @@ const REFRESH_DEBOUNCE_MS = 300;
                       title="Stop before the next wave of tasks (running tasks finish first)">Pause</button>
             }
             <button mat-stroked-button color="warn" (click)="cancel()" [disabled]="submitting()">Cancel run</button>
-          </div>
-        }
+          }
+        </div>
       </header>
       @if (run.busy || submitting()) {
         <mat-progress-bar mode="indeterminate" />
@@ -176,6 +183,13 @@ const REFRESH_DEBOUNCE_MS = 300;
         <mat-tab label="Plan"><app-plan-view [plan]="run.plan" /></mat-tab>
         <mat-tab label="Design"><app-design-view [design]="run.design" /></mat-tab>
         <mat-tab [label]="'Q&A (' + run.qa_log.length + ')'"><app-qa-panel [entries]="run.qa_log" /></mat-tab>
+        <mat-tab label="Preview">
+          @defer (on viewport) {
+            <app-preview [runId]="run.id" />
+          } @placeholder {
+            <p>Loading…</p>
+          }
+        </mat-tab>
         <mat-tab label="Files">
           @defer (on viewport) {
             <app-file-explorer [runId]="run.id" [tasks]="run.tasks" />
@@ -226,12 +240,17 @@ const REFRESH_DEBOUNCE_MS = 300;
     .merged { margin-left: 6px; font-size: 11px; color: var(--dc-text-faint); }
     .tokens { font-size: 12px; color: var(--dc-text-dim); font-family: var(--dc-mono); }
     .run-level { margin-top: 12px; }
+    .badge.warn { color: var(--dc-amber); border-color: rgba(255, 193, 77, 0.55); background: rgba(255, 193, 77, 0.1); }
+    .badge.models { color: var(--dc-cyan); border-color: rgba(34, 211, 238, 0.45); background: rgba(34, 211, 238, 0.08);
+                    max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .controls { flex-wrap: wrap; justify-content: flex-end; }
   `,
 })
 export class RunDetailComponent {
   private readonly api = inject(ApiService);
   private readonly streams = inject(RunEventsService);
   private readonly destroyRef = inject(DestroyRef);
+  readonly notify = inject(NotifyService);
 
   /** Route parameter (component input binding). */
   readonly id = input.required<string>();
@@ -269,6 +288,12 @@ export class RunDetailComponent {
     (this.run()?.plan?.tasks ?? []).map((t) => ({ id: t.id, title: t.title })),
   );
   readonly title = computed(() => requestTitle(this.run()?.request ?? ''));
+  readonly reportUrl = computed(() => this.api.reportUrl(this.id()));
+  readonly modelsText = computed(() =>
+    Object.entries(this.run()?.models ?? {})
+      .map(([role, model]) => `${role} ${model}`)
+      .join(' · '),
+  );
   readonly nodesById = computed(
     () => new Map((this.workflow()?.nodes ?? []).map((n) => [n.id, n] as const)),
   );
@@ -433,6 +458,12 @@ export class RunDetailComponent {
       return status === 'running' || status === 'waiting';
     };
     const next = () => wf.attention[0] ?? wf.nodes.find((n) => n.status === 'running')?.id ?? null;
+    if (fresh.length && this.workflow() !== null) {
+      const labels = fresh.map((id) => wf.nodes.find((n) => n.id === id)?.label ?? id);
+      this.notify.notify(`DevCrew needs you: ${this.title()}`, labels.join(', '), `devcrew-${this.id()}`, () =>
+        this.pick(fresh[0]),
+      );
+    }
     if (fresh.length) {
       this.selectedNode.set(fresh[0]);
       this.autoSelected = true;
@@ -455,6 +486,11 @@ export class RunDetailComponent {
       usage: this.api.usage(this.id()).pipe(catchError(() => of(null))),
     }).subscribe({
       next: ({ run, workflow, messages, usage }) => {
+        const before = this.run()?.status;
+        if (before && before !== run.status && ['completed', 'failed'].includes(run.status)) {
+          this.notify.notify(`DevCrew run ${run.status}: ${requestTitle(run.request)}`,
+            run.pr_url ?? run.error ?? '', `devcrew-${run.id}`);
+        }
         this.run.set(run);
         if (usage) {
           this.usage.set(usage);

@@ -8,7 +8,7 @@ import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from langchain_core.messages import (
     BaseMessage,
@@ -35,6 +35,9 @@ from app.sandbox.service import Sandbox
 from app.tools.base import ToolSpec
 from app.tools.catalog import RulesCatalog, TemplatesCatalog
 
+if TYPE_CHECKING:
+    from app.sandbox.preview import PreviewManager
+
 logger = logging.getLogger(__name__)
 
 NodeFn = Callable[[Any], Awaitable[Any]]
@@ -53,6 +56,8 @@ class GraphDeps:
     github: GitHubDelivery | None = None  # None: no push / PR (benchmarks)
     # Phase 13: chat messages and the pause flag (Postgres in production)
     steering: SteeringStore = field(default_factory=InMemorySteeringStore)
+    # Phase 16: live preview of the generated app (None: sandbox or preview disabled)
+    preview: PreviewManager | None = None
 
     def __post_init__(self) -> None:
         self.llm.on_usage = self._record_usage
@@ -95,6 +100,11 @@ class GraphDeps:
 async def release_run_resources(deps: GraphDeps, run_id: str) -> None:
     """End of a run (completed, failed or cancelled): drop containers, volumes and the run's
     Chroma collection. Nothing survives into the next run."""
+    if deps.preview is not None:
+        try:
+            await deps.preview.stop(run_id)
+        except Exception as exc:
+            logger.warning("preview stop failed for %s: %s", run_id, exc)
     if deps.sandbox is not None:
         try:
             await deps.sandbox.cleanup_run(run_id)
@@ -158,7 +168,8 @@ def instrument(deps: GraphDeps, name: str, fn: NodeFn) -> NodeFn:
         task = state.get("task")
         task_id = task.get("id") if isinstance(task, dict) else None
         await deps.emit(run_id, EventType.NODE_STARTED, node=name, task_id=task_id)
-        scope = llm_scope.set(CallScope(run_id=run_id, node=name, task_id=task_id))
+        models = tuple(sorted((state.get("models") or {}).items()))
+        scope = llm_scope.set(CallScope(run_id=run_id, node=name, task_id=task_id, models=models))
         try:
             result = await fn(state)
         except GraphBubbleUp:

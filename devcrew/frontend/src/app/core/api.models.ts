@@ -246,6 +246,8 @@ export interface RunDetail extends RunSummary {
   followup?: FollowupState | null;
   pause_requested?: boolean;
   request_digest?: string | null;
+  models?: Record<string, string> | null;
+  code_search?: CodeSearchStatus | null;
   human_notes?: { id: number | null; text: string; merged?: boolean }[];
   plan: Plan | null;
   design: Design | null;
@@ -266,6 +268,8 @@ export interface CreateRunRequest {
   mode?: RunMode;
   token_budget?: number | null;
   time_budget_min?: number | null;
+  /** The run's own Ollama model per role (others use config/models.yaml). */
+  models?: Record<string, string> | null;
 }
 
 export interface ResumeRequest {
@@ -465,6 +469,7 @@ export interface UsageLine {
   input_tokens: number;
   output_tokens: number;
   model_seconds: number;
+  models?: string[];
 }
 
 export interface RunUsage {
@@ -479,4 +484,39 @@ export interface RunUsage {
   by_role: UsageLine[];
   by_task: UsageLine[];
   budget: { tokens: number; minutes: number } | null;
+}
+
+// ------------------------------------------------------------------ Phase 16
+export type AgentRole = 'planner' | 'architect' | 'developer' | 'reviewer' | 'qa' | 'coordinator';
+
+export interface ModelChoices {
+  roles: { role: AgentRole; model: string }[];
+  /** null: Ollama could not be asked (any name is accepted). */
+  installed: string[] | null;
+}
+
+export interface CodeSearchStatus {
+  status: 'ok' | 'unavailable' | 'disabled' | 'pending';
+  detail?: string | null;
+}
+
+export type PreviewStatus = 'off' | 'installing' | 'starting' | 'running' | 'failed';
+
+export interface PreviewOption {
+  stack: string;
+  path: string;
+  command: string;
+  port: number;
+}
+
+export interface PreviewState {
+  enabled: boolean;
+  status: PreviewStatus;
+  stack: string | null;
+  command: string | null;
+  url: string | null;
+  started_at: string | null;
+  error: string | null;
+  options: PreviewOption[];
+  logs: string | null;
 }

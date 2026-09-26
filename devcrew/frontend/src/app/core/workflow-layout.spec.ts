@@ -1,7 +1,9 @@
 import { WorkflowEdge, WorkflowNode } from './api.models';
 import {
+  GROUP_PREFIX,
   STAGE_SIZE,
   TASK_SIZE,
+  compactWorkflow,
   formatDuration,
   iconKind,
   layoutWorkflow,
@@ -84,5 +86,82 @@ describe('workflow layout', () => {
     const updated = nodes.map((n) => ({ ...n, status: 'running' as const }));
     expect(structureKey(updated, edges)).toBe(key);
     expect(structureKey([...nodes, node('task:T4')], edges)).not.toBe(key);
+  });
+});
+
+describe('compact workflow', () => {
+  const done = { status: 'done' as const };
+  const stages = ['requirements', 'planner', 'approve_plan', 'architect', 'approve_design', 'scaffold'];
+  const chain = (ids: string[]) => ids.slice(1).map((id, i) => edge(ids[i], id));
+
+  it('folds finished stages, finished waves and finished PR rounds', () => {
+    const nodes = [
+      ...stages.map((id) => node(id, done)),
+      node('task:T1', done), node('task:T2', done), node('task:T3', { status: 'skipped' }),
+      node('task:T4', { status: 'running' }), node('task:T5', done),
+      node('integration'), node('followup:1', done), node('push:1', done), node('followup:2', { status: 'running' }),
+    ];
+    const edges = [
+      ...chain(stages), edge('approve_plan', 'planner', 'loop'),
+      edge('scaffold', 'task:T1'), edge('scaffold', 'task:T2'), edge('scaffold', 'task:T3'),
+      edge('task:T1', 'task:T4'), edge('task:T2', 'task:T5'),
+      edge('task:T4', 'integration'), edge('task:T5', 'integration'),
+      edge('integration', 'followup:1'), edge('followup:1', 'push:1'), edge('push:1', 'followup:2'),
+    ];
+    const view = compactWorkflow(nodes, edges);
+    const ids = view.nodes.map((n) => n.id);
+    expect(ids).toEqual([
+      `${GROUP_PREFIX}stages`, `${GROUP_PREFIX}wave:1`, 'task:T4', 'task:T5', 'integration',
+      `${GROUP_PREFIX}round:1`, 'followup:2',
+    ]);
+    expect(view.groups.get(`${GROUP_PREFIX}stages`)).toEqual(stages);
+    expect(view.groups.get(`${GROUP_PREFIX}wave:1`)).toEqual(['task:T1', 'task:T2', 'task:T3']);
+    const wave = view.nodes[1];
+    expect(wave.label).toBe('Wave 1 · 3 tasks');
+    expect(wave.detail).toBe('2 merged, 1 skipped');
+    // a wave with running work stays open; edges are rewired and de-duplicated
+    const pairs = view.edges.map((e) => `${e.source}>${e.target}`);
+    expect(pairs).toEqual([
+      `${GROUP_PREFIX}stages>${GROUP_PREFIX}wave:1`, `${GROUP_PREFIX}wave:1>task:T4`, `${GROUP_PREFIX}wave:1>task:T5`,
+      'task:T4>integration', 'task:T5>integration', `integration>${GROUP_PREFIX}round:1`, `${GROUP_PREFIX}round:1>followup:2`,
+    ]);
+  });
+
+  it('folds by flow order, not list order: stages after the tasks form their own group', () => {
+    // the backend lists every stage first and the task nodes last
+    const after = ['integration', 'gates', 'approve_final', 'delivery'];
+    const nodes = [
+      ...stages.map((id) => node(id, done)),
+      ...after.map((id) => node(id, id === 'delivery' ? { status: 'running' } : done)),
+      node('task:T1', done), node('task:T2', done),
+    ];
+    const edges = [
+      ...chain(stages), ...chain(after),
+      edge('scaffold', 'task:T1'), edge('scaffold', 'task:T2'),
+      edge('task:T1', 'integration'), edge('task:T2', 'integration'),
+    ];
+    const view = compactWorkflow(nodes, edges);
+    expect(view.groups.get(`${GROUP_PREFIX}stages`)).toEqual(stages);
+    expect(view.groups.get(`${GROUP_PREFIX}checks`)).toEqual(['integration', 'gates', 'approve_final']);
+    expect(view.edges.map((e) => `${e.source}>${e.target}`)).toEqual([
+      `${GROUP_PREFIX}checks>delivery`, `${GROUP_PREFIX}stages>${GROUP_PREFIX}wave:1`, `${GROUP_PREFIX}wave:1>${GROUP_PREFIX}checks`,
+    ]);
+    // no cycle: every edge goes left to right
+    const r = ranks(view.nodes, view.edges);
+    expect(view.edges.every((e) => (r.get(e.source) ?? 0) < (r.get(e.target) ?? 0))).toBeTrue();
+  });
+
+  it('keeps opened groups and the selected node unfolded', () => {
+    const nodes = stages.map((id) => node(id, done));
+    expect(compactWorkflow(nodes, chain(stages), new Set([`${GROUP_PREFIX}stages`])).nodes.length).toBe(6);
+    const kept = compactWorkflow(nodes, chain(stages), new Set(['approve_design']));
+    expect(kept.nodes.map((n) => n.id)).toEqual([`${GROUP_PREFIX}stages`, 'approve_design', 'scaffold']);
+  });
+
+  it('leaves short or unfinished workflows alone', () => {
+    const nodes = [node('requirements', done), node('planner', done), node('approve_plan', { status: 'waiting' })];
+    const view = compactWorkflow(nodes, chain(nodes.map((n) => n.id)));
+    expect(view.nodes).toEqual(nodes);
+    expect(view.groups.size).toBe(0);
   });
 });

@@ -50,6 +50,9 @@ class TemplateInfo(BaseModel):
     test_cmd: str
     # Test command that also prints a coverage summary (used when quality gates are on).
     coverage_cmd: str | None = None
+    # Live preview (Phase 16): the command that serves the app and the port it listens on.
+    preview_cmd: str | None = None
+    preview_port: int | None = Field(default=None, ge=1, le=65535)
     path: Path = Field(exclude=True, default=Path())
 
 

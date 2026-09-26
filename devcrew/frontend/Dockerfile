@@ -12,4 +12,6 @@ RUN npx ng build --configuration production
 FROM ${NGINX_IMAGE}
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist/frontend/browser /usr/share/nginx/html
+# nginx runs /docker-entrypoint.d/*.sh at start: writes config.json from DEVCREW_API_URL
+COPY docker/40-devcrew-config.sh /docker-entrypoint.d/40-devcrew-config.sh
 EXPOSE 4200

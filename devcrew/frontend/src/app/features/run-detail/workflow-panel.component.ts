@@ -1,5 +1,5 @@
 import { DatePipe, NgTemplateOutlet } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 
 import {
@@ -17,6 +17,7 @@ import { MarkdownPipe } from '../../shared/markdown.pipe';
 import { ActionPanelComponent } from './action-panel.component';
 import { ChatComponent } from './chat.component';
 import { DesignViewComponent } from './design-view.component';
+import { FinalReviewComponent } from './final-review.component';
 import { PlanViewComponent } from './plan-view.component';
 import { TaskDetailComponent } from './task-detail.component';
 
@@ -55,7 +56,7 @@ export function roundOf(nodeId: string): number | null {
   selector: 'app-workflow-panel',
   imports: [
     DatePipe, NgTemplateOutlet, MatButtonModule, AgentIconComponent, MarkdownPipe, ActionPanelComponent,
-    PlanViewComponent, DesignViewComponent, TaskDetailComponent, ChatComponent,
+    PlanViewComponent, DesignViewComponent, TaskDetailComponent, ChatComponent, FinalReviewComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -81,7 +82,12 @@ export function roundOf(nodeId: string): number | null {
         added to your feedback for the follow-up task.</p>
     }
     @for (p of pending(); track p.interrupt_id) {
-      <app-action-panel [pending]="p" [busy]="busy()" [tasks]="run().tasks" (resumeRequested)="resumeRequested.emit($event)" />
+      <app-action-panel [pending]="p" [busy]="busy()" [tasks]="run().tasks"
+                        [extraFeedback]="p.artifact === 'final' ? lineFeedback() : ''"
+                        (resumeRequested)="resumeRequested.emit($event)" />
+    }
+    @if (n.id === 'approve_final' && pending().length) {
+      <app-final-review [runId]="run().id" (feedback)="lineFeedback.set($event)" />
     }
 
     @switch (view()) {
@@ -250,6 +256,8 @@ export class WorkflowPanelComponent {
   readonly resumeRequested = output<ResumeRequest>();
   readonly messageSent = output<MessageIn>();
   readonly closed = output<void>();
+  /** Line comments from the final review, sent with "Request changes". */
+  readonly lineFeedback = signal('');
 
   readonly icon = computed(() => iconKind(this.node()));
   readonly elapsed = computed(() => nodeElapsed(this.node(), this.now()));

@@ -3,7 +3,15 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { Router, provideRouter } from '@angular/router';
 import { of, throwError } from 'rxjs';
 
-import { ClientConfig, RunDetail, RunSummary } from '../../core/api.models';
+import { ClientConfig, ModelChoices, RunDetail, RunSummary } from '../../core/api.models';
+
+const MODELS: ModelChoices = {
+  roles: [
+    { role: 'planner', model: 'qwen:14b' },
+    { role: 'developer', model: 'qwen-coder:14b' },
+  ],
+  installed: ['qwen:14b', 'qwen-coder:14b', 'qwen-coder:32b'],
+};
 import { ApiService } from '../../core/api.service';
 import { NewRunComponent, parseIssueRef } from './new-run.component';
 
@@ -16,7 +24,8 @@ describe('NewRunComponent', () => {
   let api: jasmine.SpyObj<ApiService>;
 
   function setup(config = of(CONFIG)) {
-    api = jasmine.createSpyObj<ApiService>('ApiService', ['createRun', 'config', 'importIssue', 'getRun']);
+    api = jasmine.createSpyObj<ApiService>('ApiService', ['createRun', 'config', 'importIssue', 'getRun', 'models']);
+    api.models.and.returnValue(of(MODELS));
     api.createRun.and.returnValue(of({ id: 'r9' } as RunSummary));
     api.importIssue.and.returnValue(of({ id: 'r10' } as RunSummary));
     api.config.and.returnValue(config);
@@ -164,5 +173,59 @@ describe('NewRunComponent', () => {
       request: '# Shop\n\nAdd discounts', repo_target: 'acme/shop', target: 'existing', mode: 'quick',
     }));
     expect((fixture.nativeElement as HTMLElement).textContent).toContain('Copied from run old123456789');
+  });
+
+  it('sends the models chosen for this run and copies them for "Run again"', () => {
+    const { fixture } = setup();
+    const c = fixture.componentInstance;
+    expect(c.choices()?.installed).toContain('qwen-coder:32b');
+    c.setModel('developer', 'qwen-coder:32b');
+    c.setModel('planner', '');
+    expect(c.modelCount()).toBe(1);
+    c.form.patchValue({ request: 'Build a FastAPI TODO API', repo_target: 'octocat/todo-api' });
+    c.submit();
+    expect(api.createRun).toHaveBeenCalledWith(jasmine.objectContaining({ models: { developer: 'qwen-coder:32b' } }));
+
+    api.getRun.and.returnValue(of({
+      id: 'old1', request: 'x', repo_target: 'a/b', models: { reviewer: 'big:70b' },
+    } as unknown as RunDetail));
+    fixture.componentRef.setInput('from', 'old1');
+    fixture.detectChanges();
+    expect(c.models()).toEqual({ reviewer: 'big:70b' });
+  });
+
+  it('does not send models when none is changed', () => {
+    const { fixture } = setup();
+    const c = fixture.componentInstance;
+    c.form.patchValue({ request: 'Build a FastAPI TODO API', repo_target: 'octocat/todo-api' });
+    c.submit();
+    expect(api.createRun.calls.mostRecent().args[0].models).toBeUndefined();
+  });
+
+  it('saves, applies and deletes presets (everything but the requirements)', () => {
+    localStorage.removeItem('devcrew.presets');
+    const { fixture } = setup();
+    const c = fixture.componentInstance;
+    c.form.patchValue({
+      request: 'Build it', repo_target: 'acme/shop', target: 'existing', mode: 'quick', token_budget: 9000,
+    });
+    c.setModel('developer', 'qwen-coder:32b');
+    spyOn(window, 'prompt').and.returnValue(' Shop fixes ');
+    c.saveAsPreset();
+    expect(c.presets().map((p) => p.name)).toEqual(['Shop fixes']);
+    expect(c.presetName()).toBe('Shop fixes');
+
+    c.form.reset();
+    c.models.set({});
+    c.applyPreset('Shop fixes');
+    expect(c.form.getRawValue()).toEqual(jasmine.objectContaining({
+      request: '', repo_target: 'acme/shop', target: 'existing', mode: 'quick', token_budget: 9000,
+    }));
+    expect(c.models()).toEqual({ developer: 'qwen-coder:32b' });
+
+    spyOn(window, 'confirm').and.returnValue(true);
+    c.removePreset();
+    expect(c.presets()).toEqual([]);
+    expect(localStorage.getItem('devcrew.presets')).toBe('[]');
   });
 });

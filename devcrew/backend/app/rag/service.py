@@ -30,6 +30,9 @@ class RagService:
         self._embedder = embedder
         self._settings = settings
         self._indexes: dict[str, CodeIndex] = {}
+        # run -> the last indexing/search error (None: the last call worked); the run page shows
+        # "code search unavailable" while it is set (Phase 16, BL-013)
+        self._health: dict[str, str | None] = {}
         self._cfg = ChunkConfig(
             max_lines=settings.rag_chunk_max_lines,
             window_lines=settings.rag_window_lines,
@@ -48,8 +51,27 @@ class RagService:
             )
         return self._indexes[run_id]
 
+    def health(self, run_id: str) -> tuple[bool, str | None] | None:
+        """(ok, last error) of this process's index/search calls for the run; None: no call yet."""
+        if run_id not in self._health:
+            return None
+        error = self._health[run_id]
+        return error is None, error
+
+    def _mark(self, run_id: str, error: BaseException | None) -> None:
+        self._health[run_id] = None if error is None else (str(error) or type(error).__name__)
+
     async def sync_workspace(self, run_id: str, root: Path) -> IndexStats:
         """Index the tracked files at the workspace's checked-out commit (incremental)."""
+        try:
+            stats = await self._sync_workspace(run_id, root)
+        except Exception as exc:
+            self._mark(run_id, exc)
+            raise
+        self._mark(run_id, None)
+        return stats
+
+    async def _sync_workspace(self, run_id: str, root: Path) -> IndexStats:
         repo = GitRepo(root)
         tracked = [p for p in (await repo.run("ls-files", "-z")).split("\0") if p]
         sha = await repo.head()
@@ -78,12 +100,21 @@ class RagService:
     async def search(
         self, run_id: str, query: str, k: int | None = None, path_filter: str | None = None
     ) -> list[SearchHit]:
-        return await self.index(run_id).search(query, k or self._settings.rag_top_k, path_filter)
+        try:
+            hits = await self.index(run_id).search(
+                query, k or self._settings.rag_top_k, path_filter
+            )
+        except Exception as exc:
+            self._mark(run_id, exc)
+            raise
+        self._mark(run_id, None)
+        return hits
 
     async def delete(self, run_id: str) -> None:
         """Drop the run's collection (no cross-run memory)."""
         await self.index(run_id).delete()
         self._indexes.pop(run_id, None)
+        self._health.pop(run_id, None)
 
 
 def chroma_http_client(settings: Settings) -> Callable[[], ChromaClient]:

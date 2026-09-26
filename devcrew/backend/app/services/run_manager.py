@@ -99,6 +99,7 @@ class RunManager:
         mode: str = "full",
         issue: dict[str, Any] | None = None,
         budget: dict[str, int] | None = None,
+        models: dict[str, str] | None = None,
     ) -> Run:
         run = await self.runs.create(
             request=request, repo_target=repo_target, create_repo=create_repo
@@ -114,6 +115,7 @@ class RunManager:
                 mode=mode,
                 issue=issue,
                 budget=budget,
+                models=models,
             ),
         )
         return run

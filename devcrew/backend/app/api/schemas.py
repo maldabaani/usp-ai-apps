@@ -10,6 +10,8 @@ from pydantic import BaseModel, Field, field_validator
 from app.db.models import Run
 from app.graph.interrupts import ResumeAction, ResumePayload
 from app.graph.runner import PendingInterrupt
+from app.llm.models_config import Role
+from app.services.code_search import CodeSearchStatus
 
 REPO_RE = r"^[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100}$"
 
@@ -30,6 +32,9 @@ class CreateRunRequest(BaseModel):
     )
     time_budget_min: int | None = Field(
         default=None, ge=0, description="stop and ask after this many working minutes (0 = none)"
+    )
+    models: dict[Role, str] | None = Field(
+        default=None, description="the run's own Ollama model per role (others: models.yaml)"
     )
 
     def budget(self) -> dict[str, int] | None:
@@ -118,6 +123,8 @@ class RunDetail(RunSummary):
     followup: dict[str, Any] | None = None
     pause_requested: bool = False
     request_digest: str | None = None
+    models: dict[str, str] | None = None  # the run's own model per role (Phase 16)
+    code_search: CodeSearchStatus | None = None  # BL-013
     human_notes: list[dict[str, Any]] = Field(default_factory=list)
     plan: dict[str, Any] | None = None
     design: dict[str, Any] | None = None

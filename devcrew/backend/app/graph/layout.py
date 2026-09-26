@@ -31,6 +31,8 @@ def resolve_layout(design: Design, templates: TemplatesCatalog) -> dict[str, Lay
                     build_cmd=p.build_cmd,
                     test_cmd=p.test_cmd,
                     coverage_cmd=p.coverage_cmd,
+                    preview_cmd=p.preview_cmd,
+                    preview_port=p.preview_port,
                 ),
             )
             for p in design.existing_projects

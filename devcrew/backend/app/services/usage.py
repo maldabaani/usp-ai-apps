@@ -16,6 +16,7 @@ class UsageLine(BaseModel):
     input_tokens: int = 0
     output_tokens: int = 0
     model_seconds: float = 0.0
+    models: list[str] = Field(default_factory=list)  # the Ollama models used (by role)
 
     @property
     def total_tokens(self) -> int:
@@ -43,6 +44,9 @@ def _add(lines: dict[str, UsageLine], key: str, event: Event) -> None:
     line.input_tokens += int(p.get("input_tokens") or 0)
     line.output_tokens += int(p.get("output_tokens") or 0)
     line.model_seconds += int(p.get("duration_ms") or 0) / 1000
+    model = p.get("model")
+    if model and model not in line.models:
+        line.models.append(str(model))
 
 
 def summarize(events: Sequence[Event], *, finished: bool, now: datetime | None = None) -> RunUsage:

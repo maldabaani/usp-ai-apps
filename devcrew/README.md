@@ -108,6 +108,19 @@ questions, and can chat with the crew, pause, set budgets or stop at any time.
 </td>
 <td><img src="docs/images/usage.png" alt="Usage tab"></td>
 </tr>
+<tr>
+<td valign="top">
+
+### ▶️ Preview and review
+- **Live preview**: start the generated app from the run page and open it in a browser tab.
+  It runs in the sandbox on an internal network (no internet) behind a port on 127.0.0.1.
+- **Line comments** on the final diff become the feedback for a follow-up task.
+- **Models per run**, **presets**, a **Markdown report** and **browser notifications**.
+- **Compact overview**: finished stages, waves and PR rounds fold into one node; minimap.
+
+</td>
+<td><img src="docs/images/preview.png" alt="Live preview of the generated app"></td>
+</tr>
 </table>
 
 <table>
@@ -255,6 +268,8 @@ Every variable is documented in [`.env.example`](.env.example); model settings a
 | `RUN_TOKEN_BUDGET`, `RUN_TIME_BUDGET_MIN` | `0` (off) | Default budgets per run |
 | `WAVE_TESTS_ENABLED` | `true` | Project tests after every wave of tasks |
 | `MAX_REQUEST_CHARS` / `MAX_DOCUMENT_CHARS` | `20000` / `200000` | Requests up to the first go to the Planner as-is; longer documents are condensed |
+| `PREVIEW_ENABLED`, `PREVIEW_HOST` | `true`, `localhost` | Live preview of the generated app (127.0.0.1 only, no internet for the app) |
+| `DEVCREW_API_URL` | `http://localhost:8080` | Where the browser reaches the backend (the UI container writes it to `config.json`) |
 
 ## 📁 Project structure
 
@@ -319,6 +334,6 @@ There is also a terminal client (`scripts/run_local.py`) and a benchmark runner
 | 13 | Steering: chat with the crew or a task, pause / resume |
 | 14 | Usage and budgets, tests after every wave, retry / run again, steering completed |
 | 15 | GitHub efficiency (conditional requests, quiet-PR backoff), base-branch test baselines, long requirements documents, finer pause |
+| 16 | Live preview of the generated app, models per run, line comments at final approval, compact overview with minimap, run report, notifications, presets, runtime UI config |
 
-**Next:** a first run against real Ollama models and GitHub, then Phase 16 (GitHub
-efficiency, real-run robustness, UI and features). See the [backlog](BACKLOG.md).
+**Next:** a first run against real Ollama models and GitHub. See the [backlog](BACKLOG.md).

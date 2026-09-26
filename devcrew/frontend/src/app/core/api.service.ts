@@ -2,7 +2,6 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 
-import { environment } from '../../environments/environment';
 import {
   ClientConfig,
   CreateRunRequest,
@@ -13,8 +12,10 @@ import {
   ImportIssueRequest,
   IssueRun,
   MessageIn,
+  ModelChoices,
   PauseState,
   PendingInput,
+  PreviewState,
   ResumeRequest,
   RunDetail,
   RunMessage,
@@ -25,12 +26,14 @@ import {
   WatchedRepoUpdate,
   Workflow,
 } from './api.models';
+import { runtimeConfig } from './runtime-config';
 
-/** Typed client for the DevCrew backend. The base URL comes from the environment files. */
+/** Typed client for the DevCrew backend. The base URL comes from config.json (runtime) or the
+ * environment files. */
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   private readonly http = inject(HttpClient);
-  readonly baseUrl = environment.apiUrl.replace(/\/$/, '');
+  readonly baseUrl = runtimeConfig().apiUrl.replace(/\/$/, '');
 
   listRuns(): Observable<RunSummary[]> {
     return this.http.get<RunSummary[]>(`${this.baseUrl}/runs`);
@@ -110,6 +113,30 @@ export class ApiService {
 
   workflow(runId: string): Observable<Workflow> {
     return this.http.get<Workflow>(`${this.baseUrl}/runs/${encodeURIComponent(runId)}/workflow`);
+  }
+
+  models(): Observable<ModelChoices> {
+    return this.http.get<ModelChoices>(`${this.baseUrl}/models`);
+  }
+
+  preview(runId: string, logs = false): Observable<PreviewState> {
+    const params = logs ? new HttpParams().set('logs', 'true') : undefined;
+    return this.http.get<PreviewState>(`${this.baseUrl}/runs/${encodeURIComponent(runId)}/preview`, { params });
+  }
+
+  startPreview(runId: string, stack?: string | null): Observable<PreviewState> {
+    return this.http.post<PreviewState>(`${this.baseUrl}/runs/${encodeURIComponent(runId)}/preview`, {
+      stack: stack ?? null,
+    });
+  }
+
+  stopPreview(runId: string): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/runs/${encodeURIComponent(runId)}/preview`);
+  }
+
+  /** The run report (Markdown); the browser downloads it (Content-Disposition). */
+  reportUrl(runId: string): string {
+    return `${this.baseUrl}/runs/${encodeURIComponent(runId)}/report.md`;
   }
 
   config(): Observable<ClientConfig> {

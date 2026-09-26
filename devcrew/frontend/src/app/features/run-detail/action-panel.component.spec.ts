@@ -47,6 +47,21 @@ describe('ActionPanelComponent', () => {
     expect(sent).toEqual([{ interrupt_id: 'i1', action: 'reject', feedback: 'Add due dates' }]);
   });
 
+  it('sends line comments from the final review with a rejection', () => {
+    TestBed.configureTestingModule({ imports: [ActionPanelComponent], providers: [provideNoopAnimations()] });
+    fixture = TestBed.createComponent(ActionPanelComponent);
+    fixture.componentRef.setInput('pending', { ...approval, title: 'Final approval', artifact: 'final', data: {} });
+    fixture.componentRef.setInput('extraFeedback', 'Review comments on the changes:\n- a.py:1\n  fix');
+    sent = [];
+    fixture.componentInstance.resumeRequested.subscribe((r) => sent.push(r));
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    click(el, 'Request changes');
+    expect(el.querySelector('pre.extra')?.textContent).toContain('a.py:1');
+    click(el, 'Send'); // the comments alone are enough
+    expect(sent).toEqual([{ interrupt_id: 'i1', action: 'reject', feedback: 'Review comments on the changes:\n- a.py:1\n  fix' }]);
+  });
+
   it('edits the artifact as JSON and rejects invalid JSON', () => {
     const el = setup(approval);
     click(el, 'Edit');

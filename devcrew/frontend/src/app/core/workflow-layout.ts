@@ -155,3 +155,161 @@ export function nodeElapsed(node: WorkflowNode, now: number): string {
 export function structureKey(nodes: readonly WorkflowNode[], edges: readonly WorkflowEdge[]): string {
   return `${nodes.map((n) => n.id).join('|')}#${edges.map((e) => e.id).join('|')}`;
 }
+
+// ------------------------------------------------------------------ compact overview (Phase 16)
+export const GROUP_PREFIX = 'group:';
+const FINISHED = new Set(['done', 'skipped']);
+
+export interface CompactResult {
+  nodes: WorkflowNode[];
+  edges: WorkflowEdge[];
+  /** group id -> the node ids it stands for */
+  groups: Map<string, string[]>;
+}
+
+function groupNode(id: string, label: string, detail: string, members: WorkflowNode[]): WorkflowNode {
+  const started = members.map((n) => n.started_at).filter((t): t is string => !!t).sort();
+  const finished = members.map((n) => n.finished_at).filter((t): t is string => !!t).sort();
+  return {
+    id,
+    kind: 'system',
+    label,
+    status: members.every((n) => n.status === 'skipped') ? 'skipped' : 'done',
+    detail,
+    step: null,
+    task_id: null,
+    stack: null,
+    started_at: started[0] ?? null,
+    finished_at: finished[finished.length - 1] ?? null,
+    runs: 0,
+    counters: {},
+    pending_interrupt_ids: [],
+    activity: [],
+  };
+}
+
+/**
+ * Long runs are hard to read, so finished parts fold into one node each (click to unfold):
+ *  - the finished stages before the work that is going on (requirements → … → scaffold),
+ *  - each wave of parallel tasks once all its tasks are finished ("Wave 2 · 4 tasks"),
+ *  - each finished pull request round (follow-up + push).
+ * Nothing that is running, waiting or failed is folded, nor anything in `keep`.
+ */
+export function compactWorkflow(
+  nodes: readonly WorkflowNode[],
+  edges: readonly WorkflowEdge[],
+  keep: ReadonlySet<string> = new Set(),
+): CompactResult {
+  const byId = new Map(nodes.map((n) => [n.id, n] as const));
+  const owner = new Map<string, string>(); // node id -> group id
+  const groups = new Map<string, string[]>();
+  const groupNodes = new Map<string, WorkflowNode>();
+  const foldable = (n: WorkflowNode) => FINISHED.has(n.status) && !keep.has(n.id);
+  const add = (id: string, label: string, detail: string, members: WorkflowNode[]) => {
+    if (keep.has(id)) {
+      return;
+    }
+    groups.set(id, members.map((m) => m.id));
+    groupNodes.set(id, groupNode(id, label, detail, members));
+    members.forEach((m) => owner.set(m.id, id));
+  };
+
+  // 1. runs of finished stages before the tasks and after them, in flow (rank) order
+  const rank = ranks(nodes, edges);
+  const isRound = (id: string) => /^(?:followup|push):\d+$/.test(id);
+  const taskRanks = nodes.filter((n) => n.kind === 'task').map((n) => rank.get(n.id) ?? 0);
+  const firstTask = taskRanks.length ? Math.min(...taskRanks) : Infinity;
+  const lastTask = taskRanks.length ? Math.max(...taskRanks) : -Infinity;
+  const stages = nodes
+    .filter((n) => n.kind !== 'task' && !isRound(n.id))
+    .sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0));
+  const span = (members: WorkflowNode[]) =>
+    members.length > 2 ? `${members[0].label} → … → ${members[members.length - 1].label}` : members.map((n) => n.label).join(' → ');
+  const leading = (segment: WorkflowNode[]) => {
+    const run: WorkflowNode[] = [];
+    for (const n of segment) {
+      if (!foldable(n)) {
+        break;
+      }
+      run.push(n);
+    }
+    return run;
+  };
+  const before = leading(stages.filter((n) => (rank.get(n.id) ?? 0) < firstTask));
+  if (before.length >= 3) {
+    add(`${GROUP_PREFIX}stages`, `${before.length} steps done`, span(before), before);
+  }
+  const after = leading(stages.filter((n) => (rank.get(n.id) ?? 0) > lastTask));
+  if (taskRanks.length && after.length >= 3) {
+    add(`${GROUP_PREFIX}checks`, `${after.length} steps done`, span(after), after);
+  }
+
+  // 2. waves: task nodes sharing a column (same rank) run in parallel
+  const columns = new Map<number, WorkflowNode[]>();
+  for (const n of nodes) {
+    if (n.kind === 'task') {
+      const r = rank.get(n.id) ?? 0;
+      columns.set(r, [...(columns.get(r) ?? []), n]);
+    }
+  }
+  [...columns.keys()]
+    .sort((a, b) => a - b)
+    .forEach((r, index) => {
+      const tasks = columns.get(r)!;
+      if (tasks.length >= 2 && tasks.every(foldable)) {
+        const done = tasks.filter((t) => t.status === 'done').length;
+        add(
+          `${GROUP_PREFIX}wave:${index + 1}`,
+          `Wave ${index + 1} · ${tasks.length} tasks`,
+          done === tasks.length ? 'all merged' : `${done} merged, ${tasks.length - done} skipped`,
+          tasks,
+        );
+      }
+    });
+
+  // 3. finished pull request rounds
+  const rounds = new Map<string, WorkflowNode[]>();
+  for (const n of nodes) {
+    const m = /^(?:followup|push):(\d+)$/.exec(n.id);
+    if (m) {
+      rounds.set(m[1], [...(rounds.get(m[1]) ?? []), n]);
+    }
+  }
+  for (const [round, members] of rounds) {
+    if (members.every(foldable)) {
+      add(`${GROUP_PREFIX}round:${round}`, `PR round ${round}`, members.map((n) => n.detail || n.label).join(' · '), members);
+    }
+  }
+
+  if (!groups.size) {
+    return { nodes: [...nodes], edges: [...edges], groups };
+  }
+  const outNodes: WorkflowNode[] = [];
+  const placed = new Set<string>();
+  for (const n of nodes) {
+    const g = owner.get(n.id);
+    if (!g) {
+      outNodes.push(n);
+    } else if (!placed.has(g)) {
+      placed.add(g);
+      outNodes.push(groupNodes.get(g)!);
+    }
+  }
+  const outEdges: WorkflowEdge[] = [];
+  const seen = new Set<string>();
+  for (const e of edges) {
+    const source = owner.get(e.source) ?? e.source;
+    const target = owner.get(e.target) ?? e.target;
+    if (source === target || !byId.has(e.source) || !byId.has(e.target)) {
+      continue;
+    }
+    const folded = source !== e.source || target !== e.target;
+    const id = folded ? `${source}->${target}:${e.kind}` : e.id;
+    if (seen.has(id)) {
+      continue;
+    }
+    seen.add(id);
+    outEdges.push(folded ? { ...e, id, source, target, label: e.kind === 'loop' ? e.label : null } : e);
+  }
+  return { nodes: outNodes, edges: outEdges, groups };
+}

@@ -7,7 +7,7 @@ const USAGE: RunUsage = {
   calls: 12, input_tokens: 40000, output_tokens: 5000, total_tokens: 45000, model_seconds: 95,
   elapsed_s: 1800, waiting_s: 600, active_s: 1200,
   by_role: [
-    { key: 'developer', calls: 8, input_tokens: 30000, output_tokens: 4000, model_seconds: 70 },
+    { key: 'developer', calls: 8, input_tokens: 30000, output_tokens: 4000, model_seconds: 70, models: ['qwen-coder:32b'] },
     { key: 'planner', calls: 4, input_tokens: 10000, output_tokens: 1000, model_seconds: 25 },
   ],
   by_task: [{ key: 'T1', calls: 8, input_tokens: 30000, output_tokens: 4000, model_seconds: 70 }],
@@ -29,7 +29,8 @@ describe('UsageViewComponent', () => {
     const rows = [...el.querySelectorAll('tbody tr')].map((r) =>
       [...r.querySelectorAll('td')].map((td) => td.textContent?.replace(/\s+/g, ' ').trim()),
     );
-    expect(rows[0].slice(1, 3)).toEqual(['8', '34,000 76%']);
+    expect(rows[0].slice(2, 4)).toEqual(['8', '34,000 76%']);
+    expect(rows[0][1]).toBe('qwen-coder:32b');
     expect(rows[0][0]).toContain('developer');
     expect(rows[2].slice(0, 3)).toEqual(['T1', '8', '34,000']);
   });

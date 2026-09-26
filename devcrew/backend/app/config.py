@@ -94,6 +94,10 @@ class Settings(BaseSettings):
     sandbox_enabled: bool = Field(
         default=True, description="Run tests/commands in Docker. Off = tests are not executed."
     )
+    # Live preview (Phase 16): the app runs in the sandbox on an internal network; a proxy
+    # publishes one port on 127.0.0.1. PREVIEW_HOST is the host name the UI links to.
+    preview_enabled: bool = True
+    preview_host: str = "localhost"
 
     # --- GitHub -----------------------------------------------------------------------------
     github_token: SecretStr | None = None

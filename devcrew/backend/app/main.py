@@ -11,7 +11,7 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import github, health, runs, workspace
+from app.api import github, health, preview, runs, workspace
 from app.config import Settings, get_settings
 from app.container import Container, default_engine
 from app.graph.factory import build_llm
@@ -58,6 +58,12 @@ def create_app(
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         async with factory(settings) as container:
             app.state.container = container
+            preview = getattr(getattr(container, "deps", None), "preview", None)
+            if preview is not None:  # previews of an earlier process are orphans now
+                try:
+                    await preview.backend.stop_all()
+                except Exception as exc:
+                    logger.warning("could not remove old previews: %s", exc)
             recovered = await container.manager.recover()
             if recovered:
                 logger.info("resumed %d run(s) after restart: %s", len(recovered), recovered)
@@ -67,6 +73,8 @@ def create_app(
             try:
                 yield
             finally:
+                if preview is not None:
+                    await preview.shutdown()
                 if watcher is not None:
                     watcher.cancel()
                     with contextlib.suppress(asyncio.CancelledError):
@@ -84,6 +92,7 @@ def create_app(
     app.include_router(runs.router)
     app.include_router(workspace.router)
     app.include_router(github.router)
+    app.include_router(preview.router)
     return app
 
 

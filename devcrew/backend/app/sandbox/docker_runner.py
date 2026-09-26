@@ -308,6 +308,11 @@ class DockerSandboxRunner:
 
         def _cleanup() -> None:
             self._remove_containers({"label": f"{LABEL_RUN}={run_id}"})
+            for network in self.client.networks.list(filters={"label": f"{LABEL_RUN}={run_id}"}):
+                try:  # the live preview's internal network
+                    network.remove()
+                except APIError as exc:
+                    logger.warning("could not remove network %s: %s", network.name, exc)
             prefix = f"devcrew-{run_key(run_id)}-"
             for volume in self.client.volumes.list():
                 if volume.name.startswith(prefix):

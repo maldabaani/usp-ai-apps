@@ -4,6 +4,7 @@ The detailed reference behind the [README](../README.md): architecture, every su
 how to run and develop DevCrew. Sections for later phases come first.
 
 - [Architecture](#architecture)
+- [UI, live preview and per-run models (Phase 16)](#ui-live-preview-and-per-run-models-phase-16)
 - [Real-run robustness and GitHub efficiency (Phase 15)](#real-run-robustness-and-github-efficiency-phase-15)
 - [Run control: usage, budgets, retries and earlier checks (Phase 14)](#run-control-usage-budgets-retries-and-earlier-checks-phase-14)
 - [Steering running work (Phase 13)](#steering-running-work-phase-13)
@@ -75,6 +76,75 @@ Design notes:
   summarizes failures for the Developer.
 - With `SANDBOX_ENABLED=false`, QA writes tests but they are not executed: results show
   `ran: false` and the task proceeds.
+
+## UI, live preview and per-run models (Phase 16)
+
+**Live preview.**
+- The **Preview** tab starts the generated app so you can click through it. It runs the
+  project's `preview_cmd` on its `preview_port`:
+
+  | Template | Command | Port |
+  |---|---|---|
+  | `python-fastapi` | `uvicorn app.main:app --host 0.0.0.0 --port 8000` | 8000 |
+  | `java-spring-boot` | `mvn -q -o spring-boot:run` | 8080 |
+  | `angular-standalone` | `npx ng serve --host 0.0.0.0 --port 4200` | 4200 |
+
+  For an existing repository, add `preview_cmd` and `preview_port` to a project in
+  `.devcrew.yaml`. There is no default, because DevCrew cannot guess how to start an unknown app.
+- It serves the **integration branch** (the merged work) and can start as soon as the project is
+  scaffolded. Dependencies are installed first, with the usual fixed install command.
+- **Isolation.** The app runs in the sandbox image with the usual limits (no capabilities,
+  read-only root, CPU/memory/pids limits). It sits on an **internal Docker network**
+  (`devcrew-pv-<run>`) that has no route out, so the app cannot reach the internet. A small proxy
+  container (DevCrew's own fixed TCP forwarder, not generated code) joins that network and
+  publishes one random port on **127.0.0.1** only, so the app is reachable from this machine
+  only. `PREVIEW_HOST` is the host name in the link.
+- One preview per run. **Restart** replaces it, and it stops on **Stop**, when the run ends,
+  or when the backend stops. Previews left over from an earlier backend are removed at startup.
+- `GET /runs/{id}/preview?logs=true` returns the status (`installing`, `starting`, `running`,
+  `failed`) and the app's last 200 log lines. `PREVIEW_ENABLED=false` turns previews off.
+
+![Preview](images/preview.png)
+
+**Models per run.** New run → **Models** picks the Ollama model per role for this run only (for
+example a bigger model for the Developer). The choices come from `GET /models`: each role's
+default from `models.yaml` and the models installed in Ollama. A model that is not installed is
+refused. When Ollama cannot be asked, any name is accepted. Other settings (context size,
+temperature) stay as in `models.yaml`. The header and the Usage tab show the models used, and
+**Run again** keeps them.
+
+**Final review with line comments.** At final approval, **Review the changes** shows the whole
+run's diff. Click a line to comment on it. **Request changes** sends the comments (file, line
+and code) as the feedback for the follow-up task, together with any text you add.
+
+![Final review](images/final-review.png)
+
+**Readable overview.**
+- **Compact** (on by default) folds finished parts into one node each: the finished stages
+  before the tasks (`6 steps done`), each finished wave of parallel tasks
+  (`Wave 1 · 3 tasks`), the finished checks after the tasks, and each finished PR round.
+  Click a folded node to open it. Nothing that is running, waiting or failed is folded.
+- **Map** shows a minimap.
+- The timeline is virtualized, so runs with tens of thousands of events stay fast. It has a
+  text filter; click an event for its full text and payload.
+- Files is a folder tree with a filter.
+
+![Compact overview](images/overview-compact.png)
+
+**Other additions.**
+- **Report ↓** downloads the whole run as Markdown (`GET /runs/{id}/report.md`): facts,
+  timeline, usage per role with the models, request, plan, design, tasks, gates, tests, Q&A
+  and your chat messages.
+- **🔔 Notify me** turns on browser notifications. You get one when something new needs you,
+  or when the run completes or fails, while the run page is open in a background tab.
+- **Presets** on New run save everything but the requirements (repository, target, mode,
+  budget, models) in this browser.
+- **Code search status.** When indexing or search fails (Chroma or the embedding model is
+  down), the header shows "⚠ code search unavailable" with the error. Agents then read files
+  directly.
+- **Runtime config.** The UI reads `config.json` at startup. The container writes it from
+  `DEVCREW_API_URL`, so the same image works with a backend on another host or port without a
+  rebuild.
 
 ## Real-run robustness and GitHub efficiency (Phase 15)
 
@@ -518,6 +588,9 @@ The backend runs on `http://localhost:8080`. docker-compose publishes every port
 | `GET /runs/{id}/files?ref=` | Files tracked on `integration` (default), `main` or `task:<id>` |
 | `GET /runs/{id}/files/{path}?ref=` | File content from git (binary-safe, size-capped, no path traversal, refs limited to the run's own branches) |
 | `GET /runs/{id}/diff?task_id=` | A task's changes (its branch vs. where it forked from integration), or the whole run's changes (integration vs. the scaffold on `main`) |
+| `GET /runs/{id}/report.md` | The run as one Markdown file (download) |
+| `GET/POST/DELETE /runs/{id}/preview` | Live preview: status and logs (`?logs=true`), start (`{stack?}`), stop |
+| `GET /models` | Each role's default model and the models installed in Ollama (`POST /runs` takes `models: {role: model}`) |
 | `GET /health` | DB, Chroma, Ollama, models, Docker, sandbox images, GitHub token |
 
 **Execution model.** `RunManager` runs at most one background drive per run (start, resume

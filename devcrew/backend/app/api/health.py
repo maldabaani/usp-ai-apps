@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from app.api.deps import ContainerDep
 from app.health import HealthReport, run_health_checks
+from app.llm.models_config import Role
 
 router = APIRouter(tags=["health"])
 
@@ -46,4 +47,26 @@ async def client_config(container: ContainerDep) -> ClientConfig:
         max_pr_rounds=s.max_pr_rounds,
         run_token_budget=s.run_token_budget,
         run_time_budget_min=s.run_time_budget_min,
+    )
+
+
+class RoleModel(BaseModel):
+    role: Role
+    model: str  # the default from config/models.yaml
+
+
+class ModelChoices(BaseModel):
+    """What the New run page offers: each role's default and the models Ollama has."""
+
+    roles: list[RoleModel]
+    installed: list[str] | None  # None: Ollama could not be asked (any name is accepted)
+
+
+@router.get("/models", response_model=ModelChoices)
+async def models(container: ContainerDep) -> ModelChoices:
+    llm = container.llm
+    installed = await llm.installed_models()
+    return ModelChoices(
+        roles=[RoleModel(role=r, model=llm.models.for_role(r).model) for r in Role],
+        installed=sorted(installed) if installed is not None else None,
     )

@@ -8,3 +8,6 @@ install_cmd: mvn -q dependency:resolve dependency:resolve-plugins && mvn -q depe
 build_cmd: mvn -q -DskipTests package
 test_cmd: mvn -q test
 coverage_cmd: mvn -q org.jacoco:jacoco-maven-plugin:0.8.12:prepare-agent test org.jacoco:jacoco-maven-plugin:0.8.12:report && awk -F, '$1 != "GROUP" {m += $8; c += $9} END {if (m + c > 0) printf "COVERAGE_LINES %.2f\n", 100 * c / (m + c)}' target/site/jacoco/jacoco.csv
+# Live preview (started on request from the run page, on an internal network)
+preview_cmd: mvn -q -o spring-boot:run
+preview_port: 8080

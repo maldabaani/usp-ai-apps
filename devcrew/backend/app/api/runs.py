@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Header, HTTPException, Query, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
 
 from app.api.deps import ContainerDep
 from app.api.schemas import (
@@ -26,6 +26,8 @@ from app.events.types import EventType
 from app.graph.budget import current_limit
 from app.graph.interrupts import ResumeAction
 from app.graph.steering import EXPIRED, PENDING, WITHDRAWN
+from app.services.code_search import code_search_status
+from app.services.report import run_report
 from app.services.run_manager import (
     InvalidResumeError,
     RunConflictError,
@@ -53,7 +55,28 @@ STATE_FIELDS = (
     "followup",
     "human_notes",
     "request_digest",
+    "models",
 )
+
+
+async def _checked_models(container: Any, chosen: dict[Any, str] | None) -> dict[str, str] | None:
+    """The run's own models: blank entries and role defaults dropped, unknown names refused."""
+    llm = container.llm
+    models = {
+        str(role): name.strip()
+        for role, name in (chosen or {}).items()
+        if name and name.strip() and name.strip() != llm.models.for_role(role).model
+    }
+    if not models:
+        return None
+    installed = await llm.installed_models()
+    missing = sorted(set(models.values()) - installed) if installed is not None else []
+    if missing:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            f"not installed in Ollama: {', '.join(missing)} (ollama pull <model>)",
+        )
+    return models
 
 
 async def _run_or_404(manager: RunManager, run_id: str) -> Any:
@@ -75,6 +98,9 @@ async def detail(manager: RunManager, run_id: str) -> RunDetail:
         wave=state.get("wave") or 0,
         pending=[PendingInput.of(p) for p in pending],
         pause_requested=await manager.deps.steering.pause_requested(run_id),
+        code_search=code_search_status(
+            manager.deps.rag, run_id, await manager.deps.event_cache.events(run_id)
+        ),
     )
 
 
@@ -101,6 +127,7 @@ async def create_run(body: CreateRunRequest, container: ContainerDep) -> RunSumm
         target=body.target,
         mode=body.mode,
         budget=body.budget(),
+        models=await _checked_models(container, body.models),
     )
     return RunSummary.of(run, busy=True)
 
@@ -118,16 +145,12 @@ async def get_run(run_id: str, container: ContainerDep) -> RunDetail:
     return await detail(container.manager, run_id)
 
 
-@router.get("/{run_id}/workflow", response_model=Workflow)
-async def get_workflow(run_id: str, container: ContainerDep) -> Workflow:
-    """The run as a workflow graph: stages, one node per task, statuses and activity."""
+async def _workflow(container: Any, run: Any, state: dict[str, Any]) -> Workflow:
     manager = container.manager
-    run = await _run_or_404(manager, run_id)
-    state = await manager.state(run_id)
-    pending = [] if manager.is_busy(run_id) else await manager.pending(run_id)
-    events = await container.deps.event_cache.events(run_id)
+    pending = [] if manager.is_busy(run.id) else await manager.pending(run.id)
+    events = await container.deps.event_cache.events(run.id)
     return build_workflow(
-        run_id=run_id,
+        run_id=run.id,
         status=run.status,
         request=run.request,
         created_at=run.created_at,
@@ -139,17 +162,47 @@ async def get_workflow(run_id: str, container: ContainerDep) -> Workflow:
     )
 
 
+async def _usage(container: Any, run: Any, state: dict[str, Any]) -> RunUsage:
+    events = await container.deps.event_cache.events(run.id)
+    finished = RunStatus(run.status).is_terminal and not container.manager.is_busy(run.id)
+    usage = summarize(events, finished=finished)
+    limit = current_limit(container.deps, state)
+    usage.budget = limit if limit.get("tokens") or limit.get("minutes") else None
+    return usage
+
+
+@router.get("/{run_id}/workflow", response_model=Workflow)
+async def get_workflow(run_id: str, container: ContainerDep) -> Workflow:
+    """The run as a workflow graph: stages, one node per task, statuses and activity."""
+    run = await _run_or_404(container.manager, run_id)
+    return await _workflow(container, run, await container.manager.state(run_id))
+
+
 @router.get("/{run_id}/usage", response_model=RunUsage)
 async def get_usage(run_id: str, container: ContainerDep) -> RunUsage:
     """Tokens per role and task, model time, working time and the run's budget."""
-    manager = container.manager
-    run = await _run_or_404(manager, run_id)
-    events = await container.deps.event_cache.events(run_id)
-    finished = RunStatus(run.status).is_terminal and not manager.is_busy(run_id)
-    usage = summarize(events, finished=finished)
-    limit = current_limit(container.deps, await manager.state(run_id))
-    usage.budget = limit if limit.get("tokens") or limit.get("minutes") else None
-    return usage
+    run = await _run_or_404(container.manager, run_id)
+    return await _usage(container, run, await container.manager.state(run_id))
+
+
+@router.get("/{run_id}/report.md", response_class=PlainTextResponse)
+async def get_report(run_id: str, container: ContainerDep) -> PlainTextResponse:
+    """The whole run as one Markdown file: facts, timeline, usage, plan, design, tasks, gates,
+    tests, Q&A and the chat."""
+    run = await _run_or_404(container.manager, run_id)
+    state = await container.manager.state(run_id)
+    text = run_report(
+        run=run,
+        state={**state, "request": state.get("request") or run.request, "run_id": run_id},
+        workflow=await _workflow(container, run, state),
+        usage=await _usage(container, run, state),
+        messages=await list_messages(run_id, container),
+    )
+    return PlainTextResponse(
+        text,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="devcrew-run-{run_id}.md"'},
+    )
 
 
 @router.get("/{run_id}/events")

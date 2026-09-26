@@ -73,3 +73,31 @@ export function parseUnifiedDiff(text: string): DiffFile[] {
   }
   return files;
 }
+
+/** A comment on one diff line (final approval review). */
+export interface LineComment {
+  id: number;
+  path: string;
+  line: number;
+  side: 'new' | 'old';
+  code: string;
+  text: string;
+}
+
+export function commentKey(path: string, line: number, side: 'new' | 'old'): string {
+  return `${path}\u0000${side}\u0000${line}`;
+}
+
+/** Line comments as feedback text for the follow-up task. */
+export function commentsAsFeedback(comments: LineComment[]): string {
+  if (!comments.length) {
+    return '';
+  }
+  const sorted = [...comments].sort((a, b) => a.path.localeCompare(b.path) || a.line - b.line);
+  const lines = sorted.map((c) => {
+    const where = `${c.path}:${c.line}${c.side === 'old' ? ' (removed line)' : ''}`;
+    const code = c.code.trim() ? `\n  \`${c.code.trim().slice(0, 160)}\`` : '';
+    return `- ${where}${code}\n  ${c.text.replace(/\n/g, '\n  ')}`;
+  });
+  return `Review comments on the changes:\n${lines.join('\n')}`;
+}

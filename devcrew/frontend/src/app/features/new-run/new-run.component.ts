@@ -14,10 +14,11 @@ import { MatCardModule } from '@angular/material/card';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
+import { MatSelectModule } from '@angular/material/select';
 import { Router } from '@angular/router';
 import { catchError, of } from 'rxjs';
 
-import { RunMode, RunTarget } from '../../core/api.models';
+import { AgentRole, ModelChoices, RunMode, RunTarget } from '../../core/api.models';
 import { ApiService } from '../../core/api.service';
 import {
   ACCEPTED_EXTENSIONS,
@@ -25,6 +26,7 @@ import {
   combineRequirements,
   isAcceptedFile,
 } from '../../core/requirements';
+import { RunPreset, deletePreset, loadPresets, savePreset } from '../../core/presets';
 import { AgentIconComponent } from '../../shared/agent-icon.component';
 import { MarkdownPipe } from '../../shared/markdown.pipe';
 
@@ -54,7 +56,7 @@ function issueValidator(control: AbstractControl<string>): ValidationErrors | nu
   selector: 'app-new-run',
   imports: [
     ReactiveFormsModule, MatCardModule, MatFormFieldModule, MatInputModule, MatCheckboxModule,
-    MatButtonModule, MatButtonToggleModule, MarkdownPipe, AgentIconComponent, DecimalPipe,
+    MatButtonModule, MatButtonToggleModule, MatSelectModule, MarkdownPipe, AgentIconComponent, DecimalPipe,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -71,6 +73,20 @@ function issueValidator(control: AbstractControl<string>): ValidationErrors | nu
     <mat-card>
       <mat-card-content>
         <form [formGroup]="form" (ngSubmit)="submit()" class="form">
+          <div class="presets">
+            <mat-form-field appearance="outline" class="preset-select" subscriptSizing="dynamic">
+              <mat-label>Preset</mat-label>
+              <mat-select [value]="presetName()" (selectionChange)="applyPreset($event.value)" aria-label="Preset">
+                <mat-option [value]="null">—</mat-option>
+                @for (p of presets(); track p.name) { <mat-option [value]="p.name">{{ p.name }}</mat-option> }
+              </mat-select>
+            </mat-form-field>
+            <button mat-button type="button" (click)="saveAsPreset()"
+                    title="Save the repository, target, mode, budget and models (not the requirements)">Save as preset</button>
+            @if (presetName()) {
+              <button mat-button type="button" (click)="removePreset()">Delete preset</button>
+            }
+          </div>
           <div class="target">
             <mat-button-toggle-group formControlName="target" aria-label="What to work on" hideSingleSelectionIndicator>
               <mat-button-toggle value="new">New project</mat-button-toggle>
@@ -178,6 +194,42 @@ function issueValidator(control: AbstractControl<string>): ValidationErrors | nu
               <p class="target-hint">Checked before every wave of tasks: at the limit the run asks you to
                 continue or stop. Empty uses the server default; 0 means no limit.</p>
             </details>
+            <details class="budget" [open]="modelsOpen()">
+              <summary>Models (optional)@if (modelCount()) { · {{ modelCount() }} changed }</summary>
+              @if (choices(); as c) {
+                <div class="models">
+                  @for (r of c.roles; track r.role) {
+                    @if (c.installed) {
+                      <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                        <mat-label>{{ r.role }}</mat-label>
+                        <mat-select [value]="modelFor(r.role)" (selectionChange)="setModel(r.role, $event.value)">
+                          <mat-option value="">default · {{ r.model }}</mat-option>
+                          @for (m of c.installed; track m) {
+                            @if (m !== r.model) { <mat-option [value]="m">{{ m }}</mat-option> }
+                          }
+                        </mat-select>
+                      </mat-form-field>
+                    } @else {
+                      <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                        <mat-label>{{ r.role }}</mat-label>
+                        <input matInput [value]="modelFor(r.role)" [placeholder]="'default · ' + r.model"
+                               (input)="setModel(r.role, $any($event.target).value)" />
+                      </mat-form-field>
+                    }
+                  }
+                </div>
+                <p class="target-hint">
+                  @if (c.installed) {
+                    Models installed in Ollama. A bigger model for the Developer or Reviewer often helps
+                    on hard tasks; other settings (context size, temperature) stay as in models.yaml.
+                  } @else {
+                    Ollama could not be asked for its models: type a model name (it must be pulled).
+                  }
+                </p>
+              } @else {
+                <p class="target-hint">Loading models…</p>
+              }
+            </details>
           }
           @if (fromRun()) { <p class="target-hint">Copied from run <code>{{ fromRun()!.slice(0, 12) }}</code>; edit anything before starting.</p> }
           @if (error(); as e) {
@@ -222,6 +274,9 @@ function issueValidator(control: AbstractControl<string>): ValidationErrors | nu
     .budget summary { cursor: pointer; color: var(--dc-text-dim); font-size: 13px; }
     .budget-fields { display: flex; gap: 12px; margin-top: 8px; }
     .budget-fields mat-form-field { width: 180px; }
+    .presets { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .preset-select { width: 240px; }
+    .models { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin-top: 8px; }
   `,
 })
 export class NewRunComponent {
@@ -260,8 +315,81 @@ export class NewRunComponent {
   readonly from = input<string | undefined>(undefined);
   readonly fromRun = signal<string | null>(null);
   readonly budgetOpen = signal(false);
+  readonly modelsOpen = signal(false);
+  /** role -> model chosen for this run ('' or missing: the models.yaml default). */
+  readonly models = signal<Record<string, string>>({});
+  readonly modelCount = computed(() => Object.values(this.models()).filter((m) => m.trim()).length);
+  readonly choices = toSignal<ModelChoices | null>(this.api.models().pipe(catchError(() => of(null))), {
+    initialValue: null,
+  });
+  readonly presets = signal<RunPreset[]>(loadPresets());
+  readonly presetName = signal<string | null>(null);
   readonly defaultTokens = computed(() => this.budgetHint(this.config()?.run_token_budget));
   readonly defaultMinutes = computed(() => this.budgetHint(this.config()?.run_time_budget_min));
+
+  modelFor(role: string): string {
+    return this.models()[role] || '';
+  }
+
+  setModel(role: AgentRole | string, model: string): void {
+    this.models.update((m) => {
+      const next = { ...m };
+      if (model.trim()) {
+        next[role] = model.trim();
+      } else {
+        delete next[role];
+      }
+      return next;
+    });
+  }
+
+  applyPreset(name: string | null): void {
+    this.presetName.set(name);
+    const preset = this.presets().find((p) => p.name === name);
+    if (!preset) {
+      return;
+    }
+    this.form.patchValue({
+      repo_target: preset.repo_target,
+      target: preset.target,
+      mode: preset.mode,
+      create_repo: preset.create_repo,
+      token_budget: preset.token_budget,
+      time_budget_min: preset.time_budget_min,
+    });
+    this.models.set({ ...(preset.models ?? {}) });
+    this.budgetOpen.set(preset.token_budget !== null || preset.time_budget_min !== null);
+    this.modelsOpen.set(Object.keys(preset.models ?? {}).length > 0);
+  }
+
+  saveAsPreset(): void {
+    const name = prompt('Preset name', this.presetName() ?? this.form.controls.repo_target.value)?.trim();
+    if (!name) {
+      return;
+    }
+    const v = this.form.getRawValue();
+    this.presets.set(
+      savePreset({
+        name,
+        repo_target: v.repo_target,
+        target: v.target,
+        mode: v.mode,
+        create_repo: v.create_repo,
+        token_budget: v.token_budget,
+        time_budget_min: v.time_budget_min,
+        models: this.models(),
+      }),
+    );
+    this.presetName.set(name);
+  }
+
+  removePreset(): void {
+    const name = this.presetName();
+    if (name && confirm(`Delete the preset "${name}"?`)) {
+      this.presets.set(deletePreset(name));
+      this.presetName.set(null);
+    }
+  }
 
   private budgetHint(value: number | undefined): string {
     return value ? `default ${value}` : 'default: none';
@@ -298,6 +426,8 @@ export class NewRunComponent {
           mode: run.mode ?? 'full',
           create_repo: false,
         });
+        this.models.set({ ...(run.models ?? {}) });
+        this.modelsOpen.set(Object.keys(run.models ?? {}).length > 0);
         this.fromRun.set(run.id);
         this.mode.set('preview');
       },
@@ -385,6 +515,7 @@ export class NewRunComponent {
           mode: existing ? value.mode : 'full',
           ...(value.token_budget !== null ? { token_budget: value.token_budget } : {}),
           ...(value.time_budget_min !== null ? { time_budget_min: value.time_budget_min } : {}),
+          ...(this.modelCount() ? { models: this.models() } : {}),
         });
     started.subscribe({
       next: (run) => void this.router.navigate(['/runs', run.id]),

@@ -8,6 +8,8 @@ frontend/). A `.devcrew.yaml` at the root can list the projects and override any
       - stack: python
         path: backend
         test_cmd: python -m pytest -q tests/unit
+        preview_cmd: uvicorn app.main:app --host 0.0.0.0 --port 8000   # live preview (optional)
+        preview_port: 8000
 """
 
 from __future__ import annotations
@@ -87,6 +89,8 @@ class _ProjectOverride(BaseModel):
     build_cmd: str | None = None
     test_cmd: str | None = None
     coverage_cmd: str | None = None
+    preview_cmd: str | None = None
+    preview_port: int | None = None
 
 
 class _Config(BaseModel):
@@ -131,7 +135,7 @@ def coverage_for_python(sources: list[str]) -> str:
 
 
 def project_for(
-    stack: str, path: str, root: Path | None = None, **overrides: str | None
+    stack: str, path: str, root: Path | None = None, **overrides: str | int | None
 ) -> ExistingProject:
     if stack not in DEFAULTS:
         raise DetectionError(f"unsupported stack '{stack}' (use python, java or angular)")
