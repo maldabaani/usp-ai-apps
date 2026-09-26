@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable, Sequence
+import time
+from collections.abc import Awaitable, Callable, Sequence
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -22,6 +24,31 @@ from app.llm.models_config import ModelsConfig, ModelSpec, Role
 logger = logging.getLogger(__name__)
 
 ChatFactory = Callable[[ModelSpec], BaseChatModel]
+
+
+@dataclass(frozen=True)
+class CallScope:
+    """Which run / graph node / task an LLM call belongs to (set by node instrumentation)."""
+
+    run_id: str
+    node: str
+    task_id: str | None = None
+
+
+llm_scope: ContextVar[CallScope | None] = ContextVar("llm_scope", default=None)
+
+
+@dataclass(frozen=True)
+class CallUsage:
+    scope: CallScope
+    role: Role
+    model: str
+    input_tokens: int
+    output_tokens: int
+    duration_ms: int
+
+
+UsageHook = Callable[[CallUsage], Awaitable[None]]
 
 
 @dataclass
@@ -77,6 +104,7 @@ class LLMGateway:
         self._chat_factory = chat_factory or self._default_chat_factory
         self._chat_cache: dict[ModelSpec, BaseChatModel] = {}
         self.usage = UsageTracker()
+        self.on_usage: UsageHook | None = None  # per-call usage (run usage and budgets)
 
     def _default_chat_factory(self, spec: ModelSpec) -> BaseChatModel:
         return ChatOllama(
@@ -121,8 +149,23 @@ class LLMGateway:
         if output_format is not None:
             kwargs["format"] = output_format
         async with self._semaphore:
+            started = time.monotonic()
             result = await model.ainvoke(list(messages), **kwargs)
+            duration_ms = int((time.monotonic() - started) * 1000)
         if not isinstance(result, AIMessage):
             raise TypeError(f"Expected AIMessage from chat model, got {type(result).__name__}")
         self.usage.record(role, result)
+        scope = llm_scope.get()
+        if self.on_usage is not None and scope is not None:
+            meta = result.usage_metadata
+            await self.on_usage(
+                CallUsage(
+                    scope=scope,
+                    role=role,
+                    model=self.spec(role).model,
+                    input_tokens=meta["input_tokens"] if meta else 0,
+                    output_tokens=meta["output_tokens"] if meta else 0,
+                    duration_ms=duration_ms,
+                )
+            )
         return result

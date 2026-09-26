@@ -23,6 +23,7 @@ from langgraph.types import Command
 
 from app.events.types import EventType
 from app.graph.coordinator import make_task_coordinator, make_task_escalate
+from app.graph.interrupts import InterruptKind, InterruptRequest, ResumeAction, request_input
 from app.graph.nodes.developer import make_developer
 from app.graph.nodes.human import make_ask_human
 from app.graph.nodes.qa import make_qa
@@ -126,11 +127,30 @@ def make_merge(deps: GraphDeps) -> NodeFn:
     return merge
 
 
+def make_hold(deps: GraphDeps) -> NodeFn:
+    """Paused before this task's next developer turn (Phase 14); POST /pause resumes it."""
+
+    async def hold(state: dict[str, Any]) -> Command[str]:
+        task_id = state["task"]["id"]
+        request_input(
+            InterruptRequest(
+                kind=InterruptKind.PAUSE,
+                title=f"Paused before {task_id}'s next developer turn",
+                allowed_actions=[ResumeAction.APPROVE],
+                data={"task_id": task_id, "node": "developer"},
+            )
+        )
+        return Command(goto="developer")
+
+    return hold
+
+
 def build_task_subgraph(deps: GraphDeps) -> CompiledStateGraph[Any, Any, Any, Any]:
     g = StateGraph(TaskWorkerState, output_schema=TaskWorkerOutput)
     nodes: dict[str, tuple[NodeFn, tuple[str, ...]]] = {
         "prepare": (make_prepare(deps), ()),
-        "developer": (make_developer(deps), ("reviewer", "ask_human", "coordinator")),
+        "developer": (make_developer(deps), ("reviewer", "ask_human", "coordinator", "hold")),
+        "hold": (make_hold(deps), ("developer",)),
         "ask_human": (
             make_ask_human(deps, scratch_key="task_scratch", pending_key="task_pending_question"),
             ("developer",),

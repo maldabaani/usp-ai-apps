@@ -14,6 +14,7 @@ const STATUS_TEXT: Record<MessageStatus, string> = {
   applied: 'applied',
   answered: 'answered',
   expired: 'not applied (the run ended)',
+  withdrawn: 'withdrawn',
 };
 
 /**
@@ -35,7 +36,22 @@ const STATUS_TEXT: Record<MessageStatus, string> = {
               <span class="state">{{ statusText[m.status] }}</span>
               <time>{{ m.created_at | date: 'HH:mm:ss' }}</time>
             </div>
-            <p class="text">{{ m.text }}</p>
+            @if (editingId() === m.id) {
+              <div class="edit">
+                <textarea [ngModel]="editText()" (ngModelChange)="editText.set($event)" [name]="'edit' + m.id" rows="2"
+                          aria-label="Edit message"></textarea>
+                <button mat-button type="button" (click)="saveEdit(m)" [disabled]="busy() || !editText().trim()">Save</button>
+                <button mat-button type="button" (click)="editingId.set(null)">Back</button>
+              </div>
+            } @else {
+              <p class="text">{{ m.text }}</p>
+            }
+            @if (editable() && m.status === 'pending' && editingId() !== m.id) {
+              <div class="row-actions">
+                <button mat-button type="button" (click)="startEdit(m)" [disabled]="busy()">Edit</button>
+                <button mat-button type="button" (click)="withdraw.emit(m.id)" [disabled]="busy()">Withdraw</button>
+              </div>
+            }
             @if (m.reply) { <p class="reply"><b>DevCrew:</b> {{ m.reply }}</p> }
           </li>
         }
@@ -72,7 +88,13 @@ const STATUS_TEXT: Record<MessageStatus, string> = {
     .messages li { padding: 8px 10px; border-radius: 8px; background: rgba(8, 17, 34, 0.7);
                    border-left: 3px solid var(--dc-cyan); font-size: 13px; }
     .messages li.pending { border-left-color: var(--dc-amber); }
-    .messages li.expired { border-left-color: var(--dc-text-faint); opacity: 0.75; }
+    .messages li.expired, .messages li.withdrawn { border-left-color: var(--dc-text-faint); opacity: 0.75; }
+    .messages li.withdrawn .text { text-decoration: line-through; }
+    .edit { display: flex; gap: 6px; align-items: flex-start; margin-top: 4px; }
+    .edit textarea { flex: 1; font: inherit; background: var(--dc-code-bg); color: inherit;
+                     border: 1px solid var(--dc-border-strong); border-radius: 6px; padding: 4px 6px; }
+    .row-actions { display: flex; gap: 4px; margin-top: 2px; }
+    .row-actions button { min-width: 0; padding: 0 8px; height: 26px; font-size: 12px; }
     .messages li.answered, .messages li.applied, .messages li.delivered { border-left-color: var(--dc-teal); }
     .head { display: flex; gap: 10px; align-items: baseline; font-size: 12px; }
     .who { font-weight: 700; color: var(--dc-cyan); }
@@ -95,7 +117,13 @@ export class ChatComponent {
   readonly taskId = input<string | null>(null);
   readonly disabled = input(false);
   readonly busy = input(false);
+  /** Waiting messages can be edited or withdrawn (the run-level chat). */
+  readonly editable = input(false);
   readonly send = output<MessageIn>();
+  readonly edited = output<{ id: number; text: string }>();
+  readonly withdraw = output<number>();
+  readonly editingId = signal<number | null>(null);
+  readonly editText = signal('');
 
   readonly text = signal('');
   readonly target = signal<string | null>(null);
@@ -104,6 +132,19 @@ export class ChatComponent {
     const task = this.taskId();
     return task ? this.messages().filter((m) => m.task_id === task) : this.messages();
   });
+
+  startEdit(m: RunMessage): void {
+    this.editText.set(m.text);
+    this.editingId.set(m.id);
+  }
+
+  saveEdit(m: RunMessage): void {
+    const text = this.editText().trim();
+    if (text) {
+      this.edited.emit({ id: m.id, text });
+      this.editingId.set(null);
+    }
+  }
 
   submit(): void {
     const text = this.text().trim();

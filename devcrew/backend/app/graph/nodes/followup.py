@@ -32,12 +32,15 @@ from app.github.delivery import DeliveryError
 from app.graph.interrupts import InterruptKind, InterruptRequest, ResumeAction, request_input
 from app.graph.runtime import GraphDeps, NodeFn
 from app.graph.state import Design, Plan, PlanTask, Stack, TaskState, dump, get_design, get_plan
+from app.graph.steering import open_run_messages
 from app.llm.models_config import Role
 from app.llm.structured import StructuredOutputError, generate_structured
 from app.tools.git import GitError, GitRepo
 
 MARKER = "<!-- devcrew -->"
 REVIEW_KINDS = ("review", "comment", "review_body")
+# review comments plus the owner's chat messages (Phase 14): all are triaged and answered
+REPLY_KINDS = (*REVIEW_KINDS, "chat")
 
 # Changes a reviewer asks for in these places always need the human.
 BIG_PATHS = re.compile(
@@ -142,10 +145,27 @@ def triage_context(state: dict[str, Any], reviews: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+async def chat_items(deps: GraphDeps, state: dict[str, Any]) -> list[dict[str, Any]]:
+    """The owner's open chat messages as PR-follow-up items (sent while the PR is watched)."""
+    handled = set(followup_state(state)["handled"])
+    return [
+        {
+            "kind": "chat",
+            "key": f"chat:{m.id}",
+            "user": "you",
+            "body": m.text,
+            "message_id": m.id,
+        }
+        for m in await open_run_messages(deps, state)
+        if f"chat:{m.id}" not in handled
+    ]
+
+
 def _reply(item: dict[str, Any], body: str, *, resolve: bool = False) -> dict[str, Any]:
     return {
         "key": item["key"],
         "kind": item["kind"],
+        "message_id": item.get("message_id"),
         "comment_id": item.get("thread_root") or item.get("comment_id"),
         "body": body,
         "resolve": resolve and item["kind"] == "review",
@@ -212,7 +232,8 @@ def make_followup(deps: GraphDeps) -> NodeFn:
         number = fs["round"] + 1
         over_limit = number > deps.settings.max_pr_rounds
         items: list[dict[str, Any]] = list(state.get("followup_items") or [])
-        reviews = [i for i in items if i["kind"] in REVIEW_KINDS]
+        reviews = [i for i in items if i["kind"] in REPLY_KINDS]
+        chat = [i for i in items if i["kind"] == "chat"]
         ignored = [i for i in items if i["kind"] == "ignored"]
         plan, design = get_plan(state), get_design(state)
 
@@ -254,8 +275,10 @@ def make_followup(deps: GraphDeps) -> NodeFn:
                 continue
             category = d.category
             reason = d.reason
-            forced = forced_big(item)
-            if forced and category == "small":
+            if item["kind"] == "chat":
+                if category == "big":  # the owner asked for it: no second approval
+                    category, reason = "small", f"you asked for it in the chat ({d.reason})"
+            elif (forced := forced_big(item)) and category == "small":
                 category, reason = "big", forced
             if over_limit:
                 category, reason = (
@@ -373,6 +396,11 @@ def make_followup(deps: GraphDeps) -> NodeFn:
             "followup_triage": proposals,
             "followup_items": None,
         }
+        if chat:
+            ids = [int(i["message_id"]) for i in chat]
+            reply = f"Taken into follow-up round {number}."
+            await deps.steering.update_messages(ids, status="applied", action="note", reply=reply)
+            update["steer_applied"] = [*(state.get("steer_applied") or []), *ids]
         if any(p["category"] == "big" for p in proposals):
             return Command(
                 goto="approve_followup", update={**update, "status": RunStatus.NEEDS_HUMAN.value}
@@ -443,7 +471,7 @@ def make_approve_followup(deps: GraphDeps) -> NodeFn:
         declined = [
             _reply(p["item"], f"Not changed: {payload.feedback}")
             for p in big
-            if p["item"]["kind"] in REVIEW_KINDS
+            if p["item"]["kind"] in REPLY_KINDS
         ]
         fs = {**fs, "pending_replies": fs["pending_replies"] + declined}
         small = [p for p in proposals if p["category"] == "small"]
@@ -472,7 +500,7 @@ def make_report_followup(deps: GraphDeps) -> NodeFn:
                     + str(ts.get("error") or ts.get("status"))
                 )
                 for item in info["items"]:
-                    if item["kind"] in REVIEW_KINDS:
+                    if item["kind"] in REPLY_KINDS:
                         replies.append(_reply(item, body, resolve=merged))
         if deps.github is not None and replies and state.get("pr_url"):
             await post_replies(deps, state, replies)
@@ -496,6 +524,19 @@ async def post_replies(
     try:
         threads: list[dict[str, Any]] | None = None
         for r in replies:
+            if r["kind"] == "chat":  # answered in DevCrew's chat, not on GitHub
+                await deps.steering.update_messages(
+                    [int(r["message_id"])], status="answered", reply=r["body"]
+                )
+                await deps.emit(
+                    run_id,
+                    EventType.MESSAGE,
+                    node="report_followup",
+                    message_id=r["message_id"],
+                    status="answered",
+                    reply=r["body"],
+                )
+                continue
             body = f"{r['body']}\n\n{MARKER}"
             try:
                 if r["kind"] == "review" and r.get("comment_id"):

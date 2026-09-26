@@ -58,6 +58,9 @@ def developer_tools(deps: GraphDeps, ctx: TaskCtx, budget: QuestionBudget) -> li
 
 def make_developer(deps: GraphDeps) -> NodeFn:
     async def developer(state: dict[str, Any]) -> Command[str]:
+        # Safe point (Phase 14): pause between a task's developer iterations.
+        if await deps.steering.pause_requested(state["run_id"]):
+            return Command(goto="hold")
         ctx = load_task_ctx(deps, state)
         max_iter = deps.settings.max_dev_iterations
         if ctx.ts.iterations >= max_iter:

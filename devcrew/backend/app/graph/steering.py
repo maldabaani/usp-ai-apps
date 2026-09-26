@@ -27,12 +27,13 @@ from app.graph.state import Plan, PlanTask, TaskState, TaskStatus, dump, get_pla
 from app.llm.models_config import Role
 from app.llm.structured import StructuredOutputError, generate_structured
 
-PENDING, DELIVERED, APPLIED, ANSWERED, EXPIRED = (
+PENDING, DELIVERED, APPLIED, ANSWERED, EXPIRED, WITHDRAWN = (
     "pending",
     "delivered",
     "applied",
     "answered",
     "expired",
+    "withdrawn",
 )
 
 
@@ -104,7 +105,7 @@ async def open_run_messages(deps: GraphDeps, state: dict[str, Any]) -> list[RunM
     applied = set(state.get("steer_applied") or [])
     out = []
     for m in await deps.steering.messages(state["run_id"]):
-        if m.id in applied or m.status == EXPIRED:
+        if m.id in applied or m.status in (EXPIRED, WITHDRAWN):
             continue
         if m.task_id is None or (m.status == PENDING and _task_final(state, m.task_id)):
             out.append(m)
@@ -113,6 +114,67 @@ async def open_run_messages(deps: GraphDeps, state: dict[str, Any]) -> list[RunM
 
 def notes_text(notes: Sequence[dict[str, Any]]) -> list[str]:
     return [str(n["text"]) for n in notes]
+
+
+class MergedNotes(BaseModel):
+    notes: list[str] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _short_enough(self, info: ValidationInfo) -> Self:
+        limit = (info.context or {}).get("limit")
+        total = sum(len(n) for n in self.notes)
+        if limit and total > limit:
+            raise ValueError(f"the notes have {total} characters; merge them to at most {limit}")
+        return self
+
+
+async def fit_notes(
+    deps: GraphDeps, run_id: str, notes: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Keep the notes within MAX_NOTES_CHARS (they are required prompt sections): the
+    Coordinator merges them; if that fails, the oldest notes are dropped (and reported)."""
+    limit = deps.settings.max_notes_chars
+    if sum(len(str(n["text"])) for n in notes) <= limit:
+        return notes
+    context = "Notes to merge (oldest first):\n" + "\n".join(f"- {n['text']}" for n in notes)
+    try:
+        result = await generate_structured(
+            deps.llm,
+            Role.COORDINATOR,
+            [
+                SystemMessage(content=deps.prompts.get("notes_merge", MergedNotes)),
+                HumanMessage(content=context),
+            ],
+            MergedNotes,
+            context={"limit": limit},
+        )
+        merged = [{"id": None, "text": t, "merged": True} for t in result.value.notes]
+        await deps.emit(
+            run_id,
+            EventType.TOOL_RESULT,
+            node="steer",
+            tool="merge_notes",
+            ok=True,
+            result=f"merged {len(notes)} notes into {len(merged)}",
+        )
+        return merged
+    except StructuredOutputError as exc:
+        kept: list[dict[str, Any]] = []
+        size = 0
+        for n in reversed(notes):
+            size += len(str(n["text"]))
+            if size > limit:
+                break
+            kept.insert(0, n)
+        await deps.emit(
+            run_id,
+            EventType.ERROR,
+            node="steer",
+            message=(
+                f"could not merge the notes ({exc}); kept the newest {len(kept)} of {len(notes)}"
+            ),
+        )
+        return kept
 
 
 async def absorb_notes(
@@ -131,6 +193,7 @@ async def absorb_notes(
         [m.id for m in messages], status=APPLIED, action="note", reply=reply
     )
     applied = [*(state.get("steer_applied") or []), *(m.id for m in messages)]
+    notes = await fit_notes(deps, state["run_id"], notes)
     return notes, {"human_notes": notes, "steer_applied": applied}
 
 
@@ -252,6 +315,7 @@ async def apply_at_schedule(
         await deps.steering.update_messages([m.id], status=status, action=action, reply=reply)
         await emit_message(deps, run_id, m, status=status, action=action, reply=reply)
 
+    notes = await fit_notes(deps, run_id, notes)
     update: dict[str, Any] = {
         "human_notes": notes,
         "steer_applied": [*(state.get("steer_applied") or []), *(m.id for m in messages)],
@@ -290,6 +354,20 @@ async def task_notes(
     return notes_text(state.get("human_notes") or []) + [
         f"(for this task) {m.text.strip()}" for m in mine
     ]
+
+
+async def take_for_feedback(
+    deps: GraphDeps, state: dict[str, Any], where: str
+) -> tuple[list[str], list[int]]:
+    """Final approval (Phase 14): open run messages become part of the rejection feedback."""
+    messages = await open_run_messages(deps, state)
+    reply = f"Added to {where}."
+    for m in messages:
+        await emit_message(deps, state["run_id"], m, status=APPLIED, action="note", reply=reply)
+    await deps.steering.update_messages(
+        [m.id for m in messages], status=APPLIED, action="note", reply=reply
+    )
+    return [m.text for m in messages], [m.id for m in messages]
 
 
 async def expire_messages(deps: GraphDeps, run_id: str) -> None:

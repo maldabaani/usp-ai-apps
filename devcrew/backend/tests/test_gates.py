@@ -146,6 +146,15 @@ async def test_secret_in_a_task_goes_back_to_the_developer(tmp_path: Path) -> No
     assert {r["name"]: r["status"] for r in state["gates"]["results"]}["secrets"] == "passed"
 
 
+async def test_the_task_secret_scan_includes_the_tests_qa_wrote(tmp_path: Path) -> None:
+    runner = FakeRunner()
+    h = gated(tmp_path, runner)
+    await run_to_final(h)
+    scans = [(task, cmd) for task, cmd, _ in runner.commands() if "gitleaks" in cmd]
+    t1 = next(cmd for task, cmd in scans if task == "T1")
+    assert "app/schemas/todo.py" in t1 and "tests/test_t1.py" in t1
+
+
 async def test_failed_gate_gets_an_automatic_fix_task(tmp_path: Path) -> None:
     runner = FakeRunner()
     runner.script("osv-scanner", (1, OSV_VULN))  # first integration: vulnerable dependency

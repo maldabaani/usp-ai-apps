@@ -68,4 +68,22 @@ describe('ChatComponent', () => {
     const el = setup({ disabled: true });
     expect(el.querySelector('form')).toBeNull();
   });
+
+  it('edits and withdraws waiting messages when editable', () => {
+    const el = setup({ messages: [msg(1), msg(2, { status: 'applied' })], editable: true });
+    const edits: { id: number; text: string }[] = [];
+    const withdrawn: number[] = [];
+    fixture.componentInstance.edited.subscribe((e) => edits.push(e));
+    fixture.componentInstance.withdraw.subscribe((id) => withdrawn.push(id));
+    const items = [...el.querySelectorAll('.messages li')];
+    expect(items[0].querySelectorAll('.row-actions button').length).toBe(2);
+    expect(items[1].querySelector('.row-actions')).toBeNull(); // already applied
+    const c = fixture.componentInstance;
+    c.startEdit(msg(1));
+    c.editText.set('message 1, clearer');
+    c.saveEdit(msg(1));
+    expect(edits).toEqual([{ id: 1, text: 'message 1, clearer' }]);
+    ([...items[0].querySelectorAll('.row-actions button')].find((b) => b.textContent?.trim() === 'Withdraw') as HTMLButtonElement).click();
+    expect(withdrawn).toEqual([1]);
+  });
 });

@@ -23,6 +23,7 @@ from app.graph.state import (
     get_design,
     get_plan,
 )
+from app.graph.steering import take_for_feedback
 
 APPROVE_REJECT_EDIT = [ResumeAction.APPROVE, ResumeAction.REJECT, ResumeAction.EDIT]
 
@@ -168,8 +169,13 @@ def make_approve_final(deps: GraphDeps) -> NodeFn:
                 update={"status": RunStatus.DELIVERING.value, "final_approved": True},
             )
         # Rejected: schedule a follow-up task carrying the feedback, then integrate again.
+        # Chat messages sent since the last wave join the feedback (Phase 14).
+        chat, chat_ids = await take_for_feedback(deps, state, "your final-approval feedback")
+        feedback = payload.feedback or ""
+        if chat:
+            feedback += "\n\nAlso from the chat:\n" + "\n".join(f"- {t}" for t in chat)
         number = state.get("followups", 0) + 1
-        task = followup_task(plan, payload.feedback or "", number)
+        task = followup_task(plan, feedback, number)
         new_plan = plan.model_copy(update={"tasks": [*plan.tasks, task]})
         return Command(
             goto="schedule",
@@ -177,7 +183,8 @@ def make_approve_final(deps: GraphDeps) -> NodeFn:
                 "plan": dump(new_plan),
                 "tasks": {task.id: dump(TaskState(id=task.id))},
                 "followups": number,
-                "final_feedback": payload.feedback,
+                "final_feedback": feedback,
+                "steer_applied": [*(state.get("steer_applied") or []), *chat_ids],
                 "status": RunStatus.EXECUTING.value,
             },
         )

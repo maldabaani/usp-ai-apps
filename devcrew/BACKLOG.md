@@ -36,11 +36,11 @@ robustness, **P3** = nice to have.
 
 ## Robustness
 
-- [ ] **BL-010** (P2, from P2) A run that fails on an infrastructure error (Ollama down, Docker
+- [x] **BL-010** (P2, from P2) A run that fails on an infrastructure error (Ollama down, Docker
   error) is marked `failed` but is resumable from its checkpoint (`RunDriver.continue_run`).
   *P6: runs that were mid-flight when the backend stopped are now continued automatically on
   startup.* Still open: a "retry" for runs already marked `failed` (not in the specified API;
-  would be `POST /runs/{id}/retry` + a UI button).
+  would be `POST /runs/{id}/retry` + a UI button). *Done in P14: `POST /runs/{id}/retry` and a Retry button continue a failed run from its last checkpoint.*
 - [ ] **BL-011** (P2, from P3) Installed-dependency tracking (`Sandbox._installed`) is in memory:
   after a backend restart the next command re-runs the install step once. Persist the manifest
   hash (e.g. in a marker file inside the dependency volume) if installs get slow.
@@ -79,9 +79,9 @@ robustness, **P3** = nice to have.
   already-finished parallel tasks by checking `task.result` (they stay in
   `snapshot.interrupts` until the wave ends). Relies on LangGraph snapshot behavior; covered by
   in-memory and Postgres tests, re-check on LangGraph upgrades.
-- [ ] **BL-052** (P2, from P5) Tasks are tested on their own branch only; breakages caused by the
+- [x] **BL-052** (P2, from P5) Tasks are tested on their own branch only; breakages caused by the
   combination of parallel tasks surface in the final integration test run. Consider running the
-  integration test suite after each wave and routing failures to the Coordinator.
+  integration test suite after each wave and routing failures to the Coordinator. *Done in P14: the tests run after every wave; a failure adds a WAVEFIX task.*
 - [ ] **BL-053** (P2, from P5) Coordinator decisions (replan/split quality, when to escalate) are
   only exercised with scripted models; evaluate with the real model (see BL-002) and tune
   `prompts/coordinator.md`.
@@ -106,9 +106,9 @@ robustness, **P3** = nice to have.
 
 ## GitHub delivery
 
-- [ ] **BL-080** (P2, from P8) Delivery to a non-empty repository is refused (greenfield only).
+- [x] **BL-080** (P2, from P8) Delivery to a non-empty repository is refused (greenfield only).
   Supporting "deliver into an existing repo" would need a base-branch choice and rebasing the
-  scaffold, which is out of the specified scope.
+  scaffold, which is out of the specified scope. *Done in P11: existing repositories get a PR against their default branch.*
 - [ ] **BL-081** (P3, from P8) After a final rejection the follow-up task is merged into the same
   branch; if a PR was already opened (e.g. delivery retried later), the same PR is reused and
   its body is not refreshed. Consider updating the PR body on re-delivery.
@@ -212,8 +212,8 @@ never pushes to the default branch of an existing repo, and never pushes before 
   - Only one project per stack (a second one needs `.devcrew.yaml`).
   - Detection looks at the root and one level below.
   - Gradle, Poetry-only or pnpm/yarn-lock-only setups use defaults that may not fit.
-- [ ] **BL-124** (P2, from P11) The per-task secret scan only covers files changed by the
-  developer before QA runs. Tests QA adds are scanned at integration, not per task.
+- [x] **BL-124** (P2, from P11) The per-task secret scan only covers files changed by the
+  developer before QA runs. Tests QA adds are scanned at integration, not per task. *Done in P14: the per-task scan also covers the tests QA wrote.*
 - [ ] **BL-125** (P3, from P11) A coverage baseline and a dependency scan of the base branch
   run once per existing-repository run (one extra test run). Consider caching them per base
   commit.
@@ -249,20 +249,36 @@ never pushes to the default branch of an existing repo, and never pushes before 
 
 ## Steering (Phase 13)
 
-- [ ] **BL-140** (P2, from P13) Pause only works between waves. A running task finishes its
+- [x] **BL-140** (P2, from P13) Pause only works between waves. A running task finishes its
   current iterations first, up to `MAX_DEV_ITERATIONS` with review and QA. Pausing between a
-  task's developer iterations needs per-task interrupts inside the parallel wave.
-- [ ] **BL-141** (P2, from P13) Messages sent during the integration tests, gates, final
+  task's developer iterations needs per-task interrupts inside the parallel wave. *Done in P14: tasks pause before their next developer iteration.*
+- [x] **BL-141** (P2, from P13) Messages sent during the integration tests, gates, final
   approval or PR watching wait for the next wave, so they often expire. Consider:
   - turning them into final-approval feedback;
-  - using them in the next follow-up round.
+  - using them in the next follow-up round. *Done in P14: final-approval feedback and follow-up rounds while watching.*
 - [ ] **BL-142** (P2, from P13) The Coordinator's message sorting (note, add, cancel, answer)
   was verified only with the scripted fake model. Check the quality with the real models
   (with BL-002).
-- [ ] **BL-143** (P3, from P13) Notes accumulate without limit and are required prompt
-  sections. Many notes eat the context budget; cap or summarize them.
-- [ ] **BL-144** (P3, from P13) Messages cannot be edited or withdrawn. Cancelling applies only
-  to tasks that have not started; stopping a running task still needs the escalation flow.
+- [x] **BL-143** (P3, from P13) Notes accumulate without limit and are required prompt
+  sections. Many notes eat the context budget; cap or summarize them. *Done in P14: the Coordinator merges notes above `MAX_NOTES_CHARS`; if that fails, the newest notes are kept.*
+- [x] **BL-144** (P3, from P13) Messages cannot be edited or withdrawn. Cancelling applies only
+  to tasks that have not started; stopping a running task still needs the escalation flow. *Done in P14: waiting messages can be edited or withdrawn. Cancelling a running task still needs the escalation flow.*
+
+## Run control (Phase 14)
+
+- [ ] **BL-150** (P2, from P14) The budget is checked before each wave, so a long wave can go
+  past it. Token counts are what Ollama reports; it leaves out prompt tokens it served from
+  cache, so real usage can be higher than shown.
+- [ ] **BL-151** (P2, from P14) Tests after each wave: in an existing repository whose tests
+  already fail on the base branch, every wave adds a fix task (up to `MAX_WAVE_FIX_TASKS`).
+  Compare against a base-branch test run, as the coverage gate does.
+- [ ] **BL-152** (P3, from P14) Retry continues failed runs only. "Re-run from a chosen step"
+  (checkpoint time travel) was not built: the workspace's git state would not rewind with it.
+  "Run again" (a new run with the same request) covers the common case.
+- [ ] **BL-153** (P3, from P14) A task pauses before its next developer turn. Review and QA of
+  the current attempt finish first.
+- [ ] **BL-154** (P3, from P14) Usage is recomputed from the event log on every request and
+  before every wave. Cache running totals if runs grow very large.
 
 ## Parity with commercial coding agents (from the P10 gap review)
 
@@ -272,8 +288,8 @@ steering and security gates.
 - [ ] **BL-110** (P2) Live app preview: start the generated app in the sandbox with a port
   exposed to the host and show it in the UI; optionally a browser the agent can drive for
   end-to-end checks.
-- [ ] **BL-111** (P2) Cost and usage in the UI: tokens per run, per role and per task, wall
-  time, and budgets (stop or ask after N tokens or minutes).
+- [x] **BL-111** (P2) Cost and usage in the UI: tokens per run, per role and per task, wall
+  time, and budgets (stop or ask after N tokens or minutes). *Done in P14: Usage tab, token and working-time budgets. There is no money cost, because the models are local.*
 - [ ] **BL-112** (P3) Model choice per run from the UI, routing (strong model for hard tasks,
   small model for easy ones) and a fallback model on repeated failures.
 - [ ] **BL-113** (P3) Memory across runs: repository rules files (`AGENTS.md`-style) and
@@ -283,7 +299,8 @@ steering and security gates.
 - [ ] **BL-115** (P3) More stacks and delivery targets: other languages/templates, generated
   Dockerfile and CI workflow, DB migrations, deploy to a preview environment.
 - [ ] **BL-116** (P3) Conveniences:
-  - re-run or fork a run from any step;
+  - re-run or fork a run from any step (*P14: Retry for failed runs and "Run again" with the
+    same request are done; see BL-152*);
   - turn diff comments in the UI into developer feedback;
   - run presets or templates;
   - notifications (desktop, email, Slack) when input is needed;
@@ -381,3 +398,13 @@ steering and security gates.
   - Endpoints `/runs/{id}/messages` and `/runs/{id}/pause`.
   - Fixed a Phase 11 bug: runs in `preparing` or `checking` were not recovered after a
     backend restart.
+- [x] **BL-155** (from P14) Additions:
+  - Event type `llm_usage` and the per-call usage hook in the LLM gateway.
+  - Graph nodes `budget` (interrupt kind `budget`) and task-level `hold`.
+  - Run fields `budget`, `budget_limit`, `wave_checked`, `wave_fixes`.
+  - Message status `withdrawn`.
+  - Prompt `prompts/notes_merge.md`.
+  - Settings `RUN_TOKEN_BUDGET`, `RUN_TIME_BUDGET_MIN`, `WAVE_TESTS_ENABLED`,
+    `MAX_WAVE_FIX_TASKS`, `MAX_NOTES_CHARS`.
+  - Endpoints `/runs/{id}/usage`, `/runs/{id}/retry`, and message `PATCH` / `DELETE`.
+  - UI: Usage tab, budget fields, Retry / Run again buttons, message editing, the notes list.

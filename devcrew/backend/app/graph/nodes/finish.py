@@ -23,52 +23,62 @@ from app.tools.git import GitRepo, repo_lock
 NOT_RUN = "Sandbox disabled: tests were not executed."
 
 
+async def run_project_tests(
+    deps: GraphDeps, state: dict[str, Any], *, node: str, measure_coverage: bool
+) -> tuple[dict[str, Any], dict[str, float | None]]:
+    """Run every project's test suite on the integration branch (dumped TestResults per
+    stack, and coverage when measured)."""
+    run_id = state["run_id"]
+    root = Path(state["workspace"])
+    async with repo_lock(root):
+        await GitRepo(root).checkout(state["integration_branch"])
+    design = get_design(state)
+    layout = resolve_layout(design, deps.templates)
+    target = sandbox_target(run_id, None, root, design, layout)
+    results: dict[str, Any] = {}
+    coverage: dict[str, float | None] = {}
+    for stack, entry in layout.items():
+        # With gates on, the coverage variant runs the same tests and reports coverage.
+        measure = measure_coverage and bool(entry.template.coverage_cmd)
+        command = (entry.template.coverage_cmd or "") if measure else entry.template.test_cmd
+        await deps.emit(
+            run_id,
+            EventType.TOOL_CALL,
+            node=node,
+            tool="run_tests",
+            args={"command": command, "cwd": entry.path},
+        )
+        if deps.sandbox is None:
+            result = TestResult(ran=False, passed=True, command=command, logs_excerpt=NOT_RUN)
+        else:
+            out = await deps.sandbox.exec(target, layout, command, cwd=entry.path)
+            if measure:
+                coverage[stack] = parse_coverage(stack, out.output)
+            result = TestResult(
+                ran=True,
+                passed=out.ok,
+                command=command,
+                logs_excerpt=tail_text(out.output, 800),
+            )
+        await deps.emit(
+            run_id,
+            EventType.TOOL_RESULT,
+            node=node,
+            tool="run_tests",
+            ok=result.passed,
+            skipped=not result.ran,
+            result=result.logs_excerpt[-2000:],
+        )
+        results[stack] = dump(result)
+    return results, coverage
+
+
 def make_integration(deps: GraphDeps) -> NodeFn:
     async def integration(state: dict[str, Any]) -> Command[str]:
-        run_id = state["run_id"]
-        root = Path(state["workspace"])
-        await GitRepo(root).checkout(state["integration_branch"])
-        design = get_design(state)
-        layout = resolve_layout(design, deps.templates)
-        target = sandbox_target(run_id, None, root, design, layout)
         tasks = {tid: TaskState.model_validate(t) for tid, t in state["tasks"].items()}
-
-        results: dict[str, Any] = {}
-        coverage: dict[str, float | None] = {}
-        gates_on = deps.settings.gates_enabled
-        for stack, entry in layout.items():
-            # With gates on, the coverage variant runs the same tests and reports coverage.
-            measure = gates_on and bool(entry.template.coverage_cmd)
-            command = (entry.template.coverage_cmd or "") if measure else entry.template.test_cmd
-            await deps.emit(
-                run_id,
-                EventType.TOOL_CALL,
-                node="integration",
-                tool="run_tests",
-                args={"command": command, "cwd": entry.path},
-            )
-            if deps.sandbox is None:
-                result = TestResult(ran=False, passed=True, command=command, logs_excerpt=NOT_RUN)
-            else:
-                out = await deps.sandbox.exec(target, layout, command, cwd=entry.path)
-                if measure:
-                    coverage[stack] = parse_coverage(stack, out.output)
-                result = TestResult(
-                    ran=True,
-                    passed=out.ok,
-                    command=command,
-                    logs_excerpt=tail_text(out.output, 800),
-                )
-            await deps.emit(
-                run_id,
-                EventType.TOOL_RESULT,
-                node="integration",
-                tool="run_tests",
-                ok=result.passed,
-                skipped=not result.ran,
-                result=result.logs_excerpt[-2000:],
-            )
-            results[stack] = dump(result)
+        results, coverage = await run_project_tests(
+            deps, state, node="integration", measure_coverage=deps.settings.gates_enabled
+        )
 
         summary = {
             "merged": sorted(t for t, s in tasks.items() if s.status is TaskStatus.MERGED),

@@ -130,4 +130,14 @@ describe('ActionPanelComponent', () => {
     expect(el.textContent).toContain('@alice on pyproject.toml: Please bump fastapi');
     expect(el.textContent).toContain('Also in this round (small, automatic): Rename X');
   });
+
+  it('asks to continue or stop at the budget', () => {
+    const el = setup({
+      interrupt_id: 'b1', kind: 'budget', title: 'Budget reached', artifact: null,
+      allowed_actions: ['approve', 'reject'], error: null,
+      data: { reasons: ['12.0 working minutes (budget 10 min)'] },
+    });
+    expect(buttons(el)).toEqual(['Continue', 'Stop the run']);
+    expect(el.textContent).toContain('12.0 working minutes (budget 10 min)');
+  });
 });

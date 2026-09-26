@@ -183,15 +183,17 @@ def make_qa(deps: GraphDeps) -> NodeFn:
 
         ctx.ts.test_results = await run_tests(deps, ctx, command)
         if ctx.ts.test_results.passed:
+            # scan the developer's files and the tests QA just wrote
+            changed = await ctx.repo.changed_files(ctx.integration_branch, ctx.branch)
             leaks = await secret_findings(deps, ctx, changed)
             if not leaks:
                 return Command(goto="merge", update=ctx.update())
             # Secrets block the merge like a failing test (and can never be allowed through).
             ctx.ts.status = TaskStatus.IN_PROGRESS
             ctx.ts.feedback = (
-                "The secret scan found credentials in files you changed. Remove them and read "
-                "them from environment variables or configuration instead:\n"
-                + "\n".join(f"- {d}" for d in leaks)
+                "The secret scan found credentials in files of this task (your changes or the "
+                "tests QA wrote). Remove them and read them from environment variables or "
+                "configuration instead:\n" + "\n".join(f"- {d}" for d in leaks)
             )
             return Command(goto="developer", update=ctx.update())
         ctx.ts.status = TaskStatus.IN_PROGRESS

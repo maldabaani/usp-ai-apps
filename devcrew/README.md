@@ -70,6 +70,51 @@ Design notes:
 - With `SANDBOX_ENABLED=false`, QA writes tests but they are not executed: results show
   `ran: false` and the task proceeds.
 
+## Run control: usage, budgets, retries and earlier checks (Phase 14)
+
+**Usage.** The **Usage** tab shows:
+- tokens (in and out) and model calls;
+- model time;
+- **working time**, which leaves out the time the run waited for you (approvals, questions,
+  pauses);
+- a split per role and per task.
+
+The header shows the total next to the run's status. The data comes from `llm_usage` events
+(one per model call). The models are local, so there is no money cost.
+
+**Budgets.** A run can have a token budget and a working-time budget. Set them on the New run
+page under *Budget (optional)*; `RUN_TOKEN_BUDGET` and `RUN_TIME_BUDGET_MIN` are the defaults,
+and 0 means none. Before every wave of tasks, a run at its budget stops and asks:
+- **Continue** raises the limit by the budget again;
+- **Stop the run** ends it as cancelled and pushes nothing.
+
+**Tests after every wave.** Tasks are tested on their own branches. After a wave that merged
+something, and before the tasks that build on it, the project's tests also run on the
+integration branch. If they fail, a `WAVEFIX` task with the logs runs first, and the remaining
+tasks wait for it. At most `MAX_WAVE_FIX_TASKS` such tasks run per run. Set
+`WAVE_TESTS_ENABLED=false` to switch this off. The per-task secret scan now also covers the
+tests QA wrote.
+
+**Retry and run again.**
+- **Retry** is offered on failed runs. It continues from the last checkpoint: only the step
+  that failed runs again, and merged tasks are kept.
+- **Run again** is offered on every finished run. It opens New run with the same request,
+  repository and mode, for you to edit.
+
+**Steering, completed.**
+- **Pause** also stops a task before its next developer iteration, so you don't have to wait
+  for the whole wave.
+- A message that is still waiting can be **edited** or **withdrawn**.
+- Messages sent during the final approval are added to your feedback if you reject. Messages
+  sent while the PR is watched start a follow-up round. Such a round needs no second approval
+  for bigger changes, because you asked for them yourself, and it answers in the chat, never on
+  GitHub.
+- When the notes exceed `MAX_NOTES_CHARS`, the Coordinator merges them. The Chat tab lists the
+  notes the crew follows.
+
+API: `GET /runs/{id}/usage`, `POST /runs/{id}/retry`, and `PATCH` / `DELETE
+/runs/{id}/messages/{message_id}`. `POST /runs` accepts `token_budget` and `time_budget_min`.
+
 ## Steering running work (Phase 13)
 
 **Chat.** The run page has a **Chat** tab, and every task panel has **Messages to this task**.
@@ -86,8 +131,8 @@ Each message shows its state: waiting, given to the developer, applied or answer
 shows DevCrew's reply. Messages to a finished task are handled as run messages. Messages that
 never reach a safe point are marked *not applied* when the run ends.
 
-**Pause / Resume.** **Pause** stops the run before the next wave of tasks; tasks already
-running finish first. A paused run keeps its worktrees and containers. Messages sent while
+**Pause / Resume.** **Pause** stops the run before the next wave of tasks. Since Phase 14 a
+running task also stops before its next developer iteration. A paused run keeps its worktrees and containers. Messages sent while
 paused are applied as soon as you click **Resume**. Pause is offered until development ends.
 After that no safe point is left.
 

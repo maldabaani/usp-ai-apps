@@ -53,6 +53,8 @@ def status_for_interrupt(value: dict[str, Any]) -> RunStatus:
         return RunStatus.WATCHING
     if value.get("kind") == InterruptKind.PAUSE:
         return RunStatus.PAUSED
+    if value.get("kind") == InterruptKind.BUDGET:
+        return RunStatus.NEEDS_HUMAN
     return RunStatus.NEEDS_HUMAN
 
 
@@ -82,9 +84,17 @@ class RunDriver:
         target: str = "new",
         mode: str = "full",
         issue: dict[str, Any] | None = None,
+        budget: dict[str, int] | None = None,
     ) -> RunOutcome:
         state = initial_state(
-            run_id, request, repo_target, create_repo, target=target, mode=mode, issue=issue
+            run_id,
+            request,
+            repo_target,
+            create_repo,
+            target=target,
+            mode=mode,
+            issue=issue,
+            budget=budget,
         )
         await self._set_status(run_id, RunStatus(state["status"]))
         return await self._drive(run_id, state)
@@ -102,6 +112,13 @@ class RunDriver:
         elif interrupt_id not in {p.id for p in pending}:
             raise ValueError(f"unknown interrupt {interrupt_id}")
         command: Command[Any] = Command(resume={interrupt_id: payload.model_dump(mode="json")})
+        return await self._drive(run_id, command)
+
+    async def resume_many(self, run_id: str, answers: dict[str, ResumePayload]) -> RunOutcome:
+        """Answer several pending interrupts in one step (e.g. every paused task)."""
+        command: Command[Any] = Command(
+            resume={i: p.model_dump(mode="json") for i, p in answers.items()}
+        )
         return await self._drive(run_id, command)
 
     async def continue_run(self, run_id: str) -> RunOutcome:
@@ -173,6 +190,10 @@ class RunDriver:
         status = RunStatus(final.get("status", RunStatus.COMPLETED))
         await self._set_status(run_id, status)
         return RunOutcome("finished", status)
+
+    def forget_status(self, run_id: str) -> None:
+        """The run's status was changed outside the driver (retry): report the next one."""
+        self._last_status.pop(run_id, None)
 
     async def _set_status(
         self, run_id: str, status: RunStatus, *, error: str | None = None

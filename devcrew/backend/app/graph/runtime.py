@@ -26,7 +26,7 @@ from app.events.types import EventType
 from app.github.delivery import GitHubDelivery
 from app.graph.state import PendingQuestion, QAEntry
 from app.llm.agent import AgentOutcome, ToolEventHook, run_agent
-from app.llm.client import LLMGateway
+from app.llm.client import CallScope, CallUsage, LLMGateway, llm_scope
 from app.llm.models_config import Role
 from app.prompts import PromptLibrary
 from app.rag.service import RagService
@@ -52,6 +52,22 @@ class GraphDeps:
     github: GitHubDelivery | None = None  # None: no push / PR (benchmarks)
     # Phase 13: chat messages and the pause flag (Postgres in production)
     steering: SteeringStore = field(default_factory=InMemorySteeringStore)
+
+    def __post_init__(self) -> None:
+        self.llm.on_usage = self._record_usage
+
+    async def _record_usage(self, usage: CallUsage) -> None:
+        await self.emit(
+            usage.scope.run_id,
+            EventType.LLM_USAGE,
+            node=usage.scope.node,
+            task_id=usage.scope.task_id,
+            role=usage.role.value,
+            model=usage.model,
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+            duration_ms=usage.duration_ms,
+        )
 
     async def emit(
         self,
@@ -139,6 +155,7 @@ def instrument(deps: GraphDeps, name: str, fn: NodeFn) -> NodeFn:
         task = state.get("task")
         task_id = task.get("id") if isinstance(task, dict) else None
         await deps.emit(run_id, EventType.NODE_STARTED, node=name, task_id=task_id)
+        scope = llm_scope.set(CallScope(run_id=run_id, node=name, task_id=task_id))
         try:
             result = await fn(state)
         except GraphBubbleUp:
@@ -149,6 +166,8 @@ def instrument(deps: GraphDeps, name: str, fn: NodeFn) -> NodeFn:
                 run_id, EventType.ERROR, node=name, task_id=task_id, message=str(exc)[:2000]
             )
             raise
+        finally:
+            llm_scope.reset(scope)
         await deps.emit(run_id, EventType.NODE_FINISHED, node=name, task_id=task_id)
         return result
 

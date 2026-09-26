@@ -243,3 +243,118 @@ async def test_paused_run_can_be_resumed_from_its_interrupt_and_cancelled(tmp_pa
 def test_restart_recovers_preparing_and_checking_runs() -> None:
     assert {RunStatus.PREPARING, RunStatus.CHECKING} <= ACTIVE_STATUSES
     assert RunStatus.PAUSED not in ACTIVE_STATUSES  # it waits on an interrupt
+
+
+# ------------------------------------------------------------------------------ Phase 14
+async def test_pause_between_a_tasks_developer_iterations(tmp_path: Path) -> None:
+    async with api(tmp_path) as a:
+        store = a.harness.deps.steering
+        reviews = {"n": 0}
+        run: dict[str, Any] = {}
+
+        def reviewer(call: Call) -> AIMessage:
+            reviews["n"] += 1
+            if reviews["n"] == 1:  # the human clicks Pause while T1 is being reviewed
+                store._paused.add(run["id"])  # type: ignore[attr-defined]
+                issue = {
+                    "file": "app/schemas/todo.py",
+                    "line": 1,
+                    "severity": "major",
+                    "message": "rename x",
+                    "rule_ref": None,
+                }
+                return final(
+                    {"decision": "changes_requested", "summary": "rename", "issues": [issue]}
+                )
+            return final({"decision": "approve", "summary": "ok", "issues": []})
+
+        a.harness.brain.responders["reviewer"] = reviewer
+        run_id = run["id"] = await create(a)
+        await a.approve(run_id)
+        detail = await a.approve(run_id)
+        assert detail["status"] == "paused"
+        [pending] = detail["pending"]
+        assert pending["kind"] == "pause" and pending["data"]["task_id"] == "T1"
+        assert detail["tasks"]["T1"]["status"] == "in_progress"
+        wf = (await a.client.get(f"/runs/{run_id}/workflow")).json()
+        t1 = next(n for n in wf["nodes"] if n["id"] == "task:T1")
+        assert t1["status"] == "waiting" and t1["detail"].startswith("paused")
+        assert wf["attention"] == []
+
+        resp = await a.client.post(f"/runs/{run_id}/pause", json={"paused": False})
+        assert resp.status_code == 200
+        detail = await a.settle(run_id)
+        assert detail["status"] == "awaiting_final_approval"
+        assert detail["tasks"]["T1"]["iterations"] == 2
+
+
+async def test_waiting_messages_can_be_edited_or_withdrawn(tmp_path: Path) -> None:
+    async with api(tmp_path) as a:
+        run_id = await create(a)
+        first = await say(a, run_id, "Use camelCase")
+        second = await say(a, run_id, "Add a README")
+        edited = await a.client.patch(
+            f"/runs/{run_id}/messages/{first['id']}", json={"text": "Use snake_case"}
+        )
+        assert edited.status_code == 200 and edited.json()["text"] == "Use snake_case"
+        gone = await a.client.delete(f"/runs/{run_id}/messages/{second['id']}")
+        assert gone.json()["status"] == "withdrawn"
+        await a.approve(run_id)  # the Architect takes in the open messages
+        architect = str(a.harness.brain.calls_for("architect")[0].messages[1].content)
+        assert "Use snake_case" in architect
+        assert "camelCase" not in architect and "README" not in architect
+        late = await a.client.patch(
+            f"/runs/{run_id}/messages/{first['id']}", json={"text": "too late"}
+        )
+        assert late.status_code == 409
+        missing = await a.client.delete(f"/runs/{run_id}/messages/999")
+        assert missing.status_code == 404
+
+
+def merge_notes(call: Call) -> AIMessage:
+    context = str(call.messages[1].content)
+    if "Notes to merge" in context:
+        return final({"notes": ["Use snake_case everywhere; log every request."]})
+    return final(ESCALATE)
+
+
+async def test_too_many_notes_are_merged_by_the_coordinator(tmp_path: Path) -> None:
+    async with api(tmp_path, max_notes_chars=200) as a:
+        a.harness.brain.responders["coordinator"] = merge_notes
+        run_id = await create(a)
+        await say(a, run_id, "Use snake_case for every field name. " * 3)
+        await say(a, run_id, "Log every request with its duration. " * 3)
+        run = await a.approve(run_id)
+        assert run["human_notes"] == [
+            {"id": None, "text": "Use snake_case everywhere; log every request.", "merged": True}
+        ]
+        architect = str(a.harness.brain.calls_for("architect")[0].messages[1].content)
+        assert "Use snake_case everywhere; log every request." in architect
+
+
+async def test_notes_keep_the_newest_when_merging_fails(tmp_path: Path) -> None:
+    async with api(tmp_path, max_notes_chars=200) as a:
+        run_id = await create(a)  # the default Coordinator answers nonsense for this
+        await say(a, run_id, "A" * 150)
+        await say(a, run_id, "B" * 150)
+        run = await a.approve(run_id)
+        assert [n["text"] for n in run["human_notes"]] == ["B" * 150]
+
+
+async def test_messages_during_final_approval_join_the_rejection(tmp_path: Path) -> None:
+    async with api(tmp_path) as a:
+        run_id = await create(a)
+        await a.approve(run_id)
+        await a.approve(run_id)  # awaiting final approval
+        await say(a, run_id, "Also return 404 for unknown ids")
+        resp = await a.client.post(
+            f"/runs/{run_id}/resume", json={"action": "reject", "feedback": "Add docstrings"}
+        )
+        assert resp.status_code == 202
+        run = await a.settle(run_id)
+        assert run["status"] == "awaiting_final_approval"
+        task = next(t for t in run["plan"]["tasks"] if t["id"].startswith("F"))
+        assert "Add docstrings" in task["description"]
+        assert "Also return 404 for unknown ids" in task["description"]
+        row = (await messages(a, run_id))["Also return 404 for unknown ids"]
+        assert row["status"] == "applied" and "final-approval feedback" in row["reply"]

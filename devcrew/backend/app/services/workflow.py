@@ -54,6 +54,7 @@ GRAPH_NODE_TO_STAGE = {graph: sid for sid, _, _, graph in STAGES if graph} | {
     "delivery_failed": "delivery",
     "done": "delivery",
     "schedule": DEVELOPMENT,
+    "wave_check": "integration",  # tests after each wave (Phase 14)
 }
 
 STATUS_STAGE: dict[RunStatus, tuple[str, NodeStatus]] = {
@@ -237,7 +238,7 @@ def _interrupt_stage(value: Mapping[str, Any]) -> str | None:
     data = value.get("data") or {}
     if value.get("kind") == "watch":
         return WATCH
-    if value.get("kind") == "pause":
+    if value.get("kind") in ("pause", "budget"):
         return None  # shown in the run header, not on a node
     if value.get("artifact") == "followup":
         return triage_node_id(int(data.get("round") or 1))
@@ -497,6 +498,9 @@ def _apply_task_status(
         node_status: NodeStatus = TASK_STATUS.get(raw, "pending")
         if node_status == "pending" and node.step and status is RunStatus.EXECUTING:
             node_status = "running"  # started, state not checkpointed yet
+        paused = node_status == "running" and status is RunStatus.PAUSED
+        if paused:
+            node_status = "waiting"
         if node_status == "running" and status.is_terminal:
             node_status = "failed"
             node.detail = "run stopped"
@@ -509,7 +513,9 @@ def _apply_task_status(
                 "conflict_rounds": int(ts.get("conflict_rounds") or 0),
             }
         )
-        if node_status in ("running", "waiting"):
+        if paused:
+            node.detail = "paused (continues when you resume)"
+        elif node_status in ("running", "waiting"):
             step = TASK_STEPS.get(node.step or "", node.step or "starting")
             node.detail = f"{step} · iteration {max(iterations, 1)}/{max_dev_iterations}"
         elif node_status == "done":

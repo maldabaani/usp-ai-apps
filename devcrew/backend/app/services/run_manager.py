@@ -22,7 +22,7 @@ from app.db.models import Run, RunStatus
 from app.db.repository import RunStore
 from app.events.bus import EventBus
 from app.events.types import EventType
-from app.graph.interrupts import ResumePayload
+from app.graph.interrupts import ResumeAction, ResumePayload
 from app.graph.runner import PendingInterrupt, RunDriver, RunOutcome
 from app.graph.runtime import GraphDeps, release_run_resources
 from app.graph.steering import expire_messages
@@ -98,6 +98,7 @@ class RunManager:
         target: str = "new",
         mode: str = "full",
         issue: dict[str, Any] | None = None,
+        budget: dict[str, int] | None = None,
     ) -> Run:
         run = await self.runs.create(
             request=request, repo_target=repo_target, create_repo=create_repo
@@ -105,7 +106,14 @@ class RunManager:
         self._spawn(
             run.id,
             lambda: self.driver.start(
-                run.id, request, repo_target, create_repo, target=target, mode=mode, issue=issue
+                run.id,
+                request,
+                repo_target,
+                create_repo,
+                target=target,
+                mode=mode,
+                issue=issue,
+                budget=budget,
             ),
         )
         return run
@@ -154,6 +162,38 @@ class RunManager:
             run_id, EventType.STATUS, payload={"status": RunStatus.CANCELLED.value, "error": None}
         )
         await self._release(run_id)
+
+    async def resume_paused(self, run_id: str) -> int:
+        """Resume every pending pause (the run between waves, or tasks between iterations)."""
+        if self.is_busy(run_id):
+            return 0
+        paused = [p for p in await self.pending(run_id) if p.value.get("kind") == "pause"]
+        if not paused:
+            return 0
+        go = ResumePayload(action=ResumeAction.APPROVE)
+        self._spawn(run_id, lambda: self.driver.resume_many(run_id, {p.id: go for p in paused}))
+        return len(paused)
+
+    async def retry(self, run_id: str) -> Run:
+        """Continue a failed run from its last checkpoint: the step that failed runs again."""
+        run = await self.get(run_id)
+        if RunStatus(run.status) is not RunStatus.FAILED:
+            raise RunConflictError(f"only failed runs can be retried (this one is {run.status})")
+        if self.is_busy(run_id):
+            raise RunConflictError("run is busy")
+        state = await self.driver.state(run_id)
+        if not state.get("run_id"):
+            raise RunConflictError("the run has no checkpoint to continue from")
+        status = RunStatus(state.get("status") or RunStatus.EXECUTING)
+        if status.is_terminal:
+            status = RunStatus.EXECUTING
+        await self.runs.update(run_id, status=status, clear_error=True)
+        await self.events.publish(
+            run_id, EventType.STATUS, payload={"status": status.value, "error": None}
+        )
+        self.driver.forget_status(run_id)
+        self._spawn(run_id, functools.partial(self.driver.continue_run, run_id))
+        return await self.get(run_id)
 
     async def recover(self) -> list[str]:
         """Continue runs that were executing when the backend stopped."""
@@ -205,11 +245,10 @@ class RunManager:
             return
         pr_url = state.get("pr_url")
         errors = state.get("errors") or []
-        if pr_url or (outcome.status is RunStatus.FAILED and errors):
+        failed = outcome.status in (RunStatus.FAILED, RunStatus.CANCELLED)
+        if pr_url or (failed and errors):
             await self.runs.update(
-                run_id,
-                pr_url=pr_url,
-                error=errors[-1] if outcome.status is RunStatus.FAILED and errors else None,
+                run_id, pr_url=pr_url, error=errors[-1] if failed and errors else None
             )
 
     async def _release(self, run_id: str) -> None:

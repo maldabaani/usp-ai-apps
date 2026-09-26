@@ -41,6 +41,12 @@ type Mode = 'none' | 'reject' | 'edit' | 'answer';
         @if (reason(); as r) {
           <pre class="reason">{{ r }}</pre>
         }
+        @if (budgetReasons().length) {
+          <p>The run reached its budget before the next wave of tasks:</p>
+          <ul>@for (r of budgetReasons(); track r) { <li>{{ r }}</li> }</ul>
+          <p class="muted">Continue raises the limit by the same amount again; stop ends the run
+            (nothing is pushed).</p>
+        }
         @if (watchInfo(); as w) {
           <p>DevCrew follows the pull request: new review comments, failed checks and merge conflicts
             start a follow-up round ({{ w.round }} of {{ w.max }} automatic rounds used).</p>
@@ -135,6 +141,7 @@ type Mode = 'none' | 'reject' | 'edit' | 'answer';
     .reason { white-space: pre-wrap; background: rgba(255, 90, 122, 0.08); padding: 8px; border-radius: 6px; font-size: 12px; }
     .error, .bad { color: var(--dc-red); }
     .panel.watch { border-left-color: var(--dc-cyan); }
+    .panel.budget { border-left-color: var(--dc-red); }
     .proposals { padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
     .why { color: var(--dc-text-dim); font-size: 12.5px; }
     blockquote { margin: 4px 0 0; padding: 4px 8px; border-left: 2px solid var(--dc-border-strong); color: var(--dc-text-dim);
@@ -169,6 +176,9 @@ export class ActionPanelComponent {
   readonly finalSummary = computed(
     () => (this.pending().artifact === 'final' ? (this.pending().data['integration'] as IntegrationSummary | null) : null),
   );
+  readonly budgetReasons = computed<string[]>(() =>
+    this.pending().kind === 'budget' ? ((this.pending().data['reasons'] as string[] | undefined) ?? []) : [],
+  );
   readonly watchInfo = computed(() => {
     const p = this.pending();
     return p.kind === 'watch'
@@ -199,6 +209,9 @@ export class ActionPanelComponent {
   /** Button wording depends on what is being decided. */
   readonly labels = computed(() => {
     const p = this.pending();
+    if (p.kind === 'budget') {
+      return { approve: 'Continue', reject: 'Stop the run', rejectPrompt: 'Why stop? (kept in the run log)' };
+    }
     if (p.kind === 'pause') {
       return { approve: 'Resume', reject: '', rejectPrompt: '' };
     }

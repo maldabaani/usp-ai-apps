@@ -1,7 +1,7 @@
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
 import { of } from 'rxjs';
 
 import { RunDetail, RunEvent, RunMessage, Workflow, WorkflowNode } from '../../core/api.models';
@@ -52,7 +52,12 @@ describe('RunDetailComponent', () => {
   beforeEach(() => {
     api = jasmine.createSpyObj<ApiService>('ApiService', [
       'getRun', 'workflow', 'resume', 'cancel', 'diff', 'listFiles', 'messages', 'sendMessage', 'pause',
+      'usage', 'retry', 'editMessage', 'withdrawMessage',
     ]);
+    api.usage.and.returnValue(of({
+      calls: 3, input_tokens: 1200, output_tokens: 300, total_tokens: 1500, model_seconds: 4,
+      elapsed_s: 400, waiting_s: 100, active_s: 300, by_role: [], by_task: [], budget: null,
+    }));
     api.getRun.and.returnValue(of(RUN));
     api.messages.and.returnValue(of([]));
     api.workflow.and.returnValue(of(WORKFLOW));
@@ -176,5 +181,42 @@ describe('RunDetailComponent', () => {
     api.messages.and.returnValue(of([{ ...sent, status: 'applied', action: 'note', reply: 'Noted.' }]));
     c['load']();
     expect(c.messages()[0].reply).toBe('Noted.');
+  });
+
+  it('shows tokens and working time in the header', () => {
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('.tokens')?.textContent).toContain('1,500 tokens');
+    expect(el.querySelector('.tokens')?.textContent).toContain('5m 00s working');
+  });
+
+  it('offers retry for a failed run and run again for finished runs', () => {
+    const el = fixture.nativeElement as HTMLElement;
+    const router = TestBed.inject(Router);
+    spyOn(router, 'navigate').and.resolveTo(true);
+    api.getRun.and.returnValue(of({ ...RUN, status: 'failed', error: 'boom', pending: [] }));
+    api.retry.and.returnValue(of({ ...RUN, status: 'executing' }));
+    fixture.componentInstance['load']();
+    fixture.detectChanges();
+    const buttons = () => [...el.querySelectorAll('.controls button')].map((b) => b.textContent?.trim());
+    expect(buttons()).toEqual(['Retry', 'Run again']);
+    (el.querySelector('.controls button') as HTMLButtonElement).click();
+    expect(api.retry).toHaveBeenCalledWith('r1');
+    fixture.componentInstance.runAgain();
+    expect(router.navigate).toHaveBeenCalledWith(['/runs/new'], { queryParams: { from: 'r1' } });
+  });
+
+  it('shows the budget decision above the workflow', () => {
+    const budget = {
+      interrupt_id: 'b1', kind: 'budget' as const, title: 'Budget reached', artifact: null,
+      allowed_actions: ['approve' as const, 'reject' as const], error: null,
+      data: { reasons: ['5,000 tokens used (budget 4,000)'] },
+    };
+    api.getRun.and.returnValue(of({ ...RUN, status: 'needs_human', pending: [budget] }));
+    fixture.componentInstance['load']();
+    fixture.detectChanges();
+    const panel = (fixture.nativeElement as HTMLElement).querySelector('.run-level') as HTMLElement;
+    expect(panel.textContent).toContain('5,000 tokens used (budget 4,000)');
+    [...panel.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Continue')?.click();
+    expect(api.resume).toHaveBeenCalledWith('r1', { action: 'approve', interrupt_id: 'b1' });
   });
 });

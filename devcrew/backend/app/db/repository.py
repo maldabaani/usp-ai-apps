@@ -31,6 +31,7 @@ class RunStore(Protocol):
         status: RunStatus | None = None,
         pr_url: str | None = None,
         error: str | None = None,
+        clear_error: bool = False,
     ) -> None: ...
 
 
@@ -68,6 +69,7 @@ class RunRepository:
         status: RunStatus | None = None,
         pr_url: str | None = None,
         error: str | None = None,
+        clear_error: bool = False,
     ) -> None:
         values: dict[str, object] = {}
         if status is not None:
@@ -76,6 +78,8 @@ class RunRepository:
             values["pr_url"] = pr_url
         if error is not None:
             values["error"] = error
+        if clear_error:
+            values["error"] = None
         if not values:
             return
         async with self._sessionmaker() as session, session.begin():
@@ -115,6 +119,7 @@ class InMemoryRunStore:
         status: RunStatus | None = None,
         pr_url: str | None = None,
         error: str | None = None,
+        clear_error: bool = False,
     ) -> None:
         run = self._runs.get(run_id)
         if run is None:
@@ -125,4 +130,6 @@ class InMemoryRunStore:
             run.pr_url = pr_url
         if error is not None:
             run.error = error
+        if clear_error:
+            run.error = None
         run.updated_at = datetime.now(UTC)

@@ -3,19 +3,20 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { Router, provideRouter } from '@angular/router';
 import { of, throwError } from 'rxjs';
 
-import { ClientConfig, RunSummary } from '../../core/api.models';
+import { ClientConfig, RunDetail, RunSummary } from '../../core/api.models';
 import { ApiService } from '../../core/api.service';
 import { NewRunComponent, parseIssueRef } from './new-run.component';
 
 const CONFIG: ClientConfig = {
   max_request_chars: 60, max_dev_iterations: 3, max_parallel_devs: 2, github_enabled: true, max_pr_rounds: 3,
+  run_token_budget: 0, run_time_budget_min: 30,
 };
 
 describe('NewRunComponent', () => {
   let api: jasmine.SpyObj<ApiService>;
 
   function setup(config = of(CONFIG)) {
-    api = jasmine.createSpyObj<ApiService>('ApiService', ['createRun', 'config', 'importIssue']);
+    api = jasmine.createSpyObj<ApiService>('ApiService', ['createRun', 'config', 'importIssue', 'getRun']);
     api.createRun.and.returnValue(of({ id: 'r9' } as RunSummary));
     api.importIssue.and.returnValue(of({ id: 'r10' } as RunSummary));
     api.config.and.returnValue(config);
@@ -129,5 +130,31 @@ describe('NewRunComponent', () => {
     expect(c.mode()).toBe('preview');
     const preview = (fixture.nativeElement as HTMLElement).querySelector('.preview');
     expect(preview?.querySelector('h1')?.textContent).toBe('stories.md');
+  });
+
+  it('sends an optional budget', () => {
+    const { fixture } = setup();
+    const c = fixture.componentInstance;
+    expect(c.defaultMinutes()).toBe('default 30');
+    c.form.patchValue({ request: 'Build a FastAPI TODO API', repo_target: 'octocat/todo-api', token_budget: 50000 });
+    c.submit();
+    expect(api.createRun).toHaveBeenCalledWith(jasmine.objectContaining({ token_budget: 50000 }));
+    expect(api.createRun.calls.mostRecent().args[0].time_budget_min).toBeUndefined();
+  });
+
+  it('copies a previous run for "Run again"', () => {
+    const { fixture } = setup();
+    api.getRun.and.returnValue(of({
+      id: 'old123456789abc', request: '# Shop\n\nAdd discounts', repo_target: 'acme/shop',
+      target: 'existing', mode: 'quick',
+    } as unknown as RunDetail));
+    fixture.componentRef.setInput('from', 'old123456789abc');
+    fixture.detectChanges();
+    const c = fixture.componentInstance;
+    expect(api.getRun).toHaveBeenCalledWith('old123456789abc');
+    expect(c.form.getRawValue()).toEqual(jasmine.objectContaining({
+      request: '# Shop\n\nAdd discounts', repo_target: 'acme/shop', target: 'existing', mode: 'quick',
+    }));
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('Copied from run old123456789');
   });
 });

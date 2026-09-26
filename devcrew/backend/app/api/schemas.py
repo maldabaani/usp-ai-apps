@@ -25,6 +25,18 @@ class CreateRunRequest(BaseModel):
         default="full",
         description="existing repositories: full (with the Architect) or quick (one approval)",
     )
+    token_budget: int | None = Field(
+        default=None, ge=0, description="stop and ask after this many tokens (0 = none)"
+    )
+    time_budget_min: int | None = Field(
+        default=None, ge=0, description="stop and ask after this many working minutes (0 = none)"
+    )
+
+    def budget(self) -> dict[str, int] | None:
+        """The run's own budget, or None for the settings' defaults."""
+        if self.token_budget is None and self.time_budget_min is None:
+            return None
+        return {"tokens": self.token_budget or 0, "minutes": self.time_budget_min or 0}
 
     @field_validator("request")
     @classmethod
@@ -156,11 +168,23 @@ class MessageIn(BaseModel):
         return v
 
 
+class MessageEdit(BaseModel):
+    text: str = Field(min_length=1, max_length=4000)
+
+    @field_validator("text")
+    @classmethod
+    def _strip(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("the message is empty")
+        return v
+
+
 class MessageOut(BaseModel):
     id: int
     task_id: str | None
     text: str
-    status: str  # pending | delivered | applied | answered | expired
+    status: str  # pending | delivered | applied | answered | expired | withdrawn
     action: str | None
     reply: str | None
     created_at: datetime | None

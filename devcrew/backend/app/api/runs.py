@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from app.api.deps import ContainerDep
 from app.api.schemas import (
     CreateRunRequest,
+    MessageEdit,
     MessageIn,
     MessageOut,
     PauseRequest,
@@ -22,14 +23,16 @@ from app.api.schemas import (
 from app.api.sse import event_stream
 from app.db.models import RunStatus
 from app.events.types import EventType
-from app.graph.interrupts import InterruptKind, ResumeAction, ResumePayload
-from app.graph.steering import EXPIRED, PENDING
+from app.graph.budget import current_limit
+from app.graph.interrupts import ResumeAction
+from app.graph.steering import EXPIRED, PENDING, WITHDRAWN
 from app.services.run_manager import (
     InvalidResumeError,
     RunConflictError,
     RunManager,
     RunNotFoundError,
 )
+from app.services.usage import RunUsage, summarize
 from app.services.workflow import Workflow, build_workflow
 
 router = APIRouter(prefix="/runs", tags=["runs"])
@@ -95,6 +98,7 @@ async def create_run(body: CreateRunRequest, container: ContainerDep) -> RunSumm
         create_repo=body.create_repo and body.target == "new",
         target=body.target,
         mode=body.mode,
+        budget=body.budget(),
     )
     return RunSummary.of(run, busy=True)
 
@@ -131,6 +135,19 @@ async def get_workflow(run_id: str, container: ContainerDep) -> Workflow:
         pr_url=run.pr_url,
         max_dev_iterations=container.settings.max_dev_iterations,
     )
+
+
+@router.get("/{run_id}/usage", response_model=RunUsage)
+async def get_usage(run_id: str, container: ContainerDep) -> RunUsage:
+    """Tokens per role and task, model time, working time and the run's budget."""
+    manager = container.manager
+    run = await _run_or_404(manager, run_id)
+    events = [e async for e in container.events.replay(run_id)]
+    finished = RunStatus(run.status).is_terminal and not manager.is_busy(run_id)
+    usage = summarize(events, finished=finished)
+    limit = current_limit(container.deps, await manager.state(run_id))
+    usage.budget = limit if limit.get("tokens") or limit.get("minutes") else None
+    return usage
 
 
 @router.get("/{run_id}/events")
@@ -180,6 +197,18 @@ async def resume_run(run_id: str, body: ResumeRequest, container: ContainerDep) 
     except InvalidResumeError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from None
     return PendingInput.of(answered)
+
+
+@router.post("/{run_id}/retry", response_model=RunSummary)
+async def retry_run(run_id: str, container: ContainerDep) -> RunSummary:
+    """Continue a failed run from its last checkpoint (the failed step runs again)."""
+    manager = container.manager
+    await _run_or_404(manager, run_id)
+    try:
+        run = await manager.retry(run_id)
+    except RunConflictError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from None
+    return RunSummary.of(run, busy=True)
 
 
 @router.post("/{run_id}/cancel", response_model=RunSummary)
@@ -253,6 +282,66 @@ async def post_message(run_id: str, body: MessageIn, container: ContainerDep) ->
     )
 
 
+async def _pending_message(container: ContainerDep, run_id: str, message_id: int) -> Any:
+    await _run_or_404(container.manager, run_id)
+    found = [m for m in await container.deps.steering.messages(run_id) if m.id == message_id]
+    if not found:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"message {message_id} not found")
+    if found[0].status != PENDING:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"the message was already {found[0].status}; only waiting messages can change",
+        )
+    return found[0]
+
+
+def _message_out(m: Any) -> MessageOut:
+    return MessageOut(
+        id=m.id,
+        task_id=m.task_id,
+        text=m.text,
+        status=m.status,
+        action=m.action,
+        reply=m.reply,
+        created_at=m.created_at,
+        updated_at=m.updated_at,
+    )
+
+
+@router.patch("/{run_id}/messages/{message_id}", response_model=MessageOut)
+async def edit_message(
+    run_id: str, message_id: int, body: MessageEdit, container: ContainerDep
+) -> MessageOut:
+    """Change a message that has not reached a safe point yet."""
+    m = await _pending_message(container, run_id, message_id)
+    await container.deps.steering.update_messages([m.id], text=body.text)
+    await container.events.publish(
+        run_id,
+        EventType.MESSAGE,
+        node="steer",
+        task_id=m.task_id,
+        payload={"message_id": m.id, "text": body.text, "status": PENDING},
+    )
+    rows = await container.deps.steering.messages(run_id)
+    return _message_out(next(r for r in rows if r.id == m.id))
+
+
+@router.delete("/{run_id}/messages/{message_id}", response_model=MessageOut)
+async def withdraw_message(run_id: str, message_id: int, container: ContainerDep) -> MessageOut:
+    """Withdraw a message that has not reached a safe point yet."""
+    m = await _pending_message(container, run_id, message_id)
+    await container.deps.steering.update_messages([m.id], status=WITHDRAWN)
+    await container.events.publish(
+        run_id,
+        EventType.MESSAGE,
+        node="steer",
+        task_id=m.task_id,
+        payload={"message_id": m.id, "text": m.text, "status": WITHDRAWN},
+    )
+    rows = await container.deps.steering.messages(run_id)
+    return _message_out(next(r for r in rows if r.id == m.id))
+
+
 @router.post("/{run_id}/pause", response_model=PauseState)
 async def pause_run(run_id: str, body: PauseRequest, container: ContainerDep) -> PauseState:
     """Pause at the next safe point (before the next wave), or resume a paused run."""
@@ -262,16 +351,10 @@ async def pause_run(run_id: str, body: PauseRequest, container: ContainerDep) ->
         raise HTTPException(status.HTTP_409_CONFLICT, f"run is {run.status}")
     steering = container.deps.steering
     await steering.set_pause(run_id, body.paused)
-    if not body.paused and not manager.is_busy(run_id):
-        paused = [
-            p for p in await manager.pending(run_id) if p.value.get("kind") == InterruptKind.PAUSE
-        ]
-        if paused:
-            try:
-                await manager.resume(
-                    run_id, ResumePayload(action=ResumeAction.APPROVE), paused[0].id
-                )
-            except RunConflictError as exc:
-                raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from None
+    if not body.paused:
+        try:
+            await manager.resume_paused(run_id)
+        except RunConflictError as exc:
+            raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from None
     run = await manager.get(run_id)
     return PauseState(status=run.status, pause_requested=await steering.pause_requested(run_id))

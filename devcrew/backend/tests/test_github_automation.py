@@ -439,3 +439,26 @@ def test_comment_text_follows_the_run_status() -> None:
     assert "Pull request: https://github.com/a/b/pull/1 (following" in comment_text(run, {})
     run.status, run.pr_url, run.error = "failed", None, "boom"
     assert "The run failed: boom" in comment_text(run, {})
+
+
+async def test_chat_messages_while_watching_start_a_round(tmp_path: Path) -> None:
+    h = harness(tmp_path)
+    gh = fake(h)
+    async with api(tmp_path, harness=h) as a:
+        run_id = await run_to_pr(a)
+        sent = []
+        for text in ("Please redesign the store as a class", "Why a module constant?"):
+            resp = await a.client.post(f"/runs/{run_id}/messages", json={"text": text})
+            assert resp.status_code == 201
+            sent.append(resp.json()["id"])
+        run = await poll(a, run_id)
+        # the owner's request is not "big": they asked for it themselves
+        assert run["status"] == "watching_pr"
+        assert run["tasks"]["R1-1"]["status"] == "merged"
+        assert gh.log("acme", "shop", gh.pulls[0]["head"])[0].startswith("R1-1:")
+        rows = {m["id"]: m for m in (await a.client.get(f"/runs/{run_id}/messages")).json()}
+        assert rows[sent[0]]["reply"].startswith("Addressed in ")
+        assert rows[sent[1]]["reply"] == "It keeps the API backwards compatible."
+        assert not replies(gh)  # answered in DevCrew's chat, never on GitHub
+        run = await poll(a, run_id)
+        assert run["followup"]["round"] == 1  # each message is used once

@@ -24,7 +24,7 @@ from app.db.watch import WatchStore
 from app.github.client import GitHubClient, GitHubError
 from app.github.delivery import GitHubDelivery
 from app.graph.interrupts import InterruptKind, ResumeAction, ResumePayload
-from app.graph.nodes.followup import MARKER, followup_state, pr_number
+from app.graph.nodes.followup import MARKER, chat_items, followup_state, pr_number
 from app.services.run_manager import RunConflictError, RunManager
 
 logger = logging.getLogger(__name__)
@@ -272,6 +272,11 @@ class GitHubWatcher:
             except GitHubError as exc:
                 logger.warning("PR follow-up for run %s failed: %s", run.id, exc)
                 continue
+            # the owner's chat messages start a round too (Phase 14)
+            chat = await chat_items(self.manager.deps, state)
+            if chat and (activity is None or activity.get("pr_state") == "open"):
+                activity = activity or {"pr_state": "open", "items": []}
+                activity["items"] = [*activity["items"], *chat]
             if activity is None:
                 continue
             try:

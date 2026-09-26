@@ -19,6 +19,7 @@ import {
   RunDetail,
   RunMessage,
   RunSummary,
+  RunUsage,
   WatchedRepo,
   WatchedRepoCreate,
   WatchedRepoUpdate,
@@ -60,6 +61,24 @@ export class ApiService {
 
   sendMessage(runId: string, body: MessageIn): Observable<RunMessage> {
     return this.http.post<RunMessage>(`${this.baseUrl}/runs/${encodeURIComponent(runId)}/messages`, body);
+  }
+
+  editMessage(runId: string, messageId: number, text: string): Observable<RunMessage> {
+    return this.http.patch<RunMessage>(
+      `${this.baseUrl}/runs/${encodeURIComponent(runId)}/messages/${messageId}`, { text },
+    );
+  }
+
+  withdrawMessage(runId: string, messageId: number): Observable<RunMessage> {
+    return this.http.delete<RunMessage>(`${this.baseUrl}/runs/${encodeURIComponent(runId)}/messages/${messageId}`);
+  }
+
+  usage(runId: string): Observable<RunUsage> {
+    return this.http.get<RunUsage>(`${this.baseUrl}/runs/${encodeURIComponent(runId)}/usage`);
+  }
+
+  retry(runId: string): Observable<RunSummary> {
+    return this.http.post<RunSummary>(`${this.baseUrl}/runs/${encodeURIComponent(runId)}/retry`, {});
   }
 
   pause(runId: string, paused: boolean): Observable<PauseState> {

@@ -12,7 +12,8 @@ import {
 import { MatButtonModule } from '@angular/material/button';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatTabsModule } from '@angular/material/tabs';
-import { RouterLink } from '@angular/router';
+import { DecimalPipe } from '@angular/common';
+import { Router, RouterLink } from '@angular/router';
 import { catchError, forkJoin, of } from 'rxjs';
 
 import {
@@ -21,15 +22,19 @@ import {
   RunDetail,
   RunEvent,
   RunMessage,
+  RunUsage,
   TERMINAL_STATUSES,
   Workflow,
   WorkflowNode,
 } from '../../core/api.models';
 import { ApiService } from '../../core/api.service';
 import { requestTitle } from '../../core/requirements';
+import { formatDuration } from '../../core/workflow-layout';
 import { RunEventStream, RunEventsService } from '../../core/run-events.service';
 import { StatusChipComponent } from '../../shared/status-chip.component';
+import { ActionPanelComponent } from './action-panel.component';
 import { ChatComponent } from './chat.component';
+import { UsageViewComponent } from './usage-view.component';
 import { DesignViewComponent } from './design-view.component';
 import { EventTimelineComponent } from './event-timeline.component';
 import { FileExplorerComponent } from './file-explorer.component';
@@ -47,6 +52,7 @@ const REFRESH_DEBOUNCE_MS = 300;
     RouterLink, MatTabsModule, MatButtonModule, MatProgressBarModule, StatusChipComponent,
     EventTimelineComponent, PlanViewComponent, DesignViewComponent, QaPanelComponent,
     FileExplorerComponent, WorkflowGraphComponent, WorkflowPanelComponent, ChatComponent,
+    ActionPanelComponent, UsageViewComponent, DecimalPipe,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -72,9 +78,24 @@ const REFRESH_DEBOUNCE_MS = 300;
             @if (run.pr_url) {
               <a [href]="run.pr_url" target="_blank" rel="noopener" class="pr">Pull request ↗</a>
             }
+            @if (usage(); as u) {
+              @if (u.total_tokens) {
+                <span class="tokens" title="Tokens and working time (see the Usage tab)">{{ u.total_tokens | number }} tokens
+                  · {{ workingTime() }} working</span>
+              }
+            }
             <span class="stream" [class]="'stream ' + streamState()">events: {{ streamState() }}</span>
           </div>
         </div>
+        @if (terminal()) {
+          <div class="controls">
+            @if (run.status === 'failed') {
+              <button mat-flat-button class="resume" (click)="retry()" [disabled]="submitting()"
+                      title="Continue from the last checkpoint: the failed step runs again">Retry</button>
+            }
+            <button mat-stroked-button (click)="runAgain()" title="New run with the same request (you can edit it)">Run again</button>
+          </div>
+        }
         @if (!terminal()) {
           <div class="controls">
             @if (run.status === 'paused') {
@@ -101,6 +122,12 @@ const REFRESH_DEBOUNCE_MS = 300;
           applied when you resume.</div>
       } @else if (run.pause_requested) {
         <div class="paused pending" role="status">Pausing after the current tasks finish…</div>
+      }
+
+      @for (p of runLevelPending(); track p.interrupt_id) {
+        <div class="run-level">
+          <app-action-panel [pending]="p" [busy]="submitting()" (resumeRequested)="resume($event)" />
+        </div>
       }
 
       @if (attention().length) {
@@ -133,12 +160,19 @@ const REFRESH_DEBOUNCE_MS = 300;
         <mat-tab [label]="'Chat (' + messages().length + ')'">
           <div class="chat-tab">
             @if (run.human_notes?.length) {
-              <p class="notes">The crew follows {{ run.human_notes!.length }} note(s) from you.</p>
+              <div class="notes">
+                <b>The crew follows these notes from you</b>
+                <ul>@for (n of run.human_notes!; track $index) {
+                  <li>{{ n.text }}@if (n.merged) { <span class="merged">merged</span> }</li>
+                }</ul>
+              </div>
             }
-            <app-chat [messages]="messages()" [tasks]="taskOptions()" [disabled]="terminal()"
-                      [busy]="submitting()" (send)="sendMessage($event)" />
+            <app-chat [messages]="messages()" [tasks]="taskOptions()" [disabled]="terminal()" [editable]="true"
+                      [busy]="submitting()" (send)="sendMessage($event)" (edited)="editMessage($event)"
+                      (withdraw)="withdrawMessage($event)" />
           </div>
         </mat-tab>
+        <mat-tab label="Usage"><app-usage-view [usage]="usage()" /></mat-tab>
         <mat-tab label="Plan"><app-plan-view [plan]="run.plan" /></mat-tab>
         <mat-tab label="Design"><app-design-view [design]="run.design" /></mat-tab>
         <mat-tab [label]="'Q&A (' + run.qa_log.length + ')'"><app-qa-panel [entries]="run.qa_log" /></mat-tab>
@@ -185,7 +219,13 @@ const REFRESH_DEBOUNCE_MS = 300;
               color: var(--dc-amber); border: 1px solid rgba(255, 193, 77, 0.5); background: rgba(255, 193, 77, 0.08); }
     .paused.pending { color: var(--dc-text-dim); border-color: var(--dc-border-strong); background: transparent; }
     .chat-tab { padding: 12px 4px; max-width: 980px; }
-    .notes { color: var(--dc-teal); font-size: 13px; margin: 0 0 8px; }
+    .notes { font-size: 13px; margin: 0 0 10px; padding: 8px 12px; border-radius: 8px;
+             border: 1px solid rgba(45, 226, 176, 0.35); background: rgba(45, 226, 176, 0.06); }
+    .notes b { color: var(--dc-teal); }
+    .notes ul { margin: 4px 0 0; padding-left: 18px; }
+    .merged { margin-left: 6px; font-size: 11px; color: var(--dc-text-faint); }
+    .tokens { font-size: 12px; color: var(--dc-text-dim); font-family: var(--dc-mono); }
+    .run-level { margin-top: 12px; }
   `,
 })
 export class RunDetailComponent {
@@ -201,6 +241,8 @@ export class RunDetailComponent {
   readonly submitting = signal(false);
   readonly workflow = signal<Workflow | null>(null);
   readonly messages = signal<RunMessage[]>([]);
+  readonly usage = signal<RunUsage | null>(null);
+  private readonly router = inject(Router);
   readonly selectedNode = signal<string | null>(null);
   readonly tab = signal(0);
   private readonly stream = signal<RunEventStream | null>(null);
@@ -220,6 +262,9 @@ export class RunDetailComponent {
     ['pending', 'preparing', 'planning', 'awaiting_plan_approval', 'designing', 'awaiting_design_approval',
      'scaffolding', 'executing', 'needs_human'].includes(this.run()?.status ?? ''),
   );
+  /** Decisions about the whole run that belong to no workflow node (the budget). */
+  readonly runLevelPending = computed(() => (this.run()?.pending ?? []).filter((p) => p.kind === 'budget'));
+  readonly workingTime = computed(() => formatDuration((this.usage()?.active_s ?? 0) * 1000));
   readonly taskOptions = computed(() =>
     (this.run()?.plan?.tasks ?? []).map((t) => ({ id: t.id, title: t.title })),
   );
@@ -280,6 +325,42 @@ export class RunDetailComponent {
     });
   }
 
+  editMessage(change: { id: number; text: string }): void {
+    this.api.editMessage(this.id(), change.id, change.text).subscribe({
+      next: (m) => this.messages.update((ms) => ms.map((x) => (x.id === m.id ? m : x))),
+      error: (err: { error?: { detail?: unknown } }) =>
+        this.error.set(`Could not edit the message: ${JSON.stringify(err.error?.detail ?? 'request failed')}`),
+    });
+  }
+
+  withdrawMessage(id: number): void {
+    this.api.withdrawMessage(this.id(), id).subscribe({
+      next: (m) => this.messages.update((ms) => ms.map((x) => (x.id === m.id ? m : x))),
+      error: (err: { error?: { detail?: unknown } }) =>
+        this.error.set(`Could not withdraw the message: ${JSON.stringify(err.error?.detail ?? 'request failed')}`),
+    });
+  }
+
+  retry(): void {
+    this.submitting.set(true);
+    this.api.retry(this.id()).subscribe({
+      next: () => {
+        this.submitting.set(false);
+        this.stream()?.close();
+        this.stream.set(this.streams.connect(this.id(), () => this.onEvent()));
+        this.load();
+      },
+      error: (err: { error?: { detail?: unknown } }) => {
+        this.submitting.set(false);
+        this.error.set(`Could not retry: ${JSON.stringify(err.error?.detail ?? 'request failed')}`);
+      },
+    });
+  }
+
+  runAgain(): void {
+    void this.router.navigate(['/runs/new'], { queryParams: { from: this.id() } });
+  }
+
   setPaused(paused: boolean): void {
     this.submitting.set(true);
     this.api.pause(this.id(), paused).subscribe({
@@ -317,6 +398,7 @@ export class RunDetailComponent {
     this.run.set(null);
     this.workflow.set(null);
     this.messages.set([]);
+    this.usage.set(null);
     this.selectedNode.set(null);
     this.seenAttention = new Set();
     this.stream.set(this.streams.connect(id, () => this.onEvent()));
@@ -370,9 +452,13 @@ export class RunDetailComponent {
       run: this.api.getRun(this.id()),
       workflow: this.api.workflow(this.id()),
       messages: this.api.messages(this.id()).pipe(catchError(() => of(null))),
+      usage: this.api.usage(this.id()).pipe(catchError(() => of(null))),
     }).subscribe({
-      next: ({ run, workflow, messages }) => {
+      next: ({ run, workflow, messages, usage }) => {
         this.run.set(run);
+        if (usage) {
+          this.usage.set(usage);
+        }
         if (messages) {
           this.messages.set(messages);
         }

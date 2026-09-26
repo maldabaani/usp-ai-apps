@@ -59,6 +59,13 @@ class Settings(BaseSettings):
     github_poll_tick_s: float = Field(default=30.0, gt=0)
     default_poll_interval_s: int = Field(default=300, ge=30)
     max_issue_runs: int = Field(default=2, ge=1)
+    # Phase 14: default budgets per run (0 = no limit; a run can set its own), the project's
+    # tests after every wave of tasks, and the size limit of the human's notes in prompts.
+    run_token_budget: int = Field(default=0, ge=0)
+    run_time_budget_min: int = Field(default=0, ge=0)
+    wave_tests_enabled: bool = True
+    max_wave_fix_tasks: int = Field(default=2, ge=0)
+    max_notes_chars: int = Field(default=3000, ge=200)
     max_conflict_rounds: int = Field(default=2, ge=0, description="Merge-conflict fixes per task.")
     max_coordinator_actions: int = Field(
         default=2, ge=0, description="Automatic retry/replan/split decisions per task/node."

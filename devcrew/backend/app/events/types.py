@@ -19,6 +19,7 @@ class EventType(StrEnum):
     STATUS = "status"  # run status transition
     AWAITING_INPUT = "awaiting_input"  # graph interrupted, waiting for the human
     MESSAGE = "message"  # a chat message from the human and what was done with it
+    LLM_USAGE = "llm_usage"  # one model call: role, tokens, duration (run usage and budgets)
 
 
 class EventIn(BaseModel):

@@ -185,6 +185,8 @@ async def test_request_size_limit_and_client_config(tmp_path: Path) -> None:
             "max_parallel_devs": 2,
             "github_enabled": False,
             "max_pr_rounds": 3,
+            "run_token_budget": 0,
+            "run_time_budget_min": 0,
         }
         too_long = {**REQUEST, "request": "# Requirements\n\n" + "x" * 300}
         resp = await a.client.post("/runs", json=too_long)

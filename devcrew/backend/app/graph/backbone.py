@@ -25,6 +25,7 @@ from langgraph.types import Command, Send
 
 from app.db.models import RunStatus
 from app.events.types import EventType
+from app.graph.budget import budget_reasons, make_budget
 from app.graph.coordinator import make_run_coordinator, make_run_escalate
 from app.graph.interrupts import InterruptKind, InterruptRequest, ResumeAction, request_input
 from app.graph.nodes.approvals import make_approve_design, make_approve_final, make_approve_plan
@@ -51,6 +52,7 @@ from app.graph.runtime import GraphDeps, NodeFn, instrument
 from app.graph.state import RunState, TaskState, TaskStatus, dump, get_plan
 from app.graph.steering import apply_at_schedule
 from app.graph.task_subgraph import build_task_subgraph
+from app.graph.wave_check import check_wave
 
 
 def ready_tasks(state: dict[str, Any]) -> tuple[list[str], dict[str, dict[str, Any]]]:
@@ -82,6 +84,8 @@ def make_schedule(deps: GraphDeps) -> NodeFn:
         # 0. Safe point (Phase 13): pause on request, then apply the human's chat messages.
         if await deps.steering.pause_requested(run_id):
             return Command(goto="pause", update={"status": RunStatus.PAUSED.value})
+        if await budget_reasons(deps, state):
+            return Command(goto="budget", update={"status": RunStatus.NEEDS_HUMAN.value})
         state, extra = await apply_at_schedule(deps, state)
         steered_tasks = extra.pop("tasks", {})
         # 1. Apply Coordinator plan changes (replan/split) produced by the last wave.
@@ -106,9 +110,15 @@ def make_schedule(deps: GraphDeps) -> NodeFn:
         else:
             task_updates = {}
 
-        # 2. Dispatch the next wave.
+        # 2. Test what the last wave merged before building on it (may add a fix task).
+        ready, _ = ready_tasks(state)
+        state, checked = await check_wave(deps, state, ready)
+        wave_tasks = checked.pop("tasks", {})
+        extra |= checked
+
+        # 3. Dispatch the next wave.
         ready, blocked = ready_tasks(state)
-        updates = {**steered_tasks, **task_updates, **blocked}
+        updates = {**steered_tasks, **task_updates, **wave_tasks, **blocked}
         if not ready:
             return Command(
                 goto="integration",
@@ -189,7 +199,8 @@ def build_graph(
         "coordinator": (make_run_coordinator(deps), ("planner", "architect", "escalate")),
         "escalate": (make_run_escalate(deps), ("prepare_repo", "planner", "architect", END)),
         "scaffold": (make_scaffold(deps), ("schedule",)),
-        "schedule": (make_schedule(deps), ("task_worker", "integration", "pause")),
+        "schedule": (make_schedule(deps), ("task_worker", "integration", "pause", "budget")),
+        "budget": (make_budget(deps), ("schedule", END)),
         "pause": (make_pause(deps), ("schedule",)),
         "integration": (make_integration(deps), ("gates",)),
         "gates": (make_gates(deps), ("approve_final", "schedule", "github_delivery")),
@@ -230,6 +241,7 @@ def initial_state(
     target: str = "new",
     mode: str = "full",
     issue: dict[str, Any] | None = None,
+    budget: dict[str, int] | None = None,
 ) -> RunState:
     existing = target == "existing"
     state = RunState(
@@ -265,6 +277,8 @@ def initial_state(
         plan_changes=[],
         plan_changes_applied=0,
         coordinator_retries={},
+        budget=budget,
+        budget_limit=None,
     )
     if not existing:
         state["base_branch"] = "main"

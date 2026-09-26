@@ -143,7 +143,7 @@ export interface QAEntry {
 }
 
 export type ResumeAction = 'approve' | 'reject' | 'edit' | 'answer' | 'update';
-export type InterruptKind = 'approval' | 'question' | 'escalation' | 'watch' | 'pause';
+export type InterruptKind = 'approval' | 'question' | 'escalation' | 'watch' | 'pause' | 'budget';
 
 export interface PendingInput {
   interrupt_id: string;
@@ -245,7 +245,7 @@ export interface RunDetail extends RunSummary {
   issue?: RunIssue | null;
   followup?: FollowupState | null;
   pause_requested?: boolean;
-  human_notes?: { id: number; text: string }[];
+  human_notes?: { id: number | null; text: string; merged?: boolean }[];
   plan: Plan | null;
   design: Design | null;
   tasks: Record<string, TaskState>;
@@ -263,6 +263,8 @@ export interface CreateRunRequest {
   create_repo: boolean;
   target?: RunTarget;
   mode?: RunMode;
+  token_budget?: number | null;
+  time_budget_min?: number | null;
 }
 
 export interface ResumeRequest {
@@ -285,6 +287,7 @@ export const EVENT_TYPES = [
   'status',
   'awaiting_input',
   'message',
+  'llm_usage',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
@@ -342,6 +345,8 @@ export interface ClientConfig {
   max_parallel_devs: number;
   github_enabled: boolean;
   max_pr_rounds: number;
+  run_token_budget: number;
+  run_time_budget_min: number;
 }
 
 export interface WatchedRepo {
@@ -428,7 +433,7 @@ export interface Workflow {
 }
 
 /** A chat message from the human to the run (task_id null) or to one task (Phase 13). */
-export type MessageStatus = 'pending' | 'delivered' | 'applied' | 'answered' | 'expired';
+export type MessageStatus = 'pending' | 'delivered' | 'applied' | 'answered' | 'expired' | 'withdrawn';
 
 export interface RunMessage {
   id: number;
@@ -449,4 +454,27 @@ export interface MessageIn {
 export interface PauseState {
   status: RunStatus;
   pause_requested: boolean;
+}
+
+/** Tokens and time of a run (GET /runs/{id}/usage). */
+export interface UsageLine {
+  key: string;
+  calls: number;
+  input_tokens: number;
+  output_tokens: number;
+  model_seconds: number;
+}
+
+export interface RunUsage {
+  calls: number;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  model_seconds: number;
+  elapsed_s: number;
+  waiting_s: number;
+  active_s: number;
+  by_role: UsageLine[];
+  by_task: UsageLine[];
+  budget: { tokens: number; minutes: number } | null;
 }

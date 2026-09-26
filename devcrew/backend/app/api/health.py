@@ -29,6 +29,8 @@ class ClientConfig(BaseModel):
     max_parallel_devs: int
     github_enabled: bool
     max_pr_rounds: int
+    run_token_budget: int
+    run_time_budget_min: int
 
 
 @router.get("/config", response_model=ClientConfig)
@@ -40,4 +42,6 @@ async def client_config(container: ContainerDep) -> ClientConfig:
         max_parallel_devs=s.max_parallel_devs,
         github_enabled=container.deps.github is not None,
         max_pr_rounds=s.max_pr_rounds,
+        run_token_budget=s.run_token_budget,
+        run_time_budget_min=s.run_time_budget_min,
     )

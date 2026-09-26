@@ -521,6 +521,14 @@ class RunState(TypedDict, total=False):
     human_notes: list[dict[str, Any]]
     steer_applied: list[int]
 
+    # Phase 14: budgets. `budget` is the run's own {"tokens", "minutes"} (None: the settings'
+    # defaults); `budget_limit` is the raised limit after "continue"; `wave_checked` is the last
+    # wave whose merged result was tested; `wave_fixes` counts the fix tasks those tests added.
+    budget: dict[str, int] | None
+    budget_limit: dict[str, int] | None
+    wave_checked: int
+    wave_fixes: int
+
 
 class TaskWorkerState(TypedDict, total=False):
     run_id: str

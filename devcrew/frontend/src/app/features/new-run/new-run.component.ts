@@ -1,5 +1,5 @@
 import { DecimalPipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, effect, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import {
   AbstractControl,
@@ -158,6 +158,24 @@ function issueValidator(control: AbstractControl<string>): ValidationErrors | nu
           @if (!existing()) {
             <mat-checkbox formControlName="create_repo">Create the repository if it is missing (private)</mat-checkbox>
           }
+          @if (!fromIssue()) {
+            <details class="budget" [open]="budgetOpen()">
+              <summary>Budget (optional)</summary>
+              <div class="budget-fields">
+                <mat-form-field appearance="outline">
+                  <mat-label>Tokens</mat-label>
+                  <input matInput type="number" min="0" formControlName="token_budget" [placeholder]="defaultTokens()" />
+                </mat-form-field>
+                <mat-form-field appearance="outline">
+                  <mat-label>Working minutes</mat-label>
+                  <input matInput type="number" min="0" formControlName="time_budget_min" [placeholder]="defaultMinutes()" />
+                </mat-form-field>
+              </div>
+              <p class="target-hint">Checked before every wave of tasks: at the limit the run asks you to
+                continue or stop. Empty uses the server default; 0 means no limit.</p>
+            </details>
+          }
+          @if (fromRun()) { <p class="target-hint">Copied from run <code>{{ fromRun()!.slice(0, 12) }}</code>; edit anything before starting.</p> }
           @if (error(); as e) {
             <p class="error" role="alert">{{ e }}</p>
           }
@@ -196,6 +214,9 @@ function issueValidator(control: AbstractControl<string>): ValidationErrors | nu
     .actions { margin-top: 8px; }
     .start { box-shadow: var(--dc-glow-cyan); }
     .error { color: var(--dc-red); }
+    .budget summary { cursor: pointer; color: var(--dc-text-dim); font-size: 13px; }
+    .budget-fields { display: flex; gap: 12px; margin-top: 8px; }
+    .budget-fields mat-form-field { width: 180px; }
   `,
 })
 export class NewRunComponent {
@@ -217,6 +238,8 @@ export class NewRunComponent {
     target: ['new' as RunTarget],
     mode: ['full' as RunMode],
     source: ['text' as 'text' | 'issue'],
+    token_budget: [null as number | null, [Validators.min(0)]],
+    time_budget_min: [null as number | null, [Validators.min(0)]],
     issue: [{ value: '', disabled: true }, [Validators.required, issueValidator]],
   });
   private readonly targetValue = toSignal(this.form.controls.target.valueChanges, {
@@ -228,7 +251,24 @@ export class NewRunComponent {
   });
   readonly fromIssue = computed(() => this.existing() && this.sourceValue() === 'issue');
 
+  /** ?from=<run id>: "Run again" prefills the form from that run. */
+  readonly from = input<string | undefined>(undefined);
+  readonly fromRun = signal<string | null>(null);
+  readonly budgetOpen = signal(false);
+  readonly defaultTokens = computed(() => this.budgetHint(this.config()?.run_token_budget));
+  readonly defaultMinutes = computed(() => this.budgetHint(this.config()?.run_time_budget_min));
+
+  private budgetHint(value: number | undefined): string {
+    return value ? `default ${value}` : 'default: none';
+  }
+
   constructor() {
+    effect(() => {
+      const id = this.from();
+      if (id) {
+        untracked(() => this.prefill(id));
+      }
+    });
     // only the active requirements source is validated
     effect(() => {
       const issue = this.fromIssue();
@@ -240,6 +280,23 @@ export class NewRunComponent {
         request.enable({ emitEvent: false });
         issueControl.disable({ emitEvent: false });
       }
+    });
+  }
+
+  private prefill(id: string): void {
+    this.api.getRun(id).subscribe({
+      next: (run) => {
+        this.form.patchValue({
+          request: run.request,
+          repo_target: run.repo_target,
+          target: run.target ?? 'new',
+          mode: run.mode ?? 'full',
+          create_repo: false,
+        });
+        this.fromRun.set(run.id);
+        this.mode.set('preview');
+      },
+      error: () => this.error.set(`Could not load run ${id} to copy it.`),
     });
   }
 
@@ -318,6 +375,8 @@ export class NewRunComponent {
           target: value.target,
           create_repo: existing ? false : value.create_repo,
           mode: existing ? value.mode : 'full',
+          ...(value.token_budget !== null ? { token_budget: value.token_budget } : {}),
+          ...(value.time_budget_min !== null ? { time_budget_min: value.time_budget_min } : {}),
         });
     started.subscribe({
       next: (run) => void this.router.navigate(['/runs', run.id]),

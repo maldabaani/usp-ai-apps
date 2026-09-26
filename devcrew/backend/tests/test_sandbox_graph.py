@@ -34,6 +34,7 @@ async def test_install_then_offline_tests_then_cleanup(tmp_path: Path) -> None:
     assert runner.commands(network=True) == [(None, "pip install -e .", ".")]
     assert runner.commands(network=False) == [
         ("T1", PYTEST, "."),
+        (None, PYTEST, "."),  # the integration branch after wave 1 (T2 builds on it)
         ("T2", PYTEST, "."),
         (None, PYTEST, "."),
     ]

@@ -4,7 +4,7 @@ import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 
 import { RunEvent } from '../../core/api.models';
 
-const NOISY = new Set(['tool_call', 'tool_result', 'node_finished']);
+const NOISY = new Set(['tool_call', 'tool_result', 'node_finished', 'llm_usage']);
 
 export function describeEvent(e: RunEvent): string {
   const p = e.payload;
@@ -32,6 +32,8 @@ export function describeEvent(e: RunEvent): string {
       const target = e.task_id ? ` (to ${e.task_id})` : '';
       return p['reply'] ? `${str(p['status'])}${target}: ${str(p['reply'])}` : `you${target}: ${str(p['text'])}`;
     }
+    case 'llm_usage':
+      return `${str(p['role'])}: ${Number(p['input_tokens'] ?? 0) + Number(p['output_tokens'] ?? 0)} tokens in ${(Number(p['duration_ms'] ?? 0) / 1000).toFixed(1)}s`;
     case 'awaiting_input':
       return p['kind'] === 'watch'
         ? 'watching the pull request for reviews, CI and conflicts'

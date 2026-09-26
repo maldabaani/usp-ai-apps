@@ -76,6 +76,10 @@ export function roundOf(nodeId: string): number | null {
     @if (roleText()) { <p class="role">{{ roleText() }}</p> }
     @if (n.detail) { <p class="detail">{{ n.detail }}</p> }
 
+    @if (n.id === 'approve_final' && waitingChat() > 0 && pending().length) {
+      <p class="chat-hint">💬 {{ waitingChat() }} chat message(s) are waiting. If you reject, they are
+        added to your feedback for the follow-up task.</p>
+    }
     @for (p of pending(); track p.interrupt_id) {
       <app-action-panel [pending]="p" [busy]="busy()" [tasks]="run().tasks" (resumeRequested)="resumeRequested.emit($event)" />
     }
@@ -223,6 +227,7 @@ export function roundOf(nodeId: string): number | null {
     .gname { font-weight: 700; text-transform: capitalize; margin-right: 8px; }
     .gstatus { text-transform: uppercase; font-size: 10.5px; font-weight: 700; margin-right: 8px; color: var(--dc-text-dim); }
     .passed .gstatus { color: var(--dc-teal); } .failed .gstatus { color: var(--dc-red); } .error .gstatus { color: var(--dc-amber); }
+    .chat-hint { font-size: 13px; color: var(--dc-amber); margin: 6px 0; }
     .round-tasks, .ignored { padding-left: 18px; font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
     .tstate { margin-left: 6px; font-size: 11px; text-transform: uppercase; color: var(--dc-text-dim); }
     .never { margin-left: 8px; font-size: 11px; color: var(--dc-red); border: 1px solid rgba(255, 90, 122, 0.5); border-radius: 8px; padding: 0 6px; }
@@ -251,6 +256,9 @@ export class WorkflowPanelComponent {
       (status !== undefined && ['merged', 'failed', 'blocked', 'split', 'cancelled'].includes(status))
     );
   });
+  readonly waitingChat = computed(
+    () => this.messages().filter((m) => m.task_id === null && m.status === 'pending').length,
+  );
   readonly taskMessages = computed(
     () => this.messages().filter((m) => m.task_id === this.node().task_id).length,
   );
