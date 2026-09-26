@@ -35,6 +35,9 @@ class Section:
         return f"## {self.title}\n{self.body.strip()}\n"
 
 
+REJECTED = " (rejected: do not repeat it unchanged)"
+
+
 def fit_sections(sections: Sequence[Section], budget_tokens: int) -> str:
     """Render sections within `budget_tokens`, truncating low-priority ones first."""
     items = [s for s in sections if s.body.strip()]
@@ -180,6 +183,15 @@ def planner_context(
     sections = [Section("Feature request", request, priority=0, required=True)]
     sections += repository_sections(repo, mode)
     sections += notes_sections(notes)
+    if qa:
+        sections.append(Section("Answers from the human", render_qa(qa), 1))
+    # The rejected plan comes first and the feedback last: small models tend to copy
+    # whatever they read last (a real run returned the rejected plan unchanged).
+    if previous_plan is not None:
+        title = (
+            "Previous plan (rejected: do not repeat it unchanged)" if feedback else "Previous plan"
+        )
+        sections.append(Section(title, previous_plan.model_dump_json(indent=1), 6))
     if feedback:
         sections.append(
             Section(
@@ -189,10 +201,6 @@ def planner_context(
                 required=True,
             )
         )
-    if previous_plan is not None:
-        sections.append(Section("Previous plan", previous_plan.model_dump_json(indent=1), 6))
-    if qa:
-        sections.append(Section("Answers from the human", render_qa(qa), 1))
     return fit_sections(sections, budget)
 
 
@@ -217,6 +225,17 @@ def architect_context(
         Section("User stories", render_stories(plan), priority=3),
         *notes_sections(notes),
     ]
+    if qa:
+        sections.append(Section("Answers from the human", render_qa(qa), 1))
+    # The rejected design comes first and the feedback last: small models tend to copy
+    # whatever they read last (a real run returned the rejected design unchanged).
+    if previous_design is not None:
+        title = (
+            "Previous design (rejected: do not repeat it unchanged)"
+            if feedback
+            else "Previous design"
+        )
+        sections.append(Section(title, previous_design.model_dump_json(indent=1), 6))
     if feedback:
         sections.append(
             Section(
@@ -226,10 +245,6 @@ def architect_context(
                 required=True,
             )
         )
-    if previous_design is not None:
-        sections.append(Section("Previous design", previous_design.model_dump_json(indent=1), 6))
-    if qa:
-        sections.append(Section("Answers from the human", render_qa(qa), 1))
     return fit_sections(sections, budget)
 
 

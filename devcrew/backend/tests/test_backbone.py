@@ -436,3 +436,18 @@ async def test_developer_question_inside_task_subgraph(tmp_path: Path) -> None:
     assert [(e["task_id"], e["answer"]) for e in state["qa_log"]] == [("T1", "ints")]
     ws = Path(state["workspace"])
     assert git(ws, "show", f"{state['integration_branch']}:app/schemas/todo.py") == "id: int\n"
+
+
+def test_rejection_feedback_comes_last_in_the_revision_prompt() -> None:
+    from app.graph.context_builder import architect_context, planner_context
+    from app.graph.state import Design, Plan
+    from tests.graph_harness import DESIGN, PLAN
+
+    plan = Plan.model_validate(PLAN)
+    text = planner_context("Build it", 5000, feedback="Use 3 tasks", previous_plan=plan)
+    assert text.index("Previous plan (rejected") < text.index("Use 3 tasks")
+    assert text.rstrip().endswith("Use 3 tasks")
+    design = Design.model_validate(DESIGN)
+    text = architect_context("Build it", plan, 5000, feedback="Use UUIDs", previous_design=design)
+    assert text.rstrip().endswith("Use UUIDs")
+    assert "rejected" not in planner_context("Build it", 5000, previous_plan=plan)

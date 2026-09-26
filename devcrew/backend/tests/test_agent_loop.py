@@ -127,3 +127,39 @@ def test_compaction_truncates_when_eliding_is_not_enough() -> None:
     msgs = [SystemMessage(content="s"), HumanMessage(content="y\n" * 6000)]
     compact_messages(msgs, budget=1000)
     assert messages_tokens(msgs) <= 1000 and "[truncated]" in str(msgs[1].content)
+
+
+async def test_a_repeated_identical_call_withdraws_the_tool() -> None:
+    """The real-run failure: after the question limit a small model asked the same question 27
+    times. Two identical calls with identical results in a row withdraw the tool."""
+
+    def dev(call: Call) -> AIMessage:
+        if call.tool_names and "ask_human" in call.tool_names:
+            return tool_call("ask_human", question="Which template?")
+        return final("decided: python-fastapi")
+
+    b = brain(dev)
+    tools = [ask_human_tool(limit_reached=True), ECHO]
+    out = await run_agent(gateway(b), Role.DEVELOPER, MESSAGES, tools, max_steps=30)
+    assert out.kind == "final" and out.final_text == "decided: python-fastapi"
+    assert len(b.calls) == 3  # two refused asks, then the tool is gone
+    assert b.calls[2].tool_names == ("echo",)
+    note = b.calls[2].messages[-1]
+    assert isinstance(note, HumanMessage) and "no longer available" in str(note.content)
+
+
+async def test_repeating_a_tool_after_other_work_is_fine() -> None:
+    script = iter(
+        [
+            tool_call("echo", text="t"),
+            tool_call("echo", text="x"),
+            tool_call("echo", text="t"),
+            tool_call("echo", text="t"),
+            final("ok"),
+        ]
+    )
+    b = brain(lambda call: next(script))
+    out = await run_agent(gateway(b), Role.DEVELOPER, MESSAGES, [ECHO], max_steps=10)
+    assert out.kind == "final" and out.tool_calls == 4
+    # the last two calls were identical and consecutive: echo is withdrawn before the answer
+    assert b.calls[-1].tool_names == ()

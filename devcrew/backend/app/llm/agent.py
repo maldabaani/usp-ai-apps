@@ -29,6 +29,10 @@ logger = logging.getLogger(__name__)
 
 ELIDED = "[earlier tool output elided to fit the context window; call the tool again if needed]"
 TOOL_SCHEMA_OVERHEAD_TOKENS = 150  # per bound tool, rough
+# A tool called with the same arguments, returning the same result, this many times in a row is
+# withdrawn for the rest of the turn (small models loop, e.g. asking again after the question
+# limit: one real run spent 27 model calls that way).
+REPEAT_LIMIT = 2
 
 ToolEventHook = Callable[[Literal["tool_call", "tool_result"], dict[str, Any]], Awaitable[None]]
 
@@ -93,6 +97,9 @@ async def run_agent(
     transcript = list(messages)
     by_name = {t.name: t for t in tools}
     schemas = [t.schema() for t in tools]
+    withdrawn: set[str] = set()
+    last_call: tuple[str, str, str] | None = None  # (tool, args, result) of the previous step
+    repeats = 0
     budget = gateway.spec(role).prompt_budget - TOOL_SCHEMA_OVERHEAD_TOKENS * len(tools)
     retried_malformed = False
     tool_calls_made = 0
@@ -115,8 +122,12 @@ async def run_agent(
         for call in ai.tool_calls:
             call_id = call.get("id") or uuid.uuid4().hex
             spec = by_name.get(call["name"])
-            if spec is None:
-                problems.append(f"unknown tool '{call['name']}'")
+            if spec is None or spec.name in withdrawn:
+                problems.append(
+                    f"tool '{call['name']}' is no longer available"
+                    if spec is not None
+                    else f"unknown tool '{call['name']}'"
+                )
                 continue
             try:
                 valid.append((call_id, spec, spec.args_model.model_validate(call["args"])))
@@ -154,6 +165,7 @@ async def run_agent(
             )
 
         pause: tuple[str, str] | None = None
+        step_calls: list[tuple[str, str, str]] = []
         for call_id, spec, args in valid:
             if spec.pauses_for_human:
                 if pause is None:
@@ -185,6 +197,25 @@ async def run_agent(
             result = truncate_to_tokens(result, max_tool_output_tokens)
             transcript.append(ToolMessage(content=result, tool_call_id=call_id, name=spec.name))
             await emit("tool_result", {"tool": spec.name, "ok": ok, "result": result[:2000]})
+            step_calls.append((spec.name, args.model_dump_json(), result))
+
+        if len(step_calls) == 1 and step_calls[0] == last_call:
+            repeats += 1
+        else:
+            repeats = 0
+        last_call = step_calls[0] if len(step_calls) == 1 else None
+        if repeats >= REPEAT_LIMIT - 1 and last_call is not None and pause is None:
+            name = last_call[0]
+            withdrawn.add(name)
+            schemas = [t.schema() for t in tools if t.name not in withdrawn]
+            last_call, repeats = None, 0
+            transcript.append(
+                HumanMessage(
+                    content=f"You called `{name}` again with the same arguments and got the same "
+                    "result, so it is no longer available in this turn. Continue without it: "
+                    "use your best judgment and finish your task."
+                )
+            )
 
         if pause is not None:
             call_id, question = pause
