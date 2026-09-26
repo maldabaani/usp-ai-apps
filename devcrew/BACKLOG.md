@@ -162,6 +162,66 @@ robustness, **P3** = nice to have.
   live Playwright walk-through from document upload to PR, including the plan assessment and
   a developer question). Check it with real model timings and larger plans (with BL-002).
 
+## Roadmap: phases 11-13 (agreed in the P10 gap brainstorm)
+
+These phases loosen two locked decisions, with your approval: DevCrew may work on existing
+repositories ("greenfield only" no longer applies), and it may perform the GitHub actions listed
+below (read issues and PRs, comment, push follow-up commits to its own PR branches). It still
+never pushes to the default branch of an existing repo, and never pushes before your approval.
+
+- **Phase 11: existing repositories + quality gates**
+  - Work on existing Python/Java (Maven)/Angular repos. The stack is auto-detected; other repos
+    are refused.
+  - Per-run mode: "Full" (plan -> Architect assesses the existing design -> development) or
+    "Quick fix" (one change-plan approval, no Architect).
+  - Delivery: a branch and a PR against the repo's default branch.
+  - Gates before the PR:
+    - secret scanning, always blocking;
+    - dependency vulnerabilities;
+    - a test coverage threshold.
+  - A failed gate goes back to the Developer; if it still fails, the Coordinator asks you:
+    allow (noted in the PR body) or stop.
+- **Phase 12: GitHub automation**
+  - Issue intake: polling of watched repos for issues labelled `devcrew`, plus manual import
+    of an issue URL or number. DevCrew comments on the issue (started, waiting for approval,
+    PR link), and the PR says "Fixes #N".
+  - PR follow-up on review comments (from allow-listed users), CI failures and merge conflicts.
+    Small, clear asks are fixed and pushed automatically; larger ones become a "needs you" step
+    with the proposed change. Bounded number of rounds.
+- **Phase 13: steering running work**
+  - A chat on the run or on a task node. Messages go to the Coordinator and are applied at the
+    next safe point.
+  - Pause/Resume.
+
+- [ ] **BL-117** (P3, from the P10 gap review) Static analysis (SAST: semgrep/bandit) as an
+  additional gate; not selected for Phase 11.
+
+## Parity with commercial coding agents (from the P10 gap review)
+
+Deferred by the user. Phase 11 covers existing repos, issue triggers, PR follow-up, mid-run
+steering and security gates.
+
+- [ ] **BL-110** (P2) Live app preview: start the generated app in the sandbox with a port
+  exposed to the host and show it in the UI; optionally a browser the agent can drive for
+  end-to-end checks.
+- [ ] **BL-111** (P2) Cost and usage in the UI: tokens per run, per role and per task, wall
+  time, and budgets (stop or ask after N tokens or minutes).
+- [ ] **BL-112** (P3) Model choice per run from the UI, routing (strong model for hard tasks,
+  small model for easy ones) and a fallback model on repeated failures.
+- [ ] **BL-113** (P3) Memory across runs: repository rules files (`AGENTS.md`-style) and
+  lessons learned. *Changes a locked decision ("no cross-run memory"): needs your approval.*
+- [ ] **BL-114** (P3) Teams and enterprise: authentication/SSO, roles, several users, audit
+  log. *Changes a locked decision ("no auth", single user): needs your approval.*
+- [ ] **BL-115** (P3) More stacks and delivery targets: other languages/templates, generated
+  Dockerfile and CI workflow, DB migrations, deploy to a preview environment.
+- [ ] **BL-116** (P3) Conveniences:
+  - re-run or fork a run from any step;
+  - turn diff comments in the UI into developer feedback;
+  - run presets or templates;
+  - notifications (desktop, email, Slack) when input is needed;
+  - export a run report;
+  - mobile-friendly approvals.
+
 ## Retrieval (RAG)
 
 - [ ] **BL-030** (P2, from P4) The index mirrors the integration branch only: code of in-flight
