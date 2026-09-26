@@ -10,7 +10,7 @@ from langgraph.types import Command
 
 from app.db.models import RunStatus
 from app.events.types import EventType
-from app.gates.checks import parse_coverage
+from app.gates.checks import failing_tests, parse_coverage
 from app.github.delivery import DeliveryError
 from app.graph.interrupts import InterruptKind, InterruptRequest, ResumeAction, request_input
 from app.graph.layout import resolve_layout, sandbox_target
@@ -57,6 +57,7 @@ async def run_project_tests(
             result = TestResult(
                 ran=True,
                 passed=out.ok,
+                failed=[] if out.ok else failing_tests(stack, out.output),
                 command=command,
                 logs_excerpt=tail_text(out.output, 800),
             )

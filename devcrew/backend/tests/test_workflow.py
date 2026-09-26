@@ -177,10 +177,11 @@ async def test_failed_planner_marks_the_stage_failed(tmp_path: Path) -> None:
 
 # ------------------------------------------------------------------------------ requests
 async def test_request_size_limit_and_client_config(tmp_path: Path) -> None:
-    async with api(tmp_path, max_request_chars=200) as a:
+    async with api(tmp_path, max_request_chars=200, max_document_chars=1000) as a:
         config = (await a.client.get("/config")).json()
         assert config == {
             "max_request_chars": 200,
+            "max_document_chars": 1000,
             "max_dev_iterations": 3,
             "max_parallel_devs": 2,
             "github_enabled": False,
@@ -188,10 +189,10 @@ async def test_request_size_limit_and_client_config(tmp_path: Path) -> None:
             "run_token_budget": 0,
             "run_time_budget_min": 0,
         }
-        too_long = {**REQUEST, "request": "# Requirements\n\n" + "x" * 300}
+        too_long = {**REQUEST, "request": "# Requirements\n\n" + "x" * 1100}
         resp = await a.client.post("/runs", json=too_long)
         assert resp.status_code == 422
-        assert "the limit is 200" in resp.json()["detail"]
+        assert "the limit is 1,000" in resp.json()["detail"]
         ok = {**REQUEST, "request": "# Requirements\n\n- CRUD for todos\n- pytest tests\n"}
         run_id = await create(a, ok)
         run = await a.settle(run_id)

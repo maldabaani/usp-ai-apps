@@ -256,3 +256,21 @@ def dependencies_gate(
 
 def tool_missing(output: str, tool: str) -> bool:
     return f"{tool}: not found" in output or f"{tool}: command not found" in output
+
+
+_FAILURE_PATTERNS: dict[str, list[re.Pattern[str]]] = {
+    # pytest: "FAILED tests/test_x.py::test_y - assert ..." / "ERROR tests/test_x.py::test_z"
+    "python": [re.compile(r"^(?:FAILED|ERROR) (\S+)", re.MULTILINE)],
+    # Maven surefire: "[ERROR]   TodoServiceTest.create:42 expected ..."
+    "java": [re.compile(r"^\[ERROR\]\s+([A-Za-z_][\w$]*(?:\.[\w$]+)+):\d+", re.MULTILINE)],
+    # Karma/Jasmine: "Chrome Headless 141 (Linux) AppComponent should create FAILED"
+    "angular": [re.compile(r"\)\s+(.+?) FAILED\s*$", re.MULTILINE)],
+}
+
+
+def failing_tests(stack: str, output: str) -> list[str]:
+    """Names of the failing tests in a test run's output (best effort; empty if unknown)."""
+    names: set[str] = set()
+    for pattern in _FAILURE_PATTERNS.get(stack, []):
+        names.update(m.strip() for m in pattern.findall(output))
+    return sorted(names)

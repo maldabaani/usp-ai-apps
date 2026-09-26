@@ -9,6 +9,7 @@ from app.gates.checks import (
     OSV_CMDS,
     SecretFinding,
     Vulnerability,
+    failing_tests,
     parse_coverage,
     parse_gitleaks,
     parse_osv,
@@ -64,6 +65,35 @@ async def scan_dependencies(
             continue
         outcome.vulnerabilities += parse_osv(result.output)
     return outcome
+
+
+@dataclass
+class BaseTestRun:
+    coverage: float | None
+    passed: bool
+    failing: list[str]
+
+
+async def run_base_tests(
+    sandbox: Sandbox,
+    target: SandboxTarget,
+    layout: Mapping[str, LayoutEntry],
+    *,
+    coverage: bool,
+) -> dict[str, BaseTestRun]:
+    """Each project's tests on the base branch (with coverage when asked): the baseline for
+    the coverage gate and for the tests after each wave."""
+    runs: dict[str, BaseTestRun] = {}
+    for stack, entry in sorted(layout.items()):
+        measure = coverage and bool(entry.template.coverage_cmd)
+        command = (entry.template.coverage_cmd or "") if measure else entry.template.test_cmd
+        result = await sandbox.exec(target, layout, command, cwd=entry.path)
+        runs[stack] = BaseTestRun(
+            coverage=parse_coverage(stack, result.output) if measure else None,
+            passed=result.ok,
+            failing=failing_tests(stack, result.output),
+        )
+    return runs
 
 
 async def measure_coverage(

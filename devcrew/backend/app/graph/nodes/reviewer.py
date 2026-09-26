@@ -45,6 +45,8 @@ def reviewer_tools(deps: GraphDeps, ctx: TaskCtx) -> list[ToolSpec]:
 
 def make_reviewer(deps: GraphDeps) -> NodeFn:
     async def reviewer(state: dict[str, Any]) -> Command[str]:
+        if await deps.steering.pause_requested(state["run_id"]):  # safe point (Phase 15)
+            return Command(goto="hold", update={"hold_next": "reviewer"})
         ctx = load_task_ctx(deps, state)
         diff = await ctx.repo.diff(ctx.integration_branch, ctx.branch)
 

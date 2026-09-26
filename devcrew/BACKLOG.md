@@ -41,9 +41,9 @@ robustness, **P3** = nice to have.
   *P6: runs that were mid-flight when the backend stopped are now continued automatically on
   startup.* Still open: a "retry" for runs already marked `failed` (not in the specified API;
   would be `POST /runs/{id}/retry` + a UI button). *Done in P14: `POST /runs/{id}/retry` and a Retry button continue a failed run from its last checkpoint.*
-- [ ] **BL-011** (P2, from P3) Installed-dependency tracking (`Sandbox._installed`) is in memory:
+- [x] **BL-011** (P2, from P3) Installed-dependency tracking (`Sandbox._installed`) is in memory:
   after a backend restart the next command re-runs the install step once. Persist the manifest
-  hash (e.g. in a marker file inside the dependency volume) if installs get slow.
+  hash (e.g. in a marker file inside the dependency volume) if installs get slow. *Done in P15: install hashes are kept in `WORKSPACES_DIR/.sandbox-state`.*
 - [ ] **BL-012** (P2, from P3) Java `install_cmd` works around `dependency:go-offline` resolving
   different versions than the real build (it resolves deps/plugins and fetches surefire's JUnit
   provider explicitly). Re-verify on Spring Boot upgrades; consider a Maven settings/offline
@@ -61,9 +61,9 @@ robustness, **P3** = nice to have.
   inside the compose backend container (mitigated: all capabilities dropped, no-new-privileges,
   read-only rootfs, no network). Consider running the backend container as a non-root user with
   docker-socket group access.
-- [ ] **BL-021** (P3, from P3) When the backend runs on the host as non-root, Docker creates
+- [x] **BL-021** (P3, from P3) When the backend runs on the host as non-root, Docker creates
   root-owned empty `node_modules` mount points inside workspaces; deleting a workspace then
-  needs root. Pre-create the directories as the backend user before mounting.
+  needs root. Pre-create the directories as the backend user before mounting. *Done in P15: the backend creates the mount points.*
 - [ ] **BL-022** (P3, from P3) Chromium runs with `--no-sandbox` inside the node/mixed images (the
   container is the sandbox). Revisit if a seccomp profile allowing Chromium's sandbox is added.
 - [ ] **BL-023** (P3, from P3) The mixed sandbox image is large (Python + JDK + Maven + Node +
@@ -109,9 +109,9 @@ robustness, **P3** = nice to have.
 - [x] **BL-080** (P2, from P8) Delivery to a non-empty repository is refused (greenfield only).
   Supporting "deliver into an existing repo" would need a base-branch choice and rebasing the
   scaffold, which is out of the specified scope. *Done in P11: existing repositories get a PR against their default branch.*
-- [ ] **BL-081** (P3, from P8) After a final rejection the follow-up task is merged into the same
+- [x] **BL-081** (P3, from P8) After a final rejection the follow-up task is merged into the same
   branch; if a PR was already opened (e.g. delivery retried later), the same PR is reused and
-  its body is not refreshed. Consider updating the PR body on re-delivery.
+  its body is not refreshed. Consider updating the PR body on re-delivery. *Done in P15: every re-delivery refreshes the PR title and body.*
 - [ ] **BL-082** (P3, from P8) Only github.com-style hosts were considered; GitHub Enterprise
   should work via `GITHUB_API_URL` / `GITHUB_GIT_URL` but is untested.
 
@@ -148,14 +148,14 @@ robustness, **P3** = nice to have.
 
 ## Workflow view (Phase 10)
 
-- [ ] **BL-100** (P2, from P10) Requirements documents are limited to `MAX_REQUEST_CHARS`
+- [x] **BL-100** (P2, from P10) Requirements documents are limited to `MAX_REQUEST_CHARS`
   (20,000 by default) because the Planner and Architect receive the whole text. Longer
-  documents would need a summarization or chunked-planning step, or a larger `num_ctx`.
+  documents would need a summarization or chunked-planning step, or a larger `num_ctx`. *Done in P15: documents up to `MAX_DOCUMENT_CHARS` are condensed part by part, and the Planner can use `search_requirements`.*
 - [ ] **BL-101** (P3, from P10) Only `.md`/`.txt` uploads (decided). `.docx`/`.pdf` would need
   server-side parsing dependencies.
-- [ ] **BL-102** (P3, from P10) `GET /runs/{id}/workflow` recomputes the graph from the full
+- [x] **BL-102** (P3, from P10) `GET /runs/{id}/workflow` recomputes the graph from the full
   event log on every (batched) refresh. That is fine for local runs; cache or build it
-  incrementally if runs reach many thousands of events.
+  incrementally if runs reach many thousands of events. *Done in P15: per-run event lists are cached in memory and extended incrementally.*
 - [ ] **BL-103** (P3, from P10) The Overview of a large plan (10+ tasks) is small. Consider
   collapsing finished stages, a minimap (ngx-vflow has one) or grouping tasks by wave.
 - [ ] **BL-104** (P2, from P10) The workflow UI was verified with the scripted fake model (a
@@ -205,18 +205,18 @@ never pushes to the default branch of an existing repo, and never pushes before 
   osv.dev and deps.dev are blocked in the dev sandbox, so the scan reported `error` there.
   - Check a real finding end to end, and the osv-scanner v2 JSON parsing, on your machine.
   - If your network blocks those hosts, allow them or set `GATES_ENABLED` accordingly.
-- [ ] **BL-122** (P3, from P11) Coverage for existing Python repositories uses `--cov=.`, which
+- [x] **BL-122** (P3, from P11) Coverage for existing Python repositories uses `--cov=.`, which
   also counts test files. Set a narrower `coverage_cmd` in `.devcrew.yaml` if that skews
-  results; consider detecting the source package.
+  results; consider detecting the source package. *Done in P15: coverage measures the detected source packages.*
 - [ ] **BL-123** (P3, from P11) Existing repositories:
   - Only one project per stack (a second one needs `.devcrew.yaml`).
   - Detection looks at the root and one level below.
   - Gradle, Poetry-only or pnpm/yarn-lock-only setups use defaults that may not fit.
 - [x] **BL-124** (P2, from P11) The per-task secret scan only covers files changed by the
   developer before QA runs. Tests QA adds are scanned at integration, not per task. *Done in P14: the per-task scan also covers the tests QA wrote.*
-- [ ] **BL-125** (P3, from P11) A coverage baseline and a dependency scan of the base branch
+- [x] **BL-125** (P3, from P11) A coverage baseline and a dependency scan of the base branch
   run once per existing-repository run (one extra test run). Consider caching them per base
-  commit.
+  commit. *Done in P15: the baseline is cached per base commit.*
 
 ## GitHub automation (Phase 12)
 
@@ -228,22 +228,22 @@ never pushes to the default branch of an existing repo, and never pushes before 
   - check runs and the job-log redirect;
   - `resolveReviewThread`;
   - the token scopes.
-- [ ] **BL-131** (P2, from P12) API usage:
+- [x] **BL-131** (P2, from P12) API usage:
   - Every tick (`GITHUB_POLL_TICK_S`), each watching run makes about 6 REST calls: pull,
     three comment lists, check runs, permissions.
   - With many watching runs this approaches the 5,000/hour rate limit.
-  - Use conditional requests (ETag / `If-None-Match`) and a per-run PR poll interval.
-- [ ] **BL-132** (P2, from P12) Comments are handled once, by id: an edited review comment is
+  - Use conditional requests (ETag / `If-None-Match`) and a per-run PR poll interval. *Done in P15: conditional requests (ETag / 304) and a wait that doubles for quiet PRs (`PR_POLL_MAX_INTERVAL_S`).*
+- [x] **BL-132** (P2, from P12) Comments are handled once, by id: an edited review comment is
   not processed again. Only check runs are read, not legacy commit statuses. Logs are fetched
-  only for GitHub Actions jobs; other checks contribute their name only.
-- [ ] **BL-133** (P3, from P12) A failing gate inside a follow-up round adds a `GATEFIX` task
+  only for GitHub Actions jobs; other checks contribute their name only. *Done in P15: edited comments are handled again; commit statuses and other CI apps' summaries and details links are read.*
+- [x] **BL-133** (P3, from P12) A failing gate inside a follow-up round adds a `GATEFIX` task
   that the graph attaches to the main pipeline rather than to the round. The round still
-  pushes after the fix.
-- [ ] **BL-134** (P3, from P12) The issue-comment sync loads the state of every issue run on
-  each tick, finished ones included. Limit it to runs that changed since the last sync.
-- [ ] **BL-135** (P3, from P12) Removing the label does not cancel a run that already started;
+  pushes after the fix. *Done in P15: round-scoped ids (`R<n>-GATEFIX<k>`); this also fixed an id collision.*
+- [x] **BL-134** (P3, from P12) The issue-comment sync loads the state of every issue run on
+  each tick, finished ones included. Limit it to runs that changed since the last sync. *Done in P15: the sync reads run rows only and calls GitHub only on changes.*
+- [x] **BL-135** (P3, from P12) Removing the label does not cancel a run that already started;
   cancel it in the UI. A declined big change is not proposed again unless the reviewer writes
-  a new comment.
+  a new comment. *Done in P15: removing the label cancels the run before plan approval (`CANCEL_ON_UNLABEL`). A declined change is still not proposed again.*
 - [ ] **BL-136** (P3, from P12) The Overview of a run with many rounds is one long row.
   Collapse finished rounds (with BL-103).
 
@@ -269,16 +269,29 @@ never pushes to the default branch of an existing repo, and never pushes before 
 - [ ] **BL-150** (P2, from P14) The budget is checked before each wave, so a long wave can go
   past it. Token counts are what Ollama reports; it leaves out prompt tokens it served from
   cache, so real usage can be higher than shown.
-- [ ] **BL-151** (P2, from P14) Tests after each wave: in an existing repository whose tests
+- [x] **BL-151** (P2, from P14) Tests after each wave: in an existing repository whose tests
   already fail on the base branch, every wave adds a fix task (up to `MAX_WAVE_FIX_TASKS`).
-  Compare against a base-branch test run, as the coverage gate does.
+  Compare against a base-branch test run, as the coverage gate does. *Done in P15: a base-branch test baseline; only new failures add a fix task.*
 - [ ] **BL-152** (P3, from P14) Retry continues failed runs only. "Re-run from a chosen step"
   (checkpoint time travel) was not built: the workspace's git state would not rewind with it.
   "Run again" (a new run with the same request) covers the common case.
-- [ ] **BL-153** (P3, from P14) A task pauses before its next developer turn. Review and QA of
-  the current attempt finish first.
-- [ ] **BL-154** (P3, from P14) Usage is recomputed from the event log on every request and
-  before every wave. Cache running totals if runs grow very large.
+- [x] **BL-153** (P3, from P14) A task pauses before its next developer turn. Review and QA of
+  the current attempt finish first. *Done in P15: tasks also pause before review and QA.*
+- [x] **BL-154** (P3, from P14) Usage is recomputed from the event log on every request and
+  before every wave. Cache running totals if runs grow very large. *Done in P15: usage and budgets read the cached event list.*
+
+## Real-run robustness (Phase 15)
+
+- [ ] **BL-160** (P2, from P15) The failing-test parsers cover pytest, Maven Surefire and Karma
+  output. Other runners, or unusual formats, fall back to comparing only whether the base
+  branch passed: if it already failed, wave failures are treated as pre-existing.
+- [ ] **BL-161** (P3, from P15) Condensing long documents uses the Planner model part by part.
+  The digest quality with real models is unverified (with BL-002). Very large documents take
+  one model call per 20,000 characters.
+- [ ] **BL-162** (P3, from P15) The baseline and install-state caches are plain files under
+  `WORKSPACES_DIR` with no eviction. Delete `.baseline-cache` to force fresh baselines.
+- [ ] **BL-163** (P3, from P15) The ETag cache lives in memory, so it restarts empty with the
+  backend. The quiet-PR wait also resets on restart.
 
 ## Parity with commercial coding agents (from the P10 gap review)
 
@@ -408,3 +421,10 @@ steering and security gates.
     `MAX_WAVE_FIX_TASKS`, `MAX_NOTES_CHARS`.
   - Endpoints `/runs/{id}/usage`, `/runs/{id}/retry`, and message `PATCH` / `DELETE`.
   - UI: Usage tab, budget fields, Retry / Run again buttons, message editing, the notes list.
+- [x] **BL-164** (from P15) Additions:
+  - Settings `PR_POLL_MAX_INTERVAL_S`, `CANCEL_ON_UNLABEL`, `MAX_DOCUMENT_CHARS`.
+  - Run field `request_digest` and the Planner tool `search_requirements`.
+  - Prompt `prompts/condense_requirements.md`.
+  - Baseline field `tests` (base-branch failing tests).
+  - Task field `hold_next`.
+  - `GET /config` returns `max_document_chars`.

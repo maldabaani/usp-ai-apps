@@ -86,6 +86,12 @@ export function roundOf(nodeId: string): number | null {
 
     @switch (view()) {
       @case ('requirements') {
+        @if (run().request_digest; as digest) {
+          <details class="digest">
+            <summary>Condensed for the Planner and Architect ({{ digest.length }} of {{ run().request.length }} characters)</summary>
+            <article class="markdown doc" [innerHTML]="digest | markdown"></article>
+          </details>
+        }
         <article class="markdown doc" [innerHTML]="run().request | markdown"></article>
       }
       @case ('plan') { <app-plan-view [plan]="run().plan" /> }
@@ -227,6 +233,8 @@ export function roundOf(nodeId: string): number | null {
     .gname { font-weight: 700; text-transform: capitalize; margin-right: 8px; }
     .gstatus { text-transform: uppercase; font-size: 10.5px; font-weight: 700; margin-right: 8px; color: var(--dc-text-dim); }
     .passed .gstatus { color: var(--dc-teal); } .failed .gstatus { color: var(--dc-red); } .error .gstatus { color: var(--dc-amber); }
+    .digest { margin: 6px 0 10px; font-size: 13px; }
+    .digest summary { cursor: pointer; color: var(--dc-amber); }
     .chat-hint { font-size: 13px; color: var(--dc-amber); margin: 6px 0; }
     .round-tasks, .ignored { padding-left: 18px; font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
     .tstate { margin-left: 6px; font-size: 11px; text-transform: uppercase; color: var(--dc-text-dim); }

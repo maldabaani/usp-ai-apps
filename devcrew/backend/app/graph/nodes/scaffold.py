@@ -116,12 +116,19 @@ def make_scaffold(deps: GraphDeps) -> NodeFn:
         extra: dict[str, Any] = {}
         if (
             design.existing_projects
-            and deps.settings.gates_enabled
+            and (deps.settings.gates_enabled or deps.settings.wave_tests_enabled)
             and deps.sandbox is not None
             and state.get("gate_baseline") is None
         ):
             target = sandbox_target(run_id, None, root, design, layout)
-            extra["gate_baseline"] = await take_baseline(deps, run_id, target, layout)
+            extra["gate_baseline"] = await take_baseline(
+                deps,
+                run_id,
+                target,
+                layout,
+                repo=str(state.get("repo_target") or ""),
+                commit=str((state.get("repo_info") or {}).get("commit") or ""),
+            )
 
         existing = state.get("tasks") or {}
         tasks = {t.id: dump(TaskState(id=t.id)) for t in plan.tasks if t.id not in existing}

@@ -16,7 +16,7 @@ const ISSUE_RUN: IssueRun = {
   run_status: 'awaiting_plan_approval', comment_id: 9, created_at: '2026-09-01T10:01:00Z',
 };
 const CONFIG: ClientConfig = {
-  max_request_chars: 20000, max_dev_iterations: 3, max_parallel_devs: 2, github_enabled: false, max_pr_rounds: 3,
+  max_request_chars: 20000, max_document_chars: 200000, max_dev_iterations: 3, max_parallel_devs: 2, github_enabled: false, max_pr_rounds: 3,
   run_token_budget: 0, run_time_budget_min: 0,
 };
 

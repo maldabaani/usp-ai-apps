@@ -8,7 +8,7 @@ import { ApiService } from '../../core/api.service';
 import { NewRunComponent, parseIssueRef } from './new-run.component';
 
 const CONFIG: ClientConfig = {
-  max_request_chars: 60, max_dev_iterations: 3, max_parallel_devs: 2, github_enabled: true, max_pr_rounds: 3,
+  max_request_chars: 60, max_document_chars: 100, max_dev_iterations: 3, max_parallel_devs: 2, github_enabled: true, max_pr_rounds: 3,
   run_token_budget: 0, run_time_budget_min: 30,
 };
 
@@ -96,15 +96,22 @@ describe('NewRunComponent', () => {
     expect(parseIssueRef('https://github.com/a/b/pull/3')).toBeNull();
   });
 
-  it('enforces the server limit and shows the character count', () => {
+  it('condenses long documents and enforces the document limit', () => {
     const { fixture } = setup();
     const c = fixture.componentInstance;
+    const el = fixture.nativeElement as HTMLElement;
     c.form.patchValue({ request: 'x'.repeat(61), repo_target: 'octocat/todo-api', create_repo: false });
     fixture.detectChanges();
-    const el = fixture.nativeElement as HTMLElement;
+    expect(c.condensed()).toBeTrue();
+    expect(c.tooLong()).toBeFalse();
+    expect(el.querySelector('.note')?.textContent).toContain('condensed for the Planner');
+    expect(el.querySelector('.count')?.textContent).toContain('61 / 100');
+    expect((el.querySelector('button.start') as HTMLButtonElement).disabled).toBeFalse();
+
+    c.form.patchValue({ request: 'x'.repeat(101) });
+    fixture.detectChanges();
     expect(c.tooLong()).toBeTrue();
-    expect(el.querySelector('.count')?.textContent).toContain('61 / 60');
-    expect(el.textContent).toContain("Too long for the Planner's context window");
+    expect(el.textContent).toContain('documents can have at most');
     expect((el.querySelector('button.start') as HTMLButtonElement).disabled).toBeTrue();
     c.submit();
     expect(api.createRun).not.toHaveBeenCalled();
@@ -113,10 +120,11 @@ describe('NewRunComponent', () => {
   it('falls back to the default limit when /config is unreachable', () => {
     const { fixture } = setup(throwError(() => new Error('down')));
     expect(fixture.componentInstance.maxChars()).toBe(20_000);
+    expect(fixture.componentInstance.maxDocument()).toBe(200_000);
   });
 
   it('loads dropped requirement files, combines them and rejects other types', async () => {
-    const { fixture } = setup(of({ ...CONFIG, max_request_chars: 20_000 }));
+    const { fixture } = setup(of({ ...CONFIG, max_request_chars: 20_000, max_document_chars: 200_000 }));
     const c = fixture.componentInstance;
     await c.load([
       new File(['# Stories\r\n- CRUD'], 'stories.md'),

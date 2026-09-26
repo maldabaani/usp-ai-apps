@@ -117,6 +117,7 @@ class RunDetail(RunSummary):
     issue: dict[str, Any] | None = None
     followup: dict[str, Any] | None = None
     pause_requested: bool = False
+    request_digest: str | None = None
     human_notes: list[dict[str, Any]] = Field(default_factory=list)
     plan: dict[str, Any] | None = None
     design: dict[str, Any] | None = None

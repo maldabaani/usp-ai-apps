@@ -30,8 +30,7 @@ def current_limit(deps: GraphDeps, state: dict[str, Any]) -> dict[str, int]:
 
 
 async def run_usage(deps: GraphDeps, run_id: str) -> RunUsage:
-    events = [e async for e in deps.events.replay(run_id)]
-    return summarize(events, finished=False)
+    return summarize(await deps.event_cache.events(run_id), finished=False)
 
 
 async def budget_reasons(deps: GraphDeps, state: dict[str, Any]) -> list[str]:

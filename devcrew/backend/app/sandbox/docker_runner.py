@@ -157,6 +157,17 @@ class DockerSandboxRunner:
             "init": True,
         }
 
+    @staticmethod
+    def _make_mount_points(target: SandboxTarget) -> None:
+        """Create node_modules mount points ourselves: if Docker creates them inside the
+        bind-mounted workspace they are root-owned and the workspace cannot be deleted
+        without root (BL-021)."""
+        for mount in dependency_volumes(target).values():
+            if mount.startswith("/workspace/"):
+                (target.workdir / mount.removeprefix("/workspace/")).mkdir(
+                    parents=True, exist_ok=True
+                )
+
     def _prepare_volumes(self, target: SandboxTarget) -> None:
         """New empty volumes mounted outside the image's dirs are root-owned; open them up."""
         mounts = [m for m in dependency_volumes(target).values() if m.endswith("node_modules")]
@@ -182,6 +193,7 @@ class DockerSandboxRunner:
                     return container
             except NotFound:
                 pass
+            self._make_mount_points(target)
             self._prepare_volumes(target)
             return self.client.containers.run(
                 name=name,

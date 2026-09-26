@@ -21,6 +21,7 @@ from typing import Any
 from app.config import Settings
 from app.db.models import IssueRun, Run, RunStatus, WatchedRepo
 from app.db.watch import WatchStore
+from app.events.types import EventType
 from app.github.client import GitHubClient, GitHubError
 from app.github.delivery import GitHubDelivery
 from app.graph.interrupts import InterruptKind, ResumeAction, ResumePayload
@@ -32,6 +33,12 @@ logger = logging.getLogger(__name__)
 FULL_LABEL = "devcrew"
 QUICK_LABEL = "devcrew:quick"
 WRITE_ROLES = {"admin", "maintain", "write"}
+BEFORE_PLAN_APPROVAL = {
+    RunStatus.PENDING,
+    RunStatus.PREPARING,
+    RunStatus.PLANNING,
+    RunStatus.AWAITING_PLAN_APPROVAL,
+}
 FAILED_CONCLUSIONS = {"failure", "timed_out"}
 LOG_TAIL = 6000
 
@@ -78,6 +85,8 @@ class GitHubWatcher:
         self.store = store
         self.github = github
         self._lock = asyncio.Lock()
+        # run id -> (next check as a timestamp, current interval) for quiet PRs
+        self._pr_next: dict[str, tuple[float, float]] = {}
 
     async def run_forever(self) -> None:
         # the first tick waits one interval: startup recovery resumes runs meanwhile
@@ -100,7 +109,7 @@ class GitHubWatcher:
                     await self.poll_repo(repo, now)
             await self.sync_issue_comments()
             if self.settings.watch_prs:
-                await self.follow_prs()
+                await self.follow_prs(now)
 
     @staticmethod
     def _due(repo: WatchedRepo, now: datetime) -> bool:
@@ -134,6 +143,8 @@ class GitHubWatcher:
                 for issue in await client.labelled_issues(owner, name, label):
                     issues[int(issue["number"])] = issue
             known = await self.store.issue_runs(repo.repo)
+            if self.settings.cancel_on_unlabel:
+                await self._cancel_unlabelled(known, set(issues))
             for number, issue in sorted(issues.items()):
                 if await self.active_issue_runs() >= self.settings.max_issue_runs:
                     break  # the rest are picked up by a later poll
@@ -155,6 +166,32 @@ class GitHubWatcher:
         finally:
             await client.aclose()
         return started
+
+    async def _cancel_unlabelled(self, known: Sequence[IssueRun], labelled: set[int]) -> None:
+        """The label was removed (or the issue closed) before the plan was approved: the run
+        is cancelled (BL-135). Later runs keep going; cancel those in the UI."""
+        for row in known:
+            if row.issue_number in labelled or not row.trigger.startswith("label:"):
+                continue
+            run = await self.manager.runs.get(row.run_id)
+            if run is None or RunStatus(run.status) not in BEFORE_PLAN_APPROVAL:
+                continue
+            try:
+                await self.manager.cancel(run.id)
+            except RunConflictError:
+                continue
+            await self.manager.events.publish(
+                run.id,
+                EventType.ERROR,
+                node="github",
+                payload={
+                    "message": f"the devcrew label was removed from {row.repo}#"
+                    f"{row.issue_number}: run cancelled before the plan was approved"
+                },
+            )
+            logger.info(
+                "cancelled run %s: label removed from %s#%s", run.id, row.repo, row.issue_number
+            )
 
     @staticmethod
     async def _trigger(
@@ -191,7 +228,7 @@ class GitHubWatcher:
         """Start a run for an issue (label trigger or manual import) and record it."""
         number = int(issue["number"])
         run = await self.manager.start(
-            request=issue_request(issue, self.settings.max_request_chars),
+            request=issue_request(issue, self.settings.max_document_chars),
             repo_target=repo,
             create_repo=False,
             target="existing",
@@ -235,8 +272,9 @@ class GitHubWatcher:
                 run = await self.manager.runs.get(row.run_id)
                 if run is None:
                     continue
-                state = await self.manager.state(run.id)
-                text = comment_text(run, state)
+                # the run row has everything the comment shows (status, PR URL, error):
+                # no checkpoint load, and no GitHub call unless the text changed
+                text = comment_text(run, {})
                 if text == row.comment_text:
                     continue
                 owner, _, name = row.repo.partition("/")
@@ -255,9 +293,11 @@ class GitHubWatcher:
             await client.aclose()
 
     # ------------------------------------------------------------------------------ PRs
-    async def follow_prs(self) -> None:
+    async def follow_prs(self, now: datetime | None = None) -> None:
+        clock = (now or datetime.now(UTC)).timestamp()
         for run in await self.manager.runs.list(500):
             if run.status != RunStatus.WATCHING.value or self.manager.is_busy(run.id):
+                self._pr_next.pop(run.id, None)
                 continue
             pending = [
                 p
@@ -267,18 +307,23 @@ class GitHubWatcher:
             if not pending:
                 continue
             state = await self.manager.state(run.id)
+            # the owner's chat messages start a round too (Phase 14), without waiting
+            chat = await chat_items(self.manager.deps, state)
+            due = self._pr_next.get(run.id)
+            if not chat and due is not None and clock < due[0]:
+                continue  # a quiet PR is polled less often (BL-131)
             try:
                 activity = await self.pr_activity(run.repo_target, state)
             except GitHubError as exc:
                 logger.warning("PR follow-up for run %s failed: %s", run.id, exc)
                 continue
-            # the owner's chat messages start a round too (Phase 14)
-            chat = await chat_items(self.manager.deps, state)
             if chat and (activity is None or activity.get("pr_state") == "open"):
                 activity = activity or {"pr_state": "open", "items": []}
                 activity["items"] = [*activity["items"], *chat]
             if activity is None:
+                self._quiet(run.id, clock)
                 continue
+            self._pr_next.pop(run.id, None)
             try:
                 await self.manager.resume(
                     run.id,
@@ -287,6 +332,17 @@ class GitHubWatcher:
                 )
             except RunConflictError:
                 continue
+
+    def _quiet(self, run_id: str, clock: float) -> None:
+        """Nothing new on the PR: double the wait before the next check, up to
+        PR_POLL_MAX_INTERVAL_S (0 = check on every tick)."""
+        ceiling = self.settings.pr_poll_max_interval_s
+        if ceiling <= 0:
+            return
+        tick = self.settings.github_poll_tick_s
+        previous = self._pr_next.get(run_id)
+        interval = min(ceiling, previous[1] * 2 if previous else tick)
+        self._pr_next[run_id] = (clock + interval, interval)
 
     async def _extra_reviewers(self, repo: str) -> set[str]:
         for row in await self.store.list_repos():
@@ -324,6 +380,9 @@ class GitHubWatcher:
 
             async def add(kind: str, key: str, c: dict[str, Any], **fields: Any) -> None:
                 body = str(c.get("body") or "")
+                edited = c.get("updated_at")
+                if edited and c.get("created_at") and edited != c["created_at"]:
+                    key = f"{key}@{edited}"  # an edited comment is a new request (BL-132)
                 if key in handled or MARKER in body or not body.strip():
                     return
                 user = str((c.get("user") or {}).get("login", ""))
@@ -367,7 +426,36 @@ class GitHubWatcher:
                                 log = (await client.job_logs(owner, name, int(r["id"])))[-LOG_TAIL:]
                             except GitHubError as exc:
                                 log = f"(log unavailable: {exc})"
+                        else:  # other CI apps: their own summary and a link to the details
+                            output = r.get("output") or {}
+                            log = "\n".join(
+                                str(x)
+                                for x in (
+                                    output.get("title"),
+                                    output.get("summary"),
+                                    f"Details: {r.get('details_url')}"
+                                    if r.get("details_url")
+                                    else None,
+                                )
+                                if x
+                            )[-LOG_TAIL:]
                         items.append({"kind": "ci", "key": key, "name": r.get("name"), "log": log})
+                # CI systems that report commit statuses instead of check runs (BL-132)
+                combined = await client.commit_status(owner, name, sha)
+                statuses = combined.get("statuses") or []
+                if statuses and not any(s.get("state") == "pending" for s in statuses):
+                    for s in statuses:
+                        key = f"status:{sha}:{s.get('context')}"
+                        if s.get("state") not in ("failure", "error") or key in handled:
+                            continue
+                        log = "\n".join(
+                            str(x)
+                            for x in (s.get("description"), f"Details: {s.get('target_url')}")
+                            if x
+                        )
+                        items.append(
+                            {"kind": "ci", "key": key, "name": s.get("context"), "log": log}
+                        )
                 if pr.get("mergeable") is False and f"conflict:{sha}" not in handled:
                     items.append({"kind": "conflict", "key": f"conflict:{sha}"})
         finally:

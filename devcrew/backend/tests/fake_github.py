@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 from dataclasses import dataclass, field
@@ -33,7 +34,11 @@ class FakeGitHub:
     checks: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     job_logs: dict[int, str] = field(default_factory=dict)
     threads: dict[str, dict[str, Any]] = field(default_factory=dict)
+    statuses: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    etags: bool = True  # answer If-None-Match with 304 like GitHub
+    not_modified: int = 0
     _ids: int = 1000
+    _clock: int = 0
 
     # --------------------------------------------------------------------------- helpers
     def next_id(self) -> int:
@@ -76,6 +81,7 @@ class FakeGitHub:
     def add_review_comment(
         self, owner: str, repo: str, number: int, user: str, body: str, path: str = "app/x.py"
     ) -> dict[str, Any]:
+        stamp = self.stamp()
         comment = {
             "id": self.next_id(),
             "user": {"login": user},
@@ -83,6 +89,8 @@ class FakeGitHub:
             "path": path,
             "line": 1,
             "in_reply_to_id": None,
+            "created_at": stamp,
+            "updated_at": stamp,
         }
         self.review_comments_.setdefault((owner, repo, number), []).append(comment)
         self.threads[f"T_{comment['id']}"] = {"resolved": False, "comment_id": comment["id"]}
@@ -94,6 +102,30 @@ class FakeGitHub:
         comment = {"id": self.next_id(), "user": {"login": user}, "body": body}
         self.issue_comments.setdefault((owner, repo, number), []).append(comment)
         return comment
+
+    def stamp(self) -> str:
+        self._clock += 1
+        return f"2026-09-01T10:{self._clock // 60:02d}:{self._clock % 60:02d}Z"
+
+    def edit_review_comment(self, comment_id: int, body: str) -> None:
+        for comments in self.review_comments_.values():
+            for c in comments:
+                if c["id"] == comment_id:
+                    c["body"] = body
+                    c["updated_at"] = self.stamp()
+
+    def set_status(self, sha: str, *statuses: tuple[str, str]) -> None:
+        """Legacy commit statuses: (context, state) with state pending/success/failure/error."""
+        self.statuses[sha] = [
+            {
+                "id": self.next_id(),
+                "context": context,
+                "state": state,
+                "description": f"{context}: {state}",
+                "target_url": f"https://ci.example.test/{context}",
+            }
+            for context, state in statuses
+        ]
 
     def set_checks(self, sha: str, *checks: tuple[str, str, str]) -> None:
         """(name, status, conclusion) per check; a job log is registered for each."""
@@ -146,6 +178,20 @@ class FakeGitHub:
         return out.splitlines()
 
     def handler(self, request: httpx.Request) -> httpx.Response:
+        response = self._handle(request)
+        if not (self.etags and request.method == "GET" and response.status_code == 200):
+            return response
+        etag = '"' + hashlib.sha1(response.content).hexdigest() + '"'
+        if request.headers.get("if-none-match") == etag:
+            self.not_modified += 1
+            return httpx.Response(304, headers={"ETag": etag})
+        return httpx.Response(
+            200,
+            content=response.content,
+            headers={"ETag": etag, "content-type": response.headers.get("content-type", "")},
+        )
+
+    def _handle(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
         assert request.headers["authorization"] == f"Bearer {TOKEN}"
         if self.fail_status:
@@ -286,6 +332,14 @@ class FakeGitHub:
             if role is None:
                 return httpx.Response(404, json={"message": "Not Found"})
             return httpx.Response(200, json={"permission": role, "role_name": role})
+        if len(rest) == 3 and rest[0] == "commits" and rest[2] == "status":
+            found = self.statuses.get(rest[1], [])
+            state = "pending" if any(s["state"] == "pending" for s in found) else "success"
+            return httpx.Response(200, json={"state": state, "statuses": found})
+        if len(rest) == 2 and rest[0] == "pulls" and method == "PATCH":
+            pr = self.pr(int(rest[1]))
+            pr.update(json.loads(request.content))
+            return httpx.Response(200, json=pr)
         if len(rest) == 3 and rest[0] == "commits" and rest[2] == "check-runs":
             runs = self.checks.get(rest[1], [])
             return httpx.Response(200, json={"total_count": len(runs), "check_runs": runs})

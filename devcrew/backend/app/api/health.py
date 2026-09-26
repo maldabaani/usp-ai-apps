@@ -25,6 +25,7 @@ class ClientConfig(BaseModel):
     """Limits the UI shows and enforces before submitting."""
 
     max_request_chars: int
+    max_document_chars: int
     max_dev_iterations: int
     max_parallel_devs: int
     github_enabled: bool
@@ -38,6 +39,7 @@ async def client_config(container: ContainerDep) -> ClientConfig:
     s = container.settings
     return ClientConfig(
         max_request_chars=s.max_request_chars,
+        max_document_chars=s.max_document_chars,
         max_dev_iterations=s.max_dev_iterations,
         max_parallel_devs=s.max_parallel_devs,
         github_enabled=container.deps.github is not None,

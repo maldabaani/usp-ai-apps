@@ -52,6 +52,7 @@ STATE_FIELDS = (
     "issue",
     "followup",
     "human_notes",
+    "request_digest",
 )
 
 
@@ -79,12 +80,13 @@ async def detail(manager: RunManager, run_id: str) -> RunDetail:
 
 @router.post("", response_model=RunSummary, status_code=status.HTTP_201_CREATED)
 async def create_run(body: CreateRunRequest, container: ContainerDep) -> RunSummary:
-    limit = container.settings.max_request_chars
+    limit = container.settings.max_document_chars
     if len(body.request) > limit:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
             f"the request has {len(body.request):,} characters; the limit is {limit:,} "
-            "(MAX_REQUEST_CHARS: the Planner and Architect must fit it in their context window)",
+            "(MAX_DOCUMENT_CHARS; documents over MAX_REQUEST_CHARS are condensed for the "
+            "Planner and Architect)",
         )
     if body.target == "existing" and container.deps.github is None:
         raise HTTPException(
@@ -123,7 +125,7 @@ async def get_workflow(run_id: str, container: ContainerDep) -> Workflow:
     run = await _run_or_404(manager, run_id)
     state = await manager.state(run_id)
     pending = [] if manager.is_busy(run_id) else await manager.pending(run_id)
-    events = [e async for e in container.events.replay(run_id)]
+    events = await container.deps.event_cache.events(run_id)
     return build_workflow(
         run_id=run_id,
         status=run.status,
@@ -142,7 +144,7 @@ async def get_usage(run_id: str, container: ContainerDep) -> RunUsage:
     """Tokens per role and task, model time, working time and the run's budget."""
     manager = container.manager
     run = await _run_or_404(manager, run_id)
-    events = [e async for e in container.events.replay(run_id)]
+    events = await container.deps.event_cache.events(run_id)
     finished = RunStatus(run.status).is_terminal and not manager.is_busy(run_id)
     usage = summarize(events, finished=finished)
     limit = current_limit(container.deps, await manager.state(run_id))

@@ -102,10 +102,43 @@ class Detection:
     notes: list[str]
 
 
-def project_for(stack: str, path: str, **overrides: str | None) -> ExistingProject:
+NOT_SOURCES = {"tests", "test", "docs", "doc", "scripts", "examples", "migrations", "alembic"}
+
+
+def python_sources(project: Path) -> list[str]:
+    """The packages to measure coverage on (src/ layout or top-level packages), relative to
+    the project; empty when none is found (then the whole project is measured)."""
+
+    def packages(base: Path) -> list[Path]:
+        if not base.is_dir():
+            return []
+        return sorted(
+            d
+            for d in base.iterdir()
+            if d.is_dir()
+            and (d / "__init__.py").is_file()
+            and d.name not in NOT_SOURCES
+            and not d.name.startswith((".", "_"))
+        )
+
+    found = packages(project / "src") or packages(project)
+    return [d.relative_to(project).as_posix() for d in found]
+
+
+def coverage_for_python(sources: list[str]) -> str:
+    targets = " ".join(f"--cov={s}" for s in sources) if sources else "--cov=."
+    return f"python -m pytest -q -p no:cacheprovider {targets} --cov-report=term"
+
+
+def project_for(
+    stack: str, path: str, root: Path | None = None, **overrides: str | None
+) -> ExistingProject:
     if stack not in DEFAULTS:
         raise DetectionError(f"unsupported stack '{stack}' (use python, java or angular)")
     commands = {**DEFAULTS[stack], **{k: v for k, v in overrides.items() if v is not None}}
+    if stack == "python" and root is not None and overrides.get("coverage_cmd") is None:
+        # measure the application code, not the tests (BL-122)
+        commands["coverage_cmd"] = coverage_for_python(python_sources(root / path))
     return ExistingProject.model_validate({"stack": stack, "path": path, **commands})
 
 
@@ -132,7 +165,7 @@ def detect_projects(root: Path) -> Detection:
         try:
             data = _Config.model_validate(yaml.safe_load(config.read_text(encoding="utf-8")) or {})
             projects = [
-                project_for(p.stack, p.path, **p.model_dump(exclude={"stack", "path"}))
+                project_for(p.stack, p.path, root, **p.model_dump(exclude={"stack", "path"}))
                 for p in data.projects
             ]
         except (ValidationError, yaml.YAMLError) as exc:
@@ -172,7 +205,7 @@ def detect_projects(root: Path) -> Detection:
                     f"several {stack} projects found ({', '.join(paths)}); list the one to work "
                     f"on in {CONFIG_FILE}"
                 )
-        projects.append(project_for(stack, paths[0]))
+        projects.append(project_for(stack, paths[0], root))
     return Detection(sorted(projects, key=lambda p: p.path), "detected", notes)
 
 

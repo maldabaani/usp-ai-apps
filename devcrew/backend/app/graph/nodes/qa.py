@@ -146,6 +146,8 @@ def qa_tools(deps: GraphDeps, ctx: TaskCtx) -> list[ToolSpec]:
 
 def make_qa(deps: GraphDeps) -> NodeFn:
     async def qa(state: dict[str, Any]) -> Command[str]:
+        if await deps.steering.pause_requested(state["run_id"]):  # safe point (Phase 15)
+            return Command(goto="hold", update={"hold_next": "qa"})
         ctx = load_task_ctx(deps, state)
         command = ctx.project.template.test_cmd
         changed = await ctx.repo.changed_files(ctx.integration_branch, ctx.branch)

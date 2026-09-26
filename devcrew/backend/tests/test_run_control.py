@@ -228,3 +228,28 @@ async def test_retry_continues_a_failed_run_from_its_checkpoint(
 
         again = await a.client.post(f"/runs/{run_id}/retry")
         assert again.status_code == 409
+
+
+async def test_event_cache_reads_only_new_events(tmp_path: Path) -> None:
+    from app.events.bus import EventBus
+    from app.events.cache import EventCache
+    from app.events.store import InMemoryEventStore
+
+    store = InMemoryEventStore()
+    bus = EventBus(store)
+    calls: list[int] = []
+    original = store.list_after
+
+    async def spy(run_id: str, after_id: int, limit: int) -> Any:
+        calls.append(after_id)
+        return await original(run_id, after_id, limit)
+
+    store.list_after = spy  # type: ignore[method-assign,assignment]
+    cache = EventCache(bus)
+    for _ in range(3):
+        await bus.publish("r", EventType.STATUS, payload={"status": "planning"})
+    assert len(await cache.events("r")) == 3
+    await bus.publish("r", EventType.STATUS, payload={"status": "executing"})
+    events = await cache.events("r")
+    assert [e.payload["status"] for e in events][-1] == "executing" and len(events) == 4
+    assert calls == [0, 3]  # the second read started after the last cached event

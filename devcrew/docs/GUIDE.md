@@ -4,6 +4,7 @@ The detailed reference behind the [README](../README.md): architecture, every su
 how to run and develop DevCrew. Sections for later phases come first.
 
 - [Architecture](#architecture)
+- [Real-run robustness and GitHub efficiency (Phase 15)](#real-run-robustness-and-github-efficiency-phase-15)
 - [Run control: usage, budgets, retries and earlier checks (Phase 14)](#run-control-usage-budgets-retries-and-earlier-checks-phase-14)
 - [Steering running work (Phase 13)](#steering-running-work-phase-13)
 - [GitHub automation (Phase 12)](#github-automation-phase-12)
@@ -74,6 +75,60 @@ Design notes:
   summarizes failures for the Developer.
 - With `SANDBOX_ENABLED=false`, QA writes tests but they are not executed: results show
   `ran: false` and the task proceeds.
+
+## Real-run robustness and GitHub efficiency (Phase 15)
+
+**GitHub API usage.**
+- Every GET is a *conditional request*: the ETag of the last answer is sent back, and GitHub
+  answers `304 Not Modified` (which does not count against the rate limit) when nothing
+  changed.
+- A PR with no new activity is checked less and less often. The wait doubles from
+  `GITHUB_POLL_TICK_S` up to `PR_POLL_MAX_INTERVAL_S` (300 s; 0 = every tick) and resets on
+  activity. Your own chat messages are never delayed.
+- The issue-comment sync reads only the run rows, not the run checkpoints, and calls GitHub
+  only when the comment text changes.
+
+**PR follow-up.**
+- An **edited** review comment is handled again as a new request.
+- CI systems that report **commit statuses** instead of check runs (Jenkins, for example) are
+  read too.
+- For check runs from apps other than GitHub Actions, the fix task gets the app's own summary
+  and the details link.
+- Every push to the PR **refreshes its description** (tasks, gates, tests). This covers retries,
+  final-approval follow-ups and PR rounds.
+- A gate-fix task inside a PR round is named after the round (`R2-GATEFIX1`) and drawn inside
+  it. It used to reuse `GATEFIX1`, the id of the first run's gate-fix task.
+
+**Existing repositories.**
+- The base branch's tests run once before development, and the failing tests are recorded.
+  After each wave, only **new** failures create a fix task. A repository whose tests already
+  fail no longer gets pointless fix tasks.
+- Failing tests are named from pytest, Maven Surefire and Karma output.
+- The base-branch baseline (tests, coverage, known vulnerabilities) is **cached per base
+  commit** in `WORKSPACES_DIR/.baseline-cache`, so another run on the same commit skips it.
+- Python coverage measures the detected source packages (`src/<pkg>` or top-level packages)
+  instead of the whole repository, so test files no longer count as covered code.
+  `.devcrew.yaml` can still set `coverage_cmd`.
+
+**Sandbox.**
+- The dependency-install state is saved in `WORKSPACES_DIR/.sandbox-state/<run>.json`, so a
+  backend restart does not reinstall dependencies.
+- The `node_modules` mount points are created by the backend itself, so workspaces never
+  contain root-owned folders.
+
+**Long requirements documents.**
+- Up to `MAX_REQUEST_CHARS` (20,000), the request goes to the Planner and Architect as it is.
+- Longer documents, up to `MAX_DOCUMENT_CHARS` (200,000), are **condensed** once, part by part,
+  into a digest that fits. The Planner also gets `search_requirements` to look up details in
+  the full text. The run keeps the full document, and the Requirements panel shows the digest.
+
+**Control.**
+- **Pause** also stops a task before its review and its QA run, not only before a developer
+  turn.
+- Removing the `devcrew` label, or closing the issue, **cancels** the issue's run while its plan
+  is not approved yet. Set `CANCEL_ON_UNLABEL=false` to keep such runs.
+- The workflow view, usage and budget checks read events from an in-memory per-run cache that
+  only fetches new events, instead of re-reading the whole log every time.
 
 ## Run control: usage, budgets, retries and earlier checks (Phase 14)
 

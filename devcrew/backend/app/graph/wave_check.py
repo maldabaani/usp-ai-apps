@@ -20,7 +20,10 @@ NODE = "wave_check"
 
 def fix_task(plan: Plan, failures: dict[str, TestResult], wave: int, number: int) -> PlanTask:
     logs = "\n\n".join(
-        f"### {stack}: `{r.command}`\n{r.logs_excerpt[-2500:]}" for stack, r in failures.items()
+        f"### {stack}: `{r.command}`\n"
+        + (f"Newly failing: {', '.join(r.failed)}\n" if r.failed else "")
+        + r.logs_excerpt[-2500:]
+        for stack, r in failures.items()
     )
     return PlanTask(
         id=f"WAVEFIX{number}",
@@ -35,6 +38,29 @@ def fix_task(plan: Plan, failures: dict[str, TestResult], wave: int, number: int
         stack=next(iter(failures)),  # a stack that is part of the plan
         story_ids=[],
     )
+
+
+def new_failures(
+    state: dict[str, Any], failures: dict[str, TestResult]
+) -> tuple[dict[str, TestResult], list[str]]:
+    """Drop failures that already happen on the base branch (existing repositories, BL-151).
+    Returns (failures this run caused, stacks that only fail as before)."""
+    base_tests: dict[str, Any] = ((state.get("gate_baseline") or {}).get("tests")) or {}
+    caused: dict[str, TestResult] = {}
+    known: list[str] = []
+    for stack, result in failures.items():
+        base = base_tests.get(stack)
+        if base is None or base.get("passed"):
+            caused[stack] = result  # the base branch passed: every failure is new
+            continue
+        before = set(base.get("failing") or [])
+        now = set(result.failed)
+        added = sorted(now - before)
+        if added:
+            caused[stack] = result.model_copy(update={"failed": added})
+        else:  # the same tests fail (or the names cannot be told apart): not ours
+            known.append(stack)
+    return caused, known
 
 
 async def check_wave(
@@ -64,6 +90,16 @@ async def check_wave(
         if (r := TestResult.model_validate(raw)).ran and not r.passed
     }
     update: dict[str, Any] = {"wave_checked": wave}
+    failures, known = new_failures(state, failures)
+    if known:
+        await deps.emit(
+            state["run_id"],
+            EventType.TOOL_RESULT,
+            node=NODE,
+            tool="wave_check",
+            ok=True,
+            result="tests fail as on the base branch (not caused by this run): " + ", ".join(known),
+        )
     fixes = int(state.get("wave_fixes") or 0)
     if not failures:
         return state, update

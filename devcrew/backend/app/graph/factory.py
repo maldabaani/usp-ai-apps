@@ -38,7 +38,9 @@ def build_deps(
     steering: SteeringStore | None = None,
 ) -> GraphDeps:
     if sandbox is None and settings.sandbox_enabled:
-        sandbox = Sandbox(DockerSandboxRunner(settings))
+        sandbox = Sandbox(
+            DockerSandboxRunner(settings), state_dir=settings.workspaces_dir / ".sandbox-state"
+        )
     llm = llm or build_llm(settings)
     if rag is None and settings.rag_enabled:
         rag = RagService(

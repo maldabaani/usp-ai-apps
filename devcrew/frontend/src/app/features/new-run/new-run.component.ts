@@ -44,6 +44,7 @@ export function parseIssueRef(text: string): { repo: string | null; number: numb
 
 /** Used until GET /config answers (same as the backend default). */
 export const DEFAULT_MAX_REQUEST_CHARS = 20_000;
+export const DEFAULT_MAX_DOCUMENT_CHARS = 200_000;
 
 function issueValidator(control: AbstractControl<string>): ValidationErrors | null {
   return !control.value || parseIssueRef(control.value) ? null : { issue: true };
@@ -134,16 +135,19 @@ function issueValidator(control: AbstractControl<string>): ValidationErrors | nu
               <button mat-stroked-button type="button" (click)="picker.click()">Upload .md / .txt</button>
               <input #picker type="file" hidden multiple [accept]="accept" (change)="onPick($event)" />
               <span class="hint">or drag files here · several files are combined under their names</span>
-              <span class="count" [class.over]="tooLong()">{{ length() | number }} / {{ maxChars() | number }} characters</span>
+              <span class="count" [class.over]="tooLong()">{{ length() | number }} / {{ (condensed() ? maxDocument() : maxChars()) | number }} characters</span>
             </div>
             @if (loaded().length) {
               <p class="loaded">Loaded: @for (f of loaded(); track f) { <code>{{ f }}</code> }</p>
             }
           </div>
           @if (tooLong()) {
-            <p class="error" role="alert">Too long for the Planner's context window
-              ({{ maxChars() | number }} characters max). Shorten the document or raise MAX_REQUEST_CHARS
-              together with num_ctx.</p>
+            <p class="error" role="alert">Too long: documents can have at most
+              {{ maxDocument() | number }} characters (MAX_DOCUMENT_CHARS). Shorten or split it.</p>
+          } @else if (condensed()) {
+            <p class="note" role="status">Long document: over {{ maxChars() | number }} characters it is
+              condensed for the Planner and Architect, part by part. The Planner can still search the
+              full text, and the run keeps it.</p>
           }
           @if (fileError(); as e) { <p class="error" role="alert">{{ e }}</p> }
           }
@@ -214,6 +218,7 @@ function issueValidator(control: AbstractControl<string>): ValidationErrors | nu
     .actions { margin-top: 8px; }
     .start { box-shadow: var(--dc-glow-cyan); }
     .error { color: var(--dc-red); }
+    .note { color: var(--dc-amber); font-size: 13px; }
     .budget summary { cursor: pointer; color: var(--dc-text-dim); font-size: 13px; }
     .budget-fields { display: flex; gap: 12px; margin-top: 8px; }
     .budget-fields mat-form-field { width: 180px; }
@@ -315,7 +320,10 @@ export class NewRunComponent {
   readonly maxChars = computed(() => this.config()?.max_request_chars ?? DEFAULT_MAX_REQUEST_CHARS);
   readonly requestText = toSignal(this.form.controls.request.valueChanges, { initialValue: '' });
   readonly length = computed(() => this.requestText().trim().length);
-  readonly tooLong = computed(() => this.length() > this.maxChars());
+  readonly maxDocument = computed(() => this.config()?.max_document_chars ?? DEFAULT_MAX_DOCUMENT_CHARS);
+  /** Over MAX_REQUEST_CHARS the backend condenses the document for planning (Phase 15). */
+  readonly condensed = computed(() => this.length() > this.maxChars() && !this.tooLong());
+  readonly tooLong = computed(() => this.length() > this.maxDocument());
 
   onDragOver(event: DragEvent): void {
     event.preventDefault();

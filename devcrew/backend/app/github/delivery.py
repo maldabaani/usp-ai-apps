@@ -15,13 +15,14 @@ Rules (from the spec):
 from __future__ import annotations
 
 import base64
+import re
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from app.github.client import GitHubClient, GitHubError
+from app.github.client import EtagCache, GitHubClient, GitHubError
 from app.github.pr_body import pr_body, pr_title
 from app.tools.git import GitError, GitRepo
 
@@ -65,6 +66,7 @@ class GitHubDelivery:
     ) -> None:
         self._client_factory = client_factory
         self._token = token
+        self.cache = EtagCache()
         self._git_url = git_url.rstrip("/")
 
     def remote_url(self, owner: str, repo: str) -> str:
@@ -86,8 +88,11 @@ class GitHubDelivery:
         return heads
 
     def client(self) -> GitHubClient:
-        """A new API client (the caller closes it)."""
-        return self._client_factory()
+        """A new API client (the caller closes it); all clients share one ETag cache."""
+        client = self._client_factory()
+        if client.cache is None:
+            client.cache = self.cache
+        return client
 
     async def fetch_base(self, repo: GitRepo, owner: str, name: str, base: str) -> str:
         """Fetch the PR base branch into a local ref and return that ref."""
@@ -96,7 +101,7 @@ class GitHubDelivery:
         return ref
 
     async def default_branch(self, owner: str, name: str) -> str:
-        client = self._client_factory()
+        client = self.client()
         try:
             repo = await client.get_repo(owner, name)
         except GitHubError as exc:
@@ -138,7 +143,7 @@ class GitHubDelivery:
         repo = GitRepo(Path(state["workspace"]))
         if state.get("target") == "existing":
             return await self._deliver_existing(state, owner, name, branch, repo, say)
-        client = self._client_factory()
+        client = self.client()
         try:
             created = False
             if await client.get_repo(owner, name) is None:
@@ -176,7 +181,9 @@ class GitHubDelivery:
             await self._git(repo, "push", url, f"refs/heads/{branch}:refs/heads/{branch}")
 
             pr_url = await client.find_open_pr(owner, name, branch, BASE_BRANCH)
-            if pr_url is None:
+            if pr_url is not None:
+                await self._refresh_pr(client, owner, name, pr_url, state, say)
+            else:
                 await say("opening the pull request")
                 pr_url = await client.create_pr(
                     owner,
@@ -194,6 +201,29 @@ class GitHubDelivery:
         finally:
             await client.aclose()
 
+    @staticmethod
+    async def _refresh_pr(
+        client: GitHubClient,
+        owner: str,
+        name: str,
+        pr_url: str,
+        state: Mapping[str, Any],
+        say: Callable[[str], Awaitable[None]],
+    ) -> None:
+        """Re-delivery (retry, final-approval follow-up, PR round): keep the description in
+        step with the run instead of leaving the first version."""
+        match = re.search(r"/pull/(\d+)", pr_url)
+        if match is None:
+            return
+        await say("updating the pull request description")
+        await client.update_pr(
+            owner,
+            name,
+            int(match.group(1)),
+            title=pr_title(str(state.get("request", ""))),
+            body=pr_body(state),
+        )
+
     async def _deliver_existing(
         self,
         state: Mapping[str, Any],
@@ -207,7 +237,7 @@ class GitHubDelivery:
         if branch == base:
             raise DeliveryError(f"refusing to push the base branch {base}")
         url = self.remote_url(owner, name)
-        client = self._client_factory()
+        client = self.client()
         try:
             heads = await self._remote_heads(repo, url)
             if base not in heads:
@@ -215,7 +245,9 @@ class GitHubDelivery:
             await say(f"pushing {branch}")
             await self._git(repo, "push", url, f"refs/heads/{branch}:refs/heads/{branch}")
             pr_url = await client.find_open_pr(owner, name, branch, base)
-            if pr_url is None:
+            if pr_url is not None:
+                await self._refresh_pr(client, owner, name, pr_url, state, say)
+            else:
                 await say(f"opening the pull request against {base}")
                 pr_url = await client.create_pr(
                     owner,

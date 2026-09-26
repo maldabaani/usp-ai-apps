@@ -245,6 +245,7 @@ export interface RunDetail extends RunSummary {
   issue?: RunIssue | null;
   followup?: FollowupState | null;
   pause_requested?: boolean;
+  request_digest?: string | null;
   human_notes?: { id: number | null; text: string; merged?: boolean }[];
   plan: Plan | null;
   design: Design | null;
@@ -341,6 +342,7 @@ export interface HealthReport {
 
 export interface ClientConfig {
   max_request_chars: number;
+  max_document_chars: number;
   max_dev_iterations: number;
   max_parallel_devs: number;
   github_enabled: boolean;

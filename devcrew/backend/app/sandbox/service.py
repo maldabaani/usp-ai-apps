@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 
 from app.graph.layout import LayoutEntry
 from app.sandbox.policy import check_command, check_relative_cwd
@@ -46,11 +48,14 @@ def manifest_hash(target: SandboxTarget, entry: LayoutEntry) -> str:
 
 
 class Sandbox:
-    def __init__(self, runner: CommandRunner) -> None:
+    def __init__(self, runner: CommandRunner, state_dir: Path | None = None) -> None:
         self.runner = runner
         # (run_id, stack) -> manifest hash of the last SUCCESSFUL install. Dependency volumes are
-        # per run, so one install serves every task of the run. Lost on restart -> reinstall.
+        # per run, so one install serves every task of the run. With `state_dir` the hashes are
+        # kept in <state_dir>/<run_id>.json and survive a backend restart (no reinstall).
         self._installed: dict[tuple[str, str], str] = {}
+        self._state_dir = state_dir
+        self._loaded: set[str] = set()
         # Parallel tasks share the run's dependency volumes: one install per (run, stack) at a time.
         self._install_locks: dict[tuple[str, str], asyncio.Lock] = {}
 
@@ -60,6 +65,7 @@ class Sandbox:
         outcomes = []
         for entry in layout.values():
             key = (target.run_id, entry.stack)
+            self._load(target.run_id)
             digest = manifest_hash(target, entry)
             lock = self._install_locks.setdefault(key, asyncio.Lock())
             async with lock:
@@ -71,6 +77,7 @@ class Sandbox:
                 )
                 if result.ok:
                     self._installed[key] = digest
+                    self._save(target.run_id)
             if not result.ok:
                 logger.warning(
                     "dependency install failed for %s: %s", entry.stack, result.output[-500:]
@@ -109,7 +116,36 @@ class Sandbox:
     async def release(self, run_id: str, task_id: str | None) -> None:
         await self.runner.release(run_id, task_id)
 
+    def _state_file(self, run_id: str) -> Path | None:
+        return self._state_dir / f"{run_id}.json" if self._state_dir is not None else None
+
+    def _load(self, run_id: str) -> None:
+        path = self._state_file(run_id)
+        if path is None or run_id in self._loaded:
+            return
+        self._loaded.add(run_id)
+        try:
+            saved = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return
+        for stack, digest in saved.items():
+            self._installed.setdefault((run_id, str(stack)), str(digest))
+
+    def _save(self, run_id: str) -> None:
+        path = self._state_file(run_id)
+        if path is None:
+            return
+        saved = {stack: d for (rid, stack), d in self._installed.items() if rid == run_id}
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(saved), encoding="utf-8")
+        except OSError as exc:
+            logger.warning("could not save the install state of %s: %s", run_id, exc)
+
     async def cleanup_run(self, run_id: str) -> None:
         for key in [k for k in self._installed if k[0] == run_id]:
             del self._installed[key]
+        path = self._state_file(run_id)
+        if path is not None:
+            path.unlink(missing_ok=True)
         await self.runner.cleanup_run(run_id)

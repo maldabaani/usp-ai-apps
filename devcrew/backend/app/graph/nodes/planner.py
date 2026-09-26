@@ -8,6 +8,7 @@ from langgraph.types import Command
 from app.db.models import RunStatus
 from app.events.types import EventType
 from app.graph.context_builder import budget_for, planner_context
+from app.graph.requirements import effective_request, search_requirements_tool, with_digest
 from app.graph.runtime import (
     GraphDeps,
     NodeFn,
@@ -54,7 +55,7 @@ def make_planner(deps: GraphDeps) -> NodeFn:
 
         def context() -> str:
             return planner_context(
-                state["request"],
+                effective_request(state),
                 budget_for(deps.llm.spec(Role.PLANNER).prompt_budget, system),
                 feedback=state.get("plan_feedback"),
                 previous_plan=previous,
@@ -72,7 +73,15 @@ def make_planner(deps: GraphDeps) -> NodeFn:
             task_id=None,
             system=system,
             build_context=context,
-            tools=[ask_human_tool(limit_reached=limit_reached), *repo_tools(deps, state)],
+            tools=[
+                ask_human_tool(limit_reached=limit_reached),
+                *repo_tools(deps, state),
+                *(
+                    [search_requirements_tool(state["request"])]
+                    if state.get("request_digest")
+                    else []
+                ),
+            ],
             saved=state.get("scratch", {}).get(NODE),
         )
         if outcome.kind == "ask_human":
@@ -107,7 +116,7 @@ def make_planner(deps: GraphDeps) -> NodeFn:
             },
         )
 
-    return with_notes(deps, "Planner", planner)
+    return with_digest(deps, with_notes(deps, "Planner", planner))
 
 
 async def escalate(deps: GraphDeps, run_id: str, node: str, reason: str) -> Command[str]:

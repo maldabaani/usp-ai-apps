@@ -358,3 +358,29 @@ async def test_messages_during_final_approval_join_the_rejection(tmp_path: Path)
         assert "Also return 404 for unknown ids" in task["description"]
         row = (await messages(a, run_id))["Also return 404 for unknown ids"]
         assert row["status"] == "applied" and "final-approval feedback" in row["reply"]
+
+
+async def test_pause_before_a_tasks_review(tmp_path: Path) -> None:
+    async with api(tmp_path) as a:
+        store = a.harness.deps.steering
+        run: dict[str, Any] = {}
+        default = a.harness.brain.responders["developer"]
+
+        def developer(call: Call) -> AIMessage:
+            if current_task_id(call) == "T1" and run.get("id"):
+                store._paused.add(run["id"])  # type: ignore[attr-defined]  # Pause while T1 codes
+            return default(call)
+
+        a.harness.brain.responders["developer"] = developer
+        run_id = run["id"] = await create(a)
+        await a.approve(run_id)
+        detail = await a.approve(run_id)
+        assert detail["status"] == "paused"
+        [pending] = detail["pending"]
+        assert pending["data"] == {"task_id": "T1", "node": "reviewer"}
+        assert "next review" in pending["title"]
+        assert not a.harness.brain.calls_for("reviewer")  # it stopped before the review
+        await a.client.post(f"/runs/{run_id}/pause", json={"paused": False})
+        detail = await a.settle(run_id)
+        assert detail["status"] == "awaiting_final_approval"
+        assert detail["tasks"]["T1"]["iterations"] == 1  # it continued with the review

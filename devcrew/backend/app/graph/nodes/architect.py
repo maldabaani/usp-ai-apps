@@ -8,6 +8,7 @@ from app.db.models import RunStatus
 from app.graph.context_builder import architect_context, budget_for
 from app.graph.nodes.planner import escalate, repo_tools
 from app.graph.nodes.repository import repo_projects, repo_stack
+from app.graph.requirements import effective_request
 from app.graph.runtime import (
     GraphDeps,
     NodeFn,
@@ -43,7 +44,7 @@ def make_architect(deps: GraphDeps) -> NodeFn:
 
         def context() -> str:
             return architect_context(
-                state["request"],
+                effective_request(state),
                 plan,
                 budget_for(deps.llm.spec(Role.ARCHITECT).prompt_budget, system),
                 feedback=state.get("design_feedback"),

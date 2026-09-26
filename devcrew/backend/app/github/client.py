@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from typing import Any
 
 import httpx
@@ -26,14 +27,42 @@ HINTS = {
 }
 
 
+class EtagCache:
+    """Conditional GET cache shared by the short-lived clients of one GitHubDelivery.
+
+    GitHub answers `If-None-Match` with 304 when nothing changed, and 304s do not count
+    against the rate limit, so polling idle PRs and issues is almost free.
+    """
+
+    def __init__(self, max_entries: int = 1000) -> None:
+        self._entries: OrderedDict[str, tuple[str, Any]] = OrderedDict()
+        self._max = max_entries
+        self.hits = 0
+        self.misses = 0
+
+    def get(self, key: str) -> tuple[str, Any] | None:
+        entry = self._entries.get(key)
+        if entry is not None:
+            self._entries.move_to_end(key)
+        return entry
+
+    def put(self, key: str, etag: str, body: Any) -> None:
+        self._entries[key] = (etag, body)
+        self._entries.move_to_end(key)
+        while len(self._entries) > self._max:
+            self._entries.popitem(last=False)
+
+
 class GitHubClient:
     def __init__(
         self,
         token: str,
         api_url: str = "https://api.github.com",
         transport: httpx.AsyncBaseTransport | None = None,
+        cache: EtagCache | None = None,
     ) -> None:
         self._token = token
+        self.cache = cache
         self._http = httpx.AsyncClient(
             base_url=api_url.rstrip("/"),
             headers={
@@ -50,10 +79,26 @@ class GitHubClient:
         await self._http.aclose()
 
     async def _request(self, method: str, path: str, *, ok404: bool = False, **kwargs: Any) -> Any:
+        key = None
+        cached = None
+        if method == "GET" and self.cache is not None:
+            params = sorted((kwargs.get("params") or {}).items())
+            key = f"{path}?{params}"
+            cached = self.cache.get(key)
+            if cached is not None:
+                kwargs["headers"] = {**kwargs.get("headers", {}), "If-None-Match": cached[0]}
         try:
             resp = await self._http.request(method, path, **kwargs)
         except httpx.HTTPError as exc:
             raise GitHubError(f"cannot reach GitHub ({type(exc).__name__}: {exc})") from exc
+        if resp.status_code == 304 and cached is not None and self.cache is not None:
+            self.cache.hits += 1
+            return cached[1]
+        if key is not None and self.cache is not None and resp.status_code == 200:
+            self.cache.misses += 1
+            etag = resp.headers.get("etag")
+            if etag:
+                self.cache.put(key, etag, resp.json() if resp.content else None)
         if resp.status_code == 404 and ok404:
             return None
         if resp.status_code >= 400:
@@ -105,6 +150,13 @@ class GitHubClient:
             json={"title": title, "head": head, "base": base, "body": body},
         )
         return str(pull["html_url"])
+
+    async def update_pr(self, owner: str, repo: str, number: int, *, title: str, body: str) -> None:
+        await self._request(
+            "PATCH",
+            f"/repos/{owner}/{repo}/pulls/{number}",
+            json={"title": title, "body": body},
+        )
 
     # ------------------------------------------------------------------ Phase 12: automation
     async def labelled_issues(self, owner: str, repo: str, label: str) -> list[dict[str, Any]]:
@@ -182,6 +234,13 @@ class GitHubClient:
             "GET", f"/repos/{owner}/{repo}/commits/{sha}/check-runs", params={"per_page": 100}
         )
         return [dict(c) for c in (result or {}).get("check_runs", [])]
+
+    async def commit_status(self, owner: str, repo: str, sha: str) -> dict[str, Any]:
+        """Combined legacy commit status (CI systems that do not use check runs)."""
+        result = await self._request(
+            "GET", f"/repos/{owner}/{repo}/commits/{sha}/status", params={"per_page": 100}
+        )
+        return dict(result or {})
 
     async def job_logs(self, owner: str, repo: str, job_id: int) -> str:
         """A GitHub Actions job log (the API redirects to a short-lived download URL)."""

@@ -9,6 +9,8 @@ human decides (secret findings can never be allowed through).
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -24,7 +26,7 @@ from app.gates.checks import (
     dependencies_gate,
     secrets_gate,
 )
-from app.gates.runner import measure_coverage, scan_dependencies, scan_secrets, vulnerability_keys
+from app.gates.runner import run_base_tests, scan_dependencies, scan_secrets, vulnerability_keys
 from app.graph.layout import LayoutEntry, resolve_layout, sandbox_target
 from app.graph.runtime import GraphDeps, NodeFn
 from app.graph.state import Plan, PlanTask, TaskState, dump, get_design, get_plan
@@ -34,22 +36,67 @@ from app.tools.git import GitRepo
 NODE = "gates"
 
 
+def baseline_key(repo: str, commit: str, layout: dict[str, LayoutEntry], gates: bool) -> str:
+    """Cache key: the same base commit, commands and gate setting give the same baseline."""
+    commands = {
+        stack: [e.path, e.template.test_cmd, e.template.coverage_cmd or ""]
+        for stack, e in sorted(layout.items())
+    }
+    raw = json.dumps([repo, commit, commands, gates], sort_keys=True)
+    return hashlib.sha256(raw.encode()).hexdigest()[:32]
+
+
 async def take_baseline(
-    deps: GraphDeps, run_id: str, target: SandboxTarget, layout: dict[str, LayoutEntry]
+    deps: GraphDeps,
+    run_id: str,
+    target: SandboxTarget,
+    layout: dict[str, LayoutEntry],
+    *,
+    repo: str = "",
+    commit: str = "",
 ) -> dict[str, Any]:
-    """Coverage and known vulnerabilities on the base branch of an existing repository."""
+    """The base branch of an existing repository: which tests already fail, coverage and known
+    vulnerabilities (the last two only with gates on). Cached per base commit (BL-125)."""
     assert deps.sandbox is not None
+    gates = deps.settings.gates_enabled
+    cache = None
+    if commit:
+        key = baseline_key(repo, commit, layout, gates)
+        cache = deps.settings.workspaces_dir / ".baseline-cache" / f"{key}.json"
+        try:
+            baseline: dict[str, Any] = json.loads(cache.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            pass
+        else:
+            await deps.emit(
+                run_id,
+                EventType.TOOL_RESULT,
+                node="scaffold",
+                tool="gate_baseline",
+                ok=True,
+                result=f"base branch {commit[:10]}: baseline reused from an earlier run",
+            )
+            return baseline
+
     await deps.emit(run_id, EventType.TOOL_CALL, node="scaffold", tool="gate_baseline", args={})
-    coverage = await measure_coverage(deps.sandbox, target, layout)
-    scan = await scan_dependencies(deps.sandbox, target, layout)
+    runs = await run_base_tests(deps.sandbox, target, layout, coverage=gates)
+    coverage = {s: r.coverage for s, r in runs.items()} if gates else {}
+    tests = {s: {"passed": r.passed, "failing": r.failing} for s, r in runs.items()}
+    vulnerabilities: list[str] = []
+    errors: list[str] = []
+    if gates:
+        scan = await scan_dependencies(deps.sandbox, target, layout)
+        vulnerabilities, errors = vulnerability_keys(scan.vulnerabilities), scan.errors
     baseline = {
         "coverage": coverage,
-        "vulnerabilities": vulnerability_keys(scan.vulnerabilities),
-        "errors": scan.errors,
+        "vulnerabilities": vulnerabilities,
+        "errors": errors,
+        "tests": tests,
     }
     shown = ", ".join(
         f"{s} {v:.1f}%" if v is not None else f"{s} n/a" for s, v in sorted(coverage.items())
     )
+    broken = [s for s, t in tests.items() if not t["passed"]]
     await deps.emit(
         run_id,
         EventType.TOOL_RESULT,
@@ -57,16 +104,25 @@ async def take_baseline(
         tool="gate_baseline",
         ok=True,
         result=f"base branch coverage: {shown or 'not measured'}; "
-        f"{len(baseline['vulnerabilities'])} known vulnerable package(s)",
+        f"{len(vulnerabilities)} known vulnerable package(s); "
+        + (f"tests already failing: {', '.join(broken)}" if broken else "tests pass"),
     )
+    if cache is not None and not errors:
+        try:
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            cache.write_text(json.dumps(baseline), encoding="utf-8")
+        except OSError:
+            pass  # only a cache
     return baseline
 
 
-def gate_fix_task(plan: Plan, report: GateReport, number: int) -> PlanTask:
+def gate_fix_task(plan: Plan, report: GateReport, number: int, prefix: str = "") -> PlanTask:
+    """`prefix` is "R<n>-" inside PR follow-up round n: ids stay unique (the round restarts the
+    gate-fix count) and the task belongs to its round in the workflow graph."""
     stacks = [t.stack for t in plan.tasks]
     stack = Counter(stacks).most_common(1)[0][0]
     return PlanTask(
-        id=f"GATEFIX{number}",
+        id=f"{prefix}GATEFIX{number}",
         title="Fix quality gate failures",
         description=(
             "The integrated change failed DevCrew's quality gates. Fix every finding below "
@@ -166,7 +222,12 @@ def make_gates(deps: GraphDeps) -> NodeFn:
             )
         if report.failed and rounds < deps.settings.max_gate_fix_rounds:
             plan = get_plan(state)
-            task = gate_fix_task(plan, report, rounds + 1)
+            prefix = (
+                f"R{(state.get('followup') or {}).get('round', 0)}-"
+                if state.get("followup_active")
+                else ""
+            )
+            task = gate_fix_task(plan, report, rounds + 1, prefix)
             new_plan = plan.model_copy(update={"tasks": [*plan.tasks, task]})
             return Command(
                 goto="schedule",

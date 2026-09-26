@@ -127,20 +127,24 @@ def make_merge(deps: GraphDeps) -> NodeFn:
     return merge
 
 
+HOLD_STEPS = {"developer": "developer turn", "reviewer": "review", "qa": "QA run"}
+
+
 def make_hold(deps: GraphDeps) -> NodeFn:
-    """Paused before this task's next developer turn (Phase 14); POST /pause resumes it."""
+    """Paused before this task's next step; POST /pause resumes it."""
 
     async def hold(state: dict[str, Any]) -> Command[str]:
         task_id = state["task"]["id"]
+        step = state.get("hold_next") or "developer"
         request_input(
             InterruptRequest(
                 kind=InterruptKind.PAUSE,
-                title=f"Paused before {task_id}'s next developer turn",
+                title=f"Paused before {task_id}'s next {HOLD_STEPS.get(step, step)}",
                 allowed_actions=[ResumeAction.APPROVE],
-                data={"task_id": task_id, "node": "developer"},
+                data={"task_id": task_id, "node": step},
             )
         )
-        return Command(goto="developer")
+        return Command(goto=step, update={"hold_next": None})
 
     return hold
 
@@ -150,13 +154,13 @@ def build_task_subgraph(deps: GraphDeps) -> CompiledStateGraph[Any, Any, Any, An
     nodes: dict[str, tuple[NodeFn, tuple[str, ...]]] = {
         "prepare": (make_prepare(deps), ()),
         "developer": (make_developer(deps), ("reviewer", "ask_human", "coordinator", "hold")),
-        "hold": (make_hold(deps), ("developer",)),
+        "hold": (make_hold(deps), ("developer", "reviewer", "qa")),
         "ask_human": (
             make_ask_human(deps, scratch_key="task_scratch", pending_key="task_pending_question"),
             ("developer",),
         ),
-        "reviewer": (make_reviewer(deps), ("developer", "qa", "coordinator")),
-        "qa": (make_qa(deps), ("developer", "merge", "coordinator")),
+        "reviewer": (make_reviewer(deps), ("developer", "qa", "coordinator", "hold")),
+        "qa": (make_qa(deps), ("developer", "merge", "coordinator", "hold")),
         "merge": (make_merge(deps), ("coordinator", END)),
         "coordinator": (
             make_task_coordinator(deps),

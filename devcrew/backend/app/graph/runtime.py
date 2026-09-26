@@ -22,6 +22,7 @@ from langgraph.errors import GraphBubbleUp
 from app.config import Settings
 from app.db.steering import InMemorySteeringStore, SteeringStore
 from app.events.bus import EventBus
+from app.events.cache import EventCache
 from app.events.types import EventType
 from app.github.delivery import GitHubDelivery
 from app.graph.state import PendingQuestion, QAEntry
@@ -55,6 +56,8 @@ class GraphDeps:
 
     def __post_init__(self) -> None:
         self.llm.on_usage = self._record_usage
+        # whole-run event lists for the workflow view, usage and budgets (Phase 15)
+        self.event_cache = EventCache(self.events)
 
     async def _record_usage(self, usage: CallUsage) -> None:
         await self.emit(

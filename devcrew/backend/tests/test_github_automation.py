@@ -57,6 +57,7 @@ def harness(tmp_path: Path, decide: Decide = default_decide, **settings: Any) ->
         "github_delivery_enabled": True,
         "watch_prs": True,
         "github_poll_tick_s": 3600.0,
+        "pr_poll_max_interval_s": 0.0,  # check on every poll unless a test enables backoff
         **settings,
     }
     h = make_harness(tmp_path, github=gh.delivery(), **settings)
@@ -462,3 +463,128 @@ async def test_chat_messages_while_watching_start_a_round(tmp_path: Path) -> Non
         assert not replies(gh)  # answered in DevCrew's chat, never on GitHub
         run = await poll(a, run_id)
         assert run["followup"]["round"] == 1  # each message is used once
+
+
+# ------------------------------------------------------------------------------ Phase 15
+async def test_quiet_prs_use_conditional_requests_and_back_off(tmp_path: Path) -> None:
+    h = harness(tmp_path, pr_poll_max_interval_s=120.0, github_poll_tick_s=30.0)
+    gh = fake(h)
+    async with api(tmp_path, harness=h) as a:
+        run_id = await run_to_pr(a)
+        watcher = a.container.watcher
+
+        async def poll_at(seconds: float) -> int:
+            before = len(gh.requests)
+            await watcher.follow_prs(NOW + timedelta(seconds=seconds))
+            await a.settle(run_id)
+            return len(gh.requests) - before
+
+        assert await poll_at(0) > 0  # first check: full responses, ETags stored
+        assert await poll_at(10) == 0  # quiet: next check after one tick (30 s)
+        unchanged = gh.not_modified
+        assert await poll_at(31) > 0
+        assert gh.not_modified > unchanged  # nothing changed: GitHub answers 304
+        assert await poll_at(80) == 0  # the wait doubled to 60 s
+        assert await poll_at(92) > 0
+        # activity resets the wait
+        gh.add_review_comment("acme", "shop", 1, "alice", "Rename X to TOTAL")
+        await poll_at(300)
+        run = await a.settle(run_id)
+        assert run["followup"]["round"] == 1
+        assert await poll_at(301) > 0
+
+
+async def test_edited_review_comments_are_handled_again(tmp_path: Path) -> None:
+    h = harness(tmp_path)
+    gh = fake(h)
+    async with api(tmp_path, harness=h) as a:
+        run_id = await run_to_pr(a)
+        comment = gh.add_review_comment("acme", "shop", 1, "alice", "Rename X to TOTAL")
+        run = await poll(a, run_id)
+        assert run["followup"]["round"] == 1
+        gh.edit_review_comment(comment["id"], "Rename X to GRAND_TOTAL instead")
+        run = await poll(a, run_id)
+        assert run["followup"]["round"] == 2
+        developer = [
+            str(c.messages[1].content)
+            for c in h.brain.calls_for("developer")
+            if "R2-1" in str(c.messages[1].content)
+        ]
+        assert "GRAND_TOTAL" in developer[0]
+        run = await poll(a, run_id)
+        assert run["followup"]["round"] == 2  # the same edit is handled once
+
+
+async def test_commit_statuses_and_other_ci_apps_become_fix_tasks(tmp_path: Path) -> None:
+    h = harness(tmp_path)
+    gh = fake(h)
+    async with api(tmp_path, harness=h) as a:
+        run_id = await run_to_pr(a)
+        head = gh.heads("acme", "shop")[gh.pulls[0]["head"]]
+        gh.set_status(head, ("jenkins", "pending"))
+        run = await poll(a, run_id)
+        assert "R1-CI" not in run["tasks"]  # still running
+        gh.set_status(head, ("jenkins", "failure"), ("lint", "success"))
+        gh.set_checks(head, ("sonar", "completed", "failure"))
+        gh.checks[head][0]["app"] = {"slug": "sonarcloud"}
+        gh.checks[head][0]["details_url"] = "https://sonar.example.test/r/1"
+        gh.checks[head][0]["output"] = {"title": "Quality gate failed", "summary": "2 bugs"}
+        run = await poll(a, run_id)
+        assert run["tasks"]["R1-CI"]["status"] == "merged"
+        task = next(t for t in run["plan"]["tasks"] if t["id"] == "R1-CI")
+        assert (
+            "jenkins" in task["description"]
+            and "https://ci.example.test/jenkins" in task["description"]
+        )
+        assert "Quality gate failed" in task["description"]
+        assert "https://sonar.example.test/r/1" in task["description"]
+
+
+async def test_each_push_refreshes_the_pr_description(tmp_path: Path) -> None:
+    h = harness(tmp_path)
+    gh = fake(h)
+    async with api(tmp_path, harness=h) as a:
+        run_id = await run_to_pr(a)
+        assert "R1-1" not in gh.pulls[0]["body"]
+        gh.add_review_comment("acme", "shop", 1, "alice", "Rename X to TOTAL")
+        await poll(a, run_id)
+        assert "| R1-1 |" in gh.pulls[0]["body"]
+        assert ("PATCH", "/repos/acme/shop/pulls/1") in gh.calls()
+
+
+def test_gate_fixes_inside_a_round_belong_to_that_round() -> None:
+    from app.gates.checks import GateReport
+    from app.graph.nodes.gates import gate_fix_task
+    from app.graph.state import Plan
+    from app.services.workflow import task_round
+    from tests.graph_harness import PLAN
+
+    plan = Plan.model_validate(PLAN)
+    assert gate_fix_task(plan, GateReport(), 1).id == "GATEFIX1"
+    task = gate_fix_task(plan, GateReport(), 1, "R2-")
+    assert task.id == "R2-GATEFIX1" and task_round(task.id) == 2
+
+
+async def test_removing_the_label_cancels_a_run_before_plan_approval(tmp_path: Path) -> None:
+    h = harness(tmp_path)
+    gh = fake(h)
+    gh.add_issue("acme", "shop", "Add discounts", "Todos need a discount.", ["devcrew"])
+    gh.add_issue("acme", "shop", "Fix typo", "README typo.", ["devcrew:quick"])
+    gh.add_issue("acme", "shop", "Manual", "Imported by hand.", [])
+    async with api(tmp_path, harness=h) as a:
+        await watch(a)
+        await a.container.watcher.tick(NOW)
+        imported = await a.client.post("/issues/import", json={"repo": REPO, "number": 3})
+        runs = {r["issue_number"]: r["run_id"] for r in (await a.client.get("/issue-runs")).json()}
+        for run_id in runs.values():
+            await a.container.manager.wait(run_id)
+        assert imported.status_code == 201
+        await a.approve(runs[2])  # issue 2's plan is approved: it keeps going when unlabelled
+        gh.unlabel("acme", "shop", 1, "devcrew")
+        gh.unlabel("acme", "shop", 2, "devcrew:quick")
+        await a.container.watcher.tick(NOW + timedelta(seconds=301))
+        statuses = {n: (await a.client.get(f"/runs/{r}")).json()["status"] for n, r in runs.items()}
+        assert statuses[1] == "cancelled"
+        assert statuses[2] != "cancelled" and statuses[3] != "cancelled"
+        events = [e async for e in a.container.events.replay(runs[1])]
+        assert any("label was removed" in str(e.payload.get("message")) for e in events)

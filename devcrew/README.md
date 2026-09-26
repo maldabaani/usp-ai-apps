@@ -209,7 +209,7 @@ flowchart LR
 | **Frontend** | Angular 19 (standalone components, signals, OnPush), Angular Material dark theme, ngx-vflow workflow graph, inline-SVG robot icons |
 | **Git & GitHub** | git worktrees and squash merges, GitHub REST and GraphQL (issues, PRs, reviews, checks, thread resolution) |
 | **Starter templates** | FastAPI · Spring Boot 3.5 (Java 21) · Angular 19 standalone |
-| **Quality** | ruff, mypy (strict), pytest (342 tests, Ollama always mocked), ESLint, Karma/Jasmine (66 specs), a benchmark with 12 tasks and 93 hidden tests |
+| **Quality** | ruff, mypy (strict), pytest (359 tests plus 2 Docker-only, Ollama always mocked), ESLint, Karma/Jasmine (66 specs), a benchmark with 12 tasks and 93 hidden tests |
 
 ## 🚀 Quick start
 
@@ -254,7 +254,7 @@ Every variable is documented in [`.env.example`](.env.example); model settings a
 | `WATCH_PRS`, `MAX_PR_ROUNDS` | `true`, `3` | PR follow-up rounds after delivery |
 | `RUN_TOKEN_BUDGET`, `RUN_TIME_BUDGET_MIN` | `0` (off) | Default budgets per run |
 | `WAVE_TESTS_ENABLED` | `true` | Project tests after every wave of tasks |
-| `MAX_REQUEST_CHARS` | `20000` | Size limit of a request or requirements document |
+| `MAX_REQUEST_CHARS` / `MAX_DOCUMENT_CHARS` | `20000` / `200000` | Requests up to the first go to the Planner as-is; longer documents are condensed |
 
 ## 📁 Project structure
 
@@ -318,6 +318,7 @@ There is also a terminal client (`scripts/run_local.py`) and a benchmark runner
 | 12 | GitHub automation: issue intake by label, PR follow-up on reviews, CI and conflicts |
 | 13 | Steering: chat with the crew or a task, pause / resume |
 | 14 | Usage and budgets, tests after every wave, retry / run again, steering completed |
+| 15 | GitHub efficiency (conditional requests, quiet-PR backoff), base-branch test baselines, long requirements documents, finer pause |
 
-**Next:** a first run against real Ollama models and GitHub, then Phases 15–16 (GitHub
+**Next:** a first run against real Ollama models and GitHub, then Phase 16 (GitHub
 efficiency, real-run robustness, UI and features). See the [backlog](BACKLOG.md).

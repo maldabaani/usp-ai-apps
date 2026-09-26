@@ -48,6 +48,8 @@ class Settings(BaseSettings):
     # The Planner and Architect always receive the whole request, so it must fit their context
     # window: ~20k characters with the default num_ctx 16384. Raise together with num_ctx.
     max_request_chars: int = Field(default=20_000, ge=100)
+    # Longer documents (up to this) are condensed for the Planner/Architect (Phase 15).
+    max_document_chars: int = Field(default=200_000, ge=1000)
     # Quality gates (Phase 11): secret scanning, dependency vulnerabilities, test coverage.
     gates_enabled: bool = True
     gate_coverage_min: float = Field(default=70.0, ge=0, le=100)
@@ -59,6 +61,10 @@ class Settings(BaseSettings):
     github_poll_tick_s: float = Field(default=30.0, gt=0)
     default_poll_interval_s: int = Field(default=300, ge=30)
     max_issue_runs: int = Field(default=2, ge=1)
+    # Quiet PRs are checked less often: the wait doubles up to this (0 = every tick).
+    pr_poll_max_interval_s: float = Field(default=300.0, ge=0)
+    # Removing the devcrew label cancels the issue's run while its plan is not approved yet.
+    cancel_on_unlabel: bool = True
     # Phase 14: default budgets per run (0 = no limit; a run can set its own), the project's
     # tests after every wave of tasks, and the size limit of the human's notes in prompts.
     run_token_budget: int = Field(default=0, ge=0)
