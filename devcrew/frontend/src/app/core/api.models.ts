@@ -14,6 +14,7 @@ export type RunStatus =
   | 'awaiting_final_approval'
   | 'delivering'
   | 'watching_pr'
+  | 'paused'
   | 'needs_human'
   | 'completed'
   | 'failed'
@@ -30,7 +31,8 @@ export type TaskStatus =
   | 'needs_human'
   | 'failed'
   | 'blocked'
-  | 'split';
+  | 'split'
+  | 'cancelled';
 
 export type Stack = 'python' | 'java' | 'angular' | 'mixed';
 export type TaskStack = Exclude<Stack, 'mixed'>;
@@ -141,7 +143,7 @@ export interface QAEntry {
 }
 
 export type ResumeAction = 'approve' | 'reject' | 'edit' | 'answer' | 'update';
-export type InterruptKind = 'approval' | 'question' | 'escalation' | 'watch';
+export type InterruptKind = 'approval' | 'question' | 'escalation' | 'watch' | 'pause';
 
 export interface PendingInput {
   interrupt_id: string;
@@ -157,6 +159,7 @@ export interface IntegrationSummary {
   merged: string[];
   failed: string[];
   blocked: string[];
+  cancelled?: string[];
   tests: Record<string, TestResult>;
 }
 
@@ -241,6 +244,8 @@ export interface RunDetail extends RunSummary {
   gates?: GateReport | null;
   issue?: RunIssue | null;
   followup?: FollowupState | null;
+  pause_requested?: boolean;
+  human_notes?: { id: number; text: string }[];
   plan: Plan | null;
   design: Design | null;
   tasks: Record<string, TaskState>;
@@ -279,6 +284,7 @@ export const EVENT_TYPES = [
   'error',
   'status',
   'awaiting_input',
+  'message',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
@@ -419,4 +425,28 @@ export interface Workflow {
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
   attention: string[];
+}
+
+/** A chat message from the human to the run (task_id null) or to one task (Phase 13). */
+export type MessageStatus = 'pending' | 'delivered' | 'applied' | 'answered' | 'expired';
+
+export interface RunMessage {
+  id: number;
+  task_id: string | null;
+  text: string;
+  status: MessageStatus;
+  action: 'note' | 'add_task' | 'cancel_task' | 'answer' | null;
+  reply: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface MessageIn {
+  text: string;
+  task_id: string | null;
+}
+
+export interface PauseState {
+  status: RunStatus;
+  pause_requested: boolean;
 }

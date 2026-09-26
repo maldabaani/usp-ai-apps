@@ -7,6 +7,7 @@ const TONE: Record<string, string> = {
   cancelled: 'muted',
   blocked: 'muted',
   split: 'muted',
+  paused: 'warn',
   needs_human: 'warn',
   awaiting_plan_approval: 'warn',
   awaiting_design_approval: 'warn',

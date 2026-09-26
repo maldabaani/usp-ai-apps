@@ -199,6 +199,9 @@ export class ActionPanelComponent {
   /** Button wording depends on what is being decided. */
   readonly labels = computed(() => {
     const p = this.pending();
+    if (p.kind === 'pause') {
+      return { approve: 'Resume', reject: '', rejectPrompt: '' };
+    }
     if (p.kind === 'watch') {
       return { approve: '', reject: 'Stop watching', rejectPrompt: 'Why stop following the PR? (kept in the run log)' };
     }

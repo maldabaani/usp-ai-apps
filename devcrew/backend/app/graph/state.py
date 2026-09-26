@@ -329,10 +329,17 @@ class TaskStatus(StrEnum):
     FAILED = "failed"
     BLOCKED = "blocked"
     SPLIT = "split"  # replaced by subtasks (Coordinator)
+    CANCELLED = "cancelled"  # dropped on the human's request before it started
 
     @property
     def is_final(self) -> bool:
-        return self in (TaskStatus.MERGED, TaskStatus.FAILED, TaskStatus.BLOCKED, TaskStatus.SPLIT)
+        return self in (
+            TaskStatus.MERGED,
+            TaskStatus.FAILED,
+            TaskStatus.BLOCKED,
+            TaskStatus.SPLIT,
+            TaskStatus.CANCELLED,
+        )
 
 
 class TaskState(BaseModel):
@@ -508,6 +515,12 @@ class RunState(TypedDict, total=False):
     followup_triage: list[dict[str, Any]] | None
     followup_active: bool  # a follow-up round is being implemented
 
+    # Phase 13: steering. Notes from the human's chat messages (given to every agent from then
+    # on) and the ids of run-level messages already applied (state is the source of truth, so a
+    # node that re-runs after a crash applies each message exactly once).
+    human_notes: list[dict[str, Any]]
+    steer_applied: list[int]
+
 
 class TaskWorkerState(TypedDict, total=False):
     run_id: str
@@ -526,6 +539,7 @@ class TaskWorkerState(TypedDict, total=False):
     escalation_node: str | None  # node to retry
     escalation_question: str | None  # what the escalate node asks the human
     plan_changes: Annotated[list[dict[str, Any]], operator.add]
+    human_notes: list[dict[str, Any]]  # run-level notes from the human's chat (Phase 13)
 
 
 class TaskWorkerOutput(TypedDict, total=False):

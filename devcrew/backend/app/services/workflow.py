@@ -69,6 +69,7 @@ STATUS_STAGE: dict[RunStatus, tuple[str, NodeStatus]] = {
     RunStatus.INTEGRATING: ("integration", "running"),
     RunStatus.AWAITING_FINAL_APPROVAL: ("approve_final", "waiting"),
     RunStatus.DELIVERING: ("delivery", "running"),
+    RunStatus.PAUSED: (DEVELOPMENT, "waiting"),  # paused between waves
 }
 
 TASK_STATUS: dict[str, NodeStatus] = {
@@ -81,6 +82,7 @@ TASK_STATUS: dict[str, NodeStatus] = {
     "failed": "failed",
     "blocked": "skipped",
     "split": "skipped",
+    "cancelled": "skipped",
 }
 TASK_STEPS = {
     "prepare": "preparing worktree",
@@ -215,6 +217,11 @@ def describe(event: Event) -> Activity | None:
                 text=_short(p.get("message", "error"), 160),
                 ok=False,
             )
+        case EventType.MESSAGE:
+            reply = p.get("reply")
+            text = f"you: {_short(p.get('text', ''), 80)}" + (
+                f" → {_short(reply, 80)}" if reply else ""
+            )
         case EventType.AWAITING_INPUT:
             if p.get("kind") == "watch":
                 text = "watching for review comments, CI results and conflicts"
@@ -230,6 +237,8 @@ def _interrupt_stage(value: Mapping[str, Any]) -> str | None:
     data = value.get("data") or {}
     if value.get("kind") == "watch":
         return WATCH
+    if value.get("kind") == "pause":
+        return None  # shown in the run header, not on a node
     if value.get("artifact") == "followup":
         return triage_node_id(int(data.get("round") or 1))
     if data.get("task_id"):
@@ -508,6 +517,8 @@ def _apply_task_status(
             node.detail = f"merged after {iterations} iteration{'s' if iterations != 1 else ''}"
         elif raw == "split":
             node.detail = "split into smaller tasks"
+        elif raw == "cancelled":
+            node.detail = "cancelled on your request"
         elif raw == "blocked":
             node.detail = "blocked by a failed dependency"
         elif raw == "failed":

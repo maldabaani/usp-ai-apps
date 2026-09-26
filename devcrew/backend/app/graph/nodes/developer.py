@@ -17,6 +17,7 @@ from app.graph.runtime import (
     save_transcript,
 )
 from app.graph.state import TaskStatus, dump
+from app.graph.steering import task_notes
 from app.llm.models_config import Role
 from app.tools.agents import QuestionBudget, ask_agent_tool
 from app.tools.base import ToolError, ToolSpec
@@ -80,6 +81,7 @@ def make_developer(deps: GraphDeps) -> NodeFn:
             except ToolError:
                 rules = ""
             related = await retrieve(deps, ctx.run_id, task_query(ctx.task))
+            notes = await task_notes(deps, state, ctx.task.id, deliver=True)
             return developer_context(
                 ctx.task,
                 ctx.plan,
@@ -90,6 +92,7 @@ def make_developer(deps: GraphDeps) -> NodeFn:
                 budget_for(deps.llm.spec(Role.DEVELOPER).prompt_budget, system),
                 qa=qa_entries(qa_log, task_id=ctx.task.id),
                 related_code=related,
+                notes=notes,
             )
 
         outcome = await agent_turn(

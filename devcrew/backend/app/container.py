@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from app.config import Settings
 from app.db.repository import RunRepository, RunStore
 from app.db.session import create_engine, create_sessionmaker
+from app.db.steering import SteeringRepository
 from app.db.watch import InMemoryWatchStore, WatchRepository, WatchStore
 from app.events.bus import EventBus
 from app.events.store import PostgresEventStore
@@ -72,7 +73,9 @@ class Container:
         """Production wiring: Postgres app tables, event log and LangGraph checkpointer."""
         sessionmaker = create_sessionmaker(engine)
         events = EventBus(PostgresEventStore(sessionmaker))
-        deps = build_deps(settings, events, llm=build_llm(settings))
+        deps = build_deps(
+            settings, events, llm=build_llm(settings), steering=SteeringRepository(sessionmaker)
+        )
         async with postgres_checkpointer(settings.database_url) as saver:
             container = cls.assemble(
                 settings,

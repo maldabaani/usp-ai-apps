@@ -28,6 +28,10 @@ export function describeEvent(e: RunEvent): string {
       return str(p['message']);
     case 'status':
       return `status → ${str(p['status']).replaceAll('_', ' ')}`;
+    case 'message': {
+      const target = e.task_id ? ` (to ${e.task_id})` : '';
+      return p['reply'] ? `${str(p['status'])}${target}: ${str(p['reply'])}` : `you${target}: ${str(p['text'])}`;
+    }
     case 'awaiting_input':
       return p['kind'] === 'watch'
         ? 'watching the pull request for reviews, CI and conflicts'

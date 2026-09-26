@@ -14,6 +14,7 @@ class InterruptKind(StrEnum):
     QUESTION = "question"  # ask_human
     ESCALATION = "escalation"  # iteration limit or unrecoverable agent error
     WATCH = "watch"  # waiting for GitHub activity on the PR (resumed by the poller)
+    PAUSE = "pause"  # paused at a safe point on request (approve = resume)
 
 
 class ResumeAction(StrEnum):

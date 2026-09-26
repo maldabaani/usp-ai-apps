@@ -21,7 +21,7 @@ All LLM calls go to a **local Ollama**. There are no cloud LLM calls anywhere.
 | `backend/config/models.yaml` | Per-role model config. One shared chat model by default (no VRAM swapping). |
 | `backend/app/llm/client.py` | `LLMGateway`: ChatOllama/OllamaEmbeddings factory, a **global asyncio semaphore** (`MAX_PARALLEL_DEVS`) around every chat call, per-role token accounting. |
 | `backend/app/health.py` | DB, Chroma, Ollama, pulled models, Docker, GitHub token checks with actionable messages. Used by `GET /health` and by startup fail-fast. |
-| `backend/app/db/` | SQLAlchemy 2.0 async models: `runs` (run index), `run_events` (append-only event log), `watched_repos` and `issue_runs` (GitHub automation). Alembic migrations in `backend/alembic/`. |
+| `backend/app/db/` | SQLAlchemy 2.0 async models: `runs` (run index), `run_events` (append-only event log), `watched_repos` and `issue_runs` (GitHub automation), `run_messages` (chat). Alembic migrations in `backend/alembic/`. |
 | `backend/app/events/` | In-process asyncio pub/sub. Events are persisted **before** fan-out. Subscribers replay from Postgres after a `Last-Event-ID`, then switch to live with no gaps or duplicates. Slow subscribers resync from the store instead of blocking publishers. |
 
 | `backend/app/graph/backbone.py` | Backbone graph (see below). |
@@ -69,6 +69,31 @@ Design notes:
   summarizes failures for the Developer.
 - With `SANDBOX_ENABLED=false`, QA writes tests but they are not executed: results show
   `ran: false` and the task proceeds.
+
+## Steering running work (Phase 13)
+
+**Chat.** The run page has a **Chat** tab, and every task panel has **Messages to this task**.
+Messages are applied at the next *safe point*; nothing interrupts an agent in the middle of a
+turn.
+
+| Message | Safe point | What happens |
+|---|---|---|
+| to the run, before planning or design | Planner / Architect start | it becomes a note the plan or design takes in |
+| to the run, later | the scheduler, before every wave | the Coordinator decides per message: **note** (every agent follows it from then on), **add a task**, **cancel** a task that has not started, or **answer** a question |
+| to a task | that task's next developer turn | the developer gets it; the reviewer checks against it |
+
+Each message shows its state: waiting, given to the developer, applied or answered. It also
+shows DevCrew's reply. Messages to a finished task are handled as run messages. Messages that
+never reach a safe point are marked *not applied* when the run ends.
+
+**Pause / Resume.** **Pause** stops the run before the next wave of tasks; tasks already
+running finish first. A paused run keeps its worktrees and containers. Messages sent while
+paused are applied as soon as you click **Resume**. Pause is offered until development ends.
+After that no safe point is left.
+
+API: `GET/POST /runs/{id}/messages` (`{"text", "task_id"}`) and `POST /runs/{id}/pause`
+(`{"paused": true|false}`). The run detail includes `pause_requested` and `human_notes`. New
+run status: `paused`. New task status: `cancelled`.
 
 ## GitHub automation (Phase 12)
 

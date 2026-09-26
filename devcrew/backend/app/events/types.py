@@ -18,6 +18,7 @@ class EventType(StrEnum):
     ERROR = "error"
     STATUS = "status"  # run status transition
     AWAITING_INPUT = "awaiting_input"  # graph interrupted, waiting for the human
+    MESSAGE = "message"  # a chat message from the human and what was done with it
 
 
 class EventIn(BaseModel):

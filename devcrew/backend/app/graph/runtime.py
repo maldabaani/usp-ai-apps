@@ -6,7 +6,7 @@ import functools
 import logging
 import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
@@ -20,6 +20,7 @@ from langchain_core.messages import (
 from langgraph.errors import GraphBubbleUp
 
 from app.config import Settings
+from app.db.steering import InMemorySteeringStore, SteeringStore
 from app.events.bus import EventBus
 from app.events.types import EventType
 from app.github.delivery import GitHubDelivery
@@ -49,6 +50,8 @@ class GraphDeps:
     sandbox: Sandbox | None = None  # None: commands/tests are not executed
     rag: RagService | None = None  # None: no retrieval
     github: GitHubDelivery | None = None  # None: no push / PR (benchmarks)
+    # Phase 13: chat messages and the pause flag (Postgres in production)
+    steering: SteeringStore = field(default_factory=InMemorySteeringStore)
 
     async def emit(
         self,

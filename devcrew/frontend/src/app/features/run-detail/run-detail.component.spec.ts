@@ -4,7 +4,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { of } from 'rxjs';
 
-import { RunDetail, RunEvent, Workflow, WorkflowNode } from '../../core/api.models';
+import { RunDetail, RunEvent, RunMessage, Workflow, WorkflowNode } from '../../core/api.models';
 import { ApiService } from '../../core/api.service';
 import { RunEventStream, RunEventsService } from '../../core/run-events.service';
 import { RunDetailComponent } from './run-detail.component';
@@ -50,8 +50,11 @@ describe('RunDetailComponent', () => {
     ({ id, run_id: 'r1', type, node: 'developer', task_id: 'T1', payload: {}, created_at: '' });
 
   beforeEach(() => {
-    api = jasmine.createSpyObj<ApiService>('ApiService', ['getRun', 'workflow', 'resume', 'cancel', 'diff', 'listFiles']);
+    api = jasmine.createSpyObj<ApiService>('ApiService', [
+      'getRun', 'workflow', 'resume', 'cancel', 'diff', 'listFiles', 'messages', 'sendMessage', 'pause',
+    ]);
     api.getRun.and.returnValue(of(RUN));
+    api.messages.and.returnValue(of([]));
     api.workflow.and.returnValue(of(WORKFLOW));
     api.resume.and.returnValue(of(RUN.pending[0]));
     stream = jasmine.createSpyObj<RunEventStream>('RunEventStream', ['close'], {
@@ -131,5 +134,47 @@ describe('RunDetailComponent', () => {
     api.getRun.and.returnValue(of({ ...RUN, status: 'completed', pending: [] }));
     fixture.componentInstance['load']();
     expect(stream.close).toHaveBeenCalled();
+  });
+
+  it('pauses and resumes the run', () => {
+    const el = fixture.nativeElement as HTMLElement;
+    const button = (label: string) =>
+      [...el.querySelectorAll('.controls button')].find((b) => b.textContent?.trim() === label) as HTMLButtonElement | undefined;
+    api.pause.and.returnValue(of({ status: 'executing', pause_requested: true }));
+    api.getRun.and.returnValue(of({ ...RUN, status: 'executing', pending: [], pause_requested: true }));
+    button('Pause')?.click();
+    fixture.detectChanges();
+    expect(api.pause).toHaveBeenCalledWith('r1', true);
+    expect(el.querySelector('.paused')?.textContent).toContain('Pausing after the current tasks finish');
+    expect(button("Don't pause")).toBeDefined();
+
+    api.getRun.and.returnValue(of({ ...RUN, status: 'paused', pending: [], pause_requested: true }));
+    fixture.componentInstance['load']();
+    fixture.detectChanges();
+    expect(el.querySelector('.paused')?.textContent).toContain('Paused before the next wave');
+    api.pause.and.returnValue(of({ status: 'executing', pause_requested: false }));
+    button('Resume')?.click();
+    expect(api.pause).toHaveBeenCalledWith('r1', false);
+
+    // no safe point is left once development is over
+    api.getRun.and.returnValue(of({ ...RUN, status: 'awaiting_final_approval', pending: [] }));
+    fixture.componentInstance['load']();
+    fixture.detectChanges();
+    expect(button('Pause')).toBeUndefined();
+  });
+
+  it('loads and sends chat messages', () => {
+    const sent: RunMessage = {
+      id: 7, task_id: null, text: 'use UUIDs', status: 'pending', action: null, reply: null,
+      created_at: null, updated_at: null,
+    };
+    api.sendMessage.and.returnValue(of(sent));
+    const c = fixture.componentInstance;
+    c.sendMessage({ text: 'use UUIDs', task_id: null });
+    expect(api.sendMessage).toHaveBeenCalledWith('r1', { text: 'use UUIDs', task_id: null });
+    expect(c.messages()).toEqual([sent]);
+    api.messages.and.returnValue(of([{ ...sent, status: 'applied', action: 'note', reply: 'Noted.' }]));
+    c['load']();
+    expect(c.messages()[0].reply).toBe('Noted.');
   });
 });

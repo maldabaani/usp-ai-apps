@@ -2,11 +2,20 @@ import { DatePipe, NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 
-import { PendingInput, ResumeRequest, RunDetail, WorkflowNode } from '../../core/api.models';
+import {
+  MessageIn,
+  PendingInput,
+  ResumeRequest,
+  RunDetail,
+  RunMessage,
+  TERMINAL_STATUSES,
+  WorkflowNode,
+} from '../../core/api.models';
 import { iconKind, nodeElapsed } from '../../core/workflow-layout';
 import { AgentIconComponent } from '../../shared/agent-icon.component';
 import { MarkdownPipe } from '../../shared/markdown.pipe';
 import { ActionPanelComponent } from './action-panel.component';
+import { ChatComponent } from './chat.component';
 import { DesignViewComponent } from './design-view.component';
 import { PlanViewComponent } from './plan-view.component';
 import { TaskDetailComponent } from './task-detail.component';
@@ -46,7 +55,7 @@ export function roundOf(nodeId: string): number | null {
   selector: 'app-workflow-panel',
   imports: [
     DatePipe, NgTemplateOutlet, MatButtonModule, AgentIconComponent, MarkdownPipe, ActionPanelComponent,
-    PlanViewComponent, DesignViewComponent, TaskDetailComponent,
+    PlanViewComponent, DesignViewComponent, TaskDetailComponent, ChatComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -78,6 +87,11 @@ export function roundOf(nodeId: string): number | null {
       @case ('plan') { <app-plan-view [plan]="run().plan" /> }
       @case ('design') { <app-design-view [design]="run().design" /> }
       @case ('task') {
+        @if (!finished() || taskMessages() > 0) {
+          <h3>Messages to this task</h3>
+          <app-chat [messages]="messages()" [taskId]="n.task_id" [busy]="busy()"
+                    [disabled]="finished()" (send)="messageSent.emit($event)" />
+        }
         <app-task-detail [runId]="run().id" [task]="planTask()" [state]="taskState()" />
       }
       @case ('repository') {
@@ -219,13 +233,26 @@ export class WorkflowPanelComponent {
   readonly run = input.required<RunDetail>();
   readonly busy = input(false);
   readonly now = input(Date.now());
+  readonly messages = input<RunMessage[]>([]);
   readonly resumeRequested = output<ResumeRequest>();
+  readonly messageSent = output<MessageIn>();
   readonly closed = output<void>();
 
   readonly icon = computed(() => iconKind(this.node()));
   readonly elapsed = computed(() => nodeElapsed(this.node(), this.now()));
   readonly roleText = computed(() =>
     this.node().kind === 'task' ? '' : (ROLE_TEXT[this.node().id] ?? ROLE_TEXT[this.node().id.split(':')[0]] ?? ''),
+  );
+  /** No more messages once the run or the task has finished. */
+  readonly finished = computed(() => {
+    const status = this.taskState()?.status;
+    return (
+      TERMINAL_STATUSES.includes(this.run().status) ||
+      (status !== undefined && ['merged', 'failed', 'blocked', 'split', 'cancelled'].includes(status))
+    );
+  });
+  readonly taskMessages = computed(
+    () => this.messages().filter((m) => m.task_id === this.node().task_id).length,
   );
   readonly reversed = computed(() => [...this.node().activity].reverse());
 

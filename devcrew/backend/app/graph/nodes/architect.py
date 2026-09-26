@@ -18,6 +18,7 @@ from app.graph.runtime import (
     save_transcript,
 )
 from app.graph.state import Design, ExistingDesignDraft, dump, get_plan
+from app.graph.steering import notes_text, with_notes
 from app.llm.models_config import Role
 from app.llm.structured import StructuredOutputError, generate_structured
 from app.tools.catalog import list_templates_tool, read_rules_tool
@@ -49,6 +50,7 @@ def make_architect(deps: GraphDeps) -> NodeFn:
                 previous_design=previous,
                 qa=qa_entries(qa_log, asker=NODE),
                 repo=state.get("repo_info"),
+                notes=notes_text(state.get("human_notes") or []),
             )
 
         outcome = await agent_turn(
@@ -130,4 +132,4 @@ def make_architect(deps: GraphDeps) -> NodeFn:
             },
         )
 
-    return architect
+    return with_notes(deps, "Architect", architect)

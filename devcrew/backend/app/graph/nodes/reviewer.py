@@ -9,6 +9,7 @@ from app.graph.context_builder import budget_for, reviewer_context
 from app.graph.nodes.task_common import TaskCtx, load_task_ctx, task_query, to_coordinator
 from app.graph.runtime import GraphDeps, NodeFn, retrieve
 from app.graph.state import ReviewIssue, ReviewResult, TaskStatus
+from app.graph.steering import task_notes
 from app.llm.agent import run_agent
 from app.llm.models_config import Role
 from app.llm.structured import StructuredOutputError, generate_structured
@@ -73,6 +74,7 @@ def make_reviewer(deps: GraphDeps) -> NodeFn:
                 diff,
                 budget_for(deps.llm.spec(Role.REVIEWER).prompt_budget, system),
                 related_code=await retrieve(deps, ctx.run_id, task_query(ctx.task)),
+                notes=await task_notes(deps, state, ctx.task.id, deliver=False),
             )
             outcome = await run_agent(
                 deps.llm,

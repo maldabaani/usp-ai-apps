@@ -12,9 +12,12 @@ import {
   HealthReport,
   ImportIssueRequest,
   IssueRun,
+  MessageIn,
+  PauseState,
   PendingInput,
   ResumeRequest,
   RunDetail,
+  RunMessage,
   RunSummary,
   WatchedRepo,
   WatchedRepoCreate,
@@ -49,6 +52,18 @@ export class ApiService {
 
   cancel(runId: string): Observable<RunSummary> {
     return this.http.post<RunSummary>(`${this.baseUrl}/runs/${encodeURIComponent(runId)}/cancel`, {});
+  }
+
+  messages(runId: string): Observable<RunMessage[]> {
+    return this.http.get<RunMessage[]>(`${this.baseUrl}/runs/${encodeURIComponent(runId)}/messages`);
+  }
+
+  sendMessage(runId: string, body: MessageIn): Observable<RunMessage> {
+    return this.http.post<RunMessage>(`${this.baseUrl}/runs/${encodeURIComponent(runId)}/messages`, body);
+  }
+
+  pause(runId: string, paused: boolean): Observable<PauseState> {
+    return this.http.post<PauseState>(`${this.baseUrl}/runs/${encodeURIComponent(runId)}/pause`, { paused });
   }
 
   listFiles(runId: string, ref?: string): Observable<FileList> {

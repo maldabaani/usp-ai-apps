@@ -158,6 +158,14 @@ def repository_sections(repo: Mapping[str, Any] | None, mode: str | None) -> lis
     return sections
 
 
+def notes_sections(notes: Sequence[str]) -> list[Section]:
+    """The human's chat messages (Phase 13): instructions every agent must follow."""
+    if not notes:
+        return []
+    text = "\n".join(f"- {n}" for n in notes)
+    return [Section("Notes from the human (follow them)", text, priority=0, required=True)]
+
+
 def planner_context(
     request: str,
     budget: int,
@@ -167,9 +175,11 @@ def planner_context(
     qa: Sequence[QAEntry] = (),
     repo: Mapping[str, Any] | None = None,
     mode: str | None = None,
+    notes: Sequence[str] = (),
 ) -> str:
     sections = [Section("Feature request", request, priority=0, required=True)]
     sections += repository_sections(repo, mode)
+    sections += notes_sections(notes)
     if feedback:
         sections.append(
             Section(
@@ -195,6 +205,7 @@ def architect_context(
     previous_design: Design | None = None,
     qa: Sequence[QAEntry] = (),
     repo: Mapping[str, Any] | None = None,
+    notes: Sequence[str] = (),
 ) -> str:
     stacks = sorted({t.stack for t in plan.tasks})
     sections = [
@@ -204,6 +215,7 @@ def architect_context(
         Section("Stacks used by tasks", ", ".join(stacks), priority=0, required=True),
         Section("Tasks", render_plan_tasks(plan), priority=1, required=True),
         Section("User stories", render_stories(plan), priority=3),
+        *notes_sections(notes),
     ]
     if feedback:
         sections.append(
@@ -232,9 +244,11 @@ def developer_context(
     *,
     qa: Sequence[QAEntry] = (),
     related_code: str = "",
+    notes: Sequence[str] = (),
 ) -> str:
     sections = [
         Section("Your task", render_task(task), priority=0, required=True),
+        *notes_sections(notes),
         Section("Acceptance criteria", render_stories(plan, task.story_ids), priority=1),
         Section(
             "Design contracts (code against these)",
@@ -270,10 +284,12 @@ def reviewer_context(
     budget: int,
     *,
     related_code: str = "",
+    notes: Sequence[str] = (),
 ) -> str:
     return fit_sections(
         [
             Section("Task under review", render_task(task), priority=0, required=True),
+            *notes_sections(notes),
             Section("Acceptance criteria", render_stories(plan, task.story_ids), priority=1),
             Section("Design contracts", render_contracts(design, task.target_files), 2),
             Section("Diff (integration...task branch)", diff or "(no changes)", 3),

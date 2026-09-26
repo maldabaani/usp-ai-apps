@@ -13,12 +13,14 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatTabsModule } from '@angular/material/tabs';
 import { RouterLink } from '@angular/router';
-import { forkJoin } from 'rxjs';
+import { catchError, forkJoin, of } from 'rxjs';
 
 import {
+  MessageIn,
   ResumeRequest,
   RunDetail,
   RunEvent,
+  RunMessage,
   TERMINAL_STATUSES,
   Workflow,
   WorkflowNode,
@@ -27,6 +29,7 @@ import { ApiService } from '../../core/api.service';
 import { requestTitle } from '../../core/requirements';
 import { RunEventStream, RunEventsService } from '../../core/run-events.service';
 import { StatusChipComponent } from '../../shared/status-chip.component';
+import { ChatComponent } from './chat.component';
 import { DesignViewComponent } from './design-view.component';
 import { EventTimelineComponent } from './event-timeline.component';
 import { FileExplorerComponent } from './file-explorer.component';
@@ -43,7 +46,7 @@ const REFRESH_DEBOUNCE_MS = 300;
   imports: [
     RouterLink, MatTabsModule, MatButtonModule, MatProgressBarModule, StatusChipComponent,
     EventTimelineComponent, PlanViewComponent, DesignViewComponent, QaPanelComponent,
-    FileExplorerComponent, WorkflowGraphComponent, WorkflowPanelComponent,
+    FileExplorerComponent, WorkflowGraphComponent, WorkflowPanelComponent, ChatComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -73,7 +76,17 @@ const REFRESH_DEBOUNCE_MS = 300;
           </div>
         </div>
         @if (!terminal()) {
-          <button mat-stroked-button color="warn" (click)="cancel()" [disabled]="submitting()">Cancel run</button>
+          <div class="controls">
+            @if (run.status === 'paused') {
+              <button mat-flat-button class="resume" (click)="setPaused(false)" [disabled]="submitting()">Resume</button>
+            } @else if (run.pause_requested) {
+              <button mat-stroked-button (click)="setPaused(false)" [disabled]="submitting()">Don't pause</button>
+            } @else if (pausable()) {
+              <button mat-stroked-button (click)="setPaused(true)" [disabled]="submitting()"
+                      title="Stop before the next wave of tasks (running tasks finish first)">Pause</button>
+            }
+            <button mat-stroked-button color="warn" (click)="cancel()" [disabled]="submitting()">Cancel run</button>
+          </div>
         }
       </header>
       @if (run.busy || submitting()) {
@@ -81,6 +94,13 @@ const REFRESH_DEBOUNCE_MS = 300;
       }
       @if (run.error) {
         <p class="error">{{ run.error }}</p>
+      }
+
+      @if (run.status === 'paused') {
+        <div class="paused" role="status">⏸ Paused before the next wave. Messages you send now are
+          applied when you resume.</div>
+      } @else if (run.pause_requested) {
+        <div class="paused pending" role="status">Pausing after the current tasks finish…</div>
       }
 
       @if (attention().length) {
@@ -98,8 +118,9 @@ const REFRESH_DEBOUNCE_MS = 300;
                               (nodeSelected)="pick($event)" />
           @if (selectedWorkflowNode(); as node) {
             <aside class="panel dc-glass" aria-label="Selected step">
-              <app-workflow-panel [node]="node" [run]="run" [busy]="submitting()"
-                                  (resumeRequested)="resume($event)" (closed)="pick(null)" />
+              <app-workflow-panel [node]="node" [run]="run" [busy]="submitting()" [messages]="messages()"
+                                  (resumeRequested)="resume($event)" (messageSent)="sendMessage($event)"
+                                  (closed)="pick(null)" />
             </aside>
           }
         </section>
@@ -108,6 +129,15 @@ const REFRESH_DEBOUNCE_MS = 300;
       <mat-tab-group animationDuration="0ms" [selectedIndex]="tab()" (selectedIndexChange)="tab.set($event)">
         <mat-tab label="Timeline">
           <app-event-timeline [events]="events()" />
+        </mat-tab>
+        <mat-tab [label]="'Chat (' + messages().length + ')'">
+          <div class="chat-tab">
+            @if (run.human_notes?.length) {
+              <p class="notes">The crew follows {{ run.human_notes!.length }} note(s) from you.</p>
+            }
+            <app-chat [messages]="messages()" [tasks]="taskOptions()" [disabled]="terminal()"
+                      [busy]="submitting()" (send)="sendMessage($event)" />
+          </div>
         </mat-tab>
         <mat-tab label="Plan"><app-plan-view [plan]="run.plan" /></mat-tab>
         <mat-tab label="Design"><app-design-view [design]="run.design" /></mat-tab>
@@ -149,6 +179,13 @@ const REFRESH_DEBOUNCE_MS = 300;
       .graph { height: 60vh; }
     }
     mat-tab-group { margin-top: 16px; }
+    .controls { display: flex; gap: 8px; }
+    .resume { box-shadow: var(--dc-glow-amber); }
+    .paused { margin: 12px 0 0; padding: 8px 12px; border-radius: 10px; font-size: 13px; font-weight: 600;
+              color: var(--dc-amber); border: 1px solid rgba(255, 193, 77, 0.5); background: rgba(255, 193, 77, 0.08); }
+    .paused.pending { color: var(--dc-text-dim); border-color: var(--dc-border-strong); background: transparent; }
+    .chat-tab { padding: 12px 4px; max-width: 980px; }
+    .notes { color: var(--dc-teal); font-size: 13px; margin: 0 0 8px; }
   `,
 })
 export class RunDetailComponent {
@@ -163,6 +200,7 @@ export class RunDetailComponent {
   readonly error = signal<string | null>(null);
   readonly submitting = signal(false);
   readonly workflow = signal<Workflow | null>(null);
+  readonly messages = signal<RunMessage[]>([]);
   readonly selectedNode = signal<string | null>(null);
   readonly tab = signal(0);
   private readonly stream = signal<RunEventStream | null>(null);
@@ -177,6 +215,14 @@ export class RunDetailComponent {
     const status = this.run()?.status;
     return status !== undefined && TERMINAL_STATUSES.includes(status);
   });
+  /** A pause takes effect before the next wave of tasks, so only until development ends. */
+  readonly pausable = computed(() =>
+    ['pending', 'preparing', 'planning', 'awaiting_plan_approval', 'designing', 'awaiting_design_approval',
+     'scaffolding', 'executing', 'needs_human'].includes(this.run()?.status ?? ''),
+  );
+  readonly taskOptions = computed(() =>
+    (this.run()?.plan?.tasks ?? []).map((t) => ({ id: t.id, title: t.title })),
+  );
   readonly title = computed(() => requestTitle(this.run()?.request ?? ''));
   readonly nodesById = computed(
     () => new Map((this.workflow()?.nodes ?? []).map((n) => [n.id, n] as const)),
@@ -220,6 +266,35 @@ export class RunDetailComponent {
     });
   }
 
+  sendMessage(body: MessageIn): void {
+    this.submitting.set(true);
+    this.api.sendMessage(this.id(), body).subscribe({
+      next: (m) => {
+        this.submitting.set(false);
+        this.messages.update((ms) => [...ms, m]);
+      },
+      error: (err: { error?: { detail?: unknown } }) => {
+        this.submitting.set(false);
+        this.error.set(`Could not send the message: ${JSON.stringify(err.error?.detail ?? 'request failed')}`);
+      },
+    });
+  }
+
+  setPaused(paused: boolean): void {
+    this.submitting.set(true);
+    this.api.pause(this.id(), paused).subscribe({
+      next: () => {
+        this.submitting.set(false);
+        this.load();
+      },
+      error: (err: { error?: { detail?: unknown } }) => {
+        this.submitting.set(false);
+        this.error.set(`Could not ${paused ? 'pause' : 'resume'}: ${JSON.stringify(err.error?.detail ?? 'request failed')}`);
+        this.load();
+      },
+    });
+  }
+
   cancel(): void {
     if (!confirm('Cancel this run? Its containers, worktrees and index are removed.')) {
       return;
@@ -241,6 +316,7 @@ export class RunDetailComponent {
     this.stream()?.close();
     this.run.set(null);
     this.workflow.set(null);
+    this.messages.set([]);
     this.selectedNode.set(null);
     this.seenAttention = new Set();
     this.stream.set(this.streams.connect(id, () => this.onEvent()));
@@ -290,9 +366,16 @@ export class RunDetailComponent {
   }
 
   private load(): void {
-    forkJoin({ run: this.api.getRun(this.id()), workflow: this.api.workflow(this.id()) }).subscribe({
-      next: ({ run, workflow }) => {
+    forkJoin({
+      run: this.api.getRun(this.id()),
+      workflow: this.api.workflow(this.id()),
+      messages: this.api.messages(this.id()).pipe(catchError(() => of(null))),
+    }).subscribe({
+      next: ({ run, workflow, messages }) => {
         this.run.set(run);
+        if (messages) {
+          this.messages.set(messages);
+        }
         this.focus(workflow);
         this.workflow.set(workflow);
         this.error.set(null);

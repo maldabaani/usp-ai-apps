@@ -10,6 +10,10 @@ from fastapi.responses import StreamingResponse
 from app.api.deps import ContainerDep
 from app.api.schemas import (
     CreateRunRequest,
+    MessageIn,
+    MessageOut,
+    PauseRequest,
+    PauseState,
     PendingInput,
     ResumeRequest,
     RunDetail,
@@ -17,7 +21,9 @@ from app.api.schemas import (
 )
 from app.api.sse import event_stream
 from app.db.models import RunStatus
-from app.graph.interrupts import ResumeAction
+from app.events.types import EventType
+from app.graph.interrupts import InterruptKind, ResumeAction, ResumePayload
+from app.graph.steering import EXPIRED, PENDING
 from app.services.run_manager import (
     InvalidResumeError,
     RunConflictError,
@@ -42,6 +48,7 @@ STATE_FIELDS = (
     "gates",
     "issue",
     "followup",
+    "human_notes",
 )
 
 
@@ -63,6 +70,7 @@ async def detail(manager: RunManager, run_id: str) -> RunDetail:
         tasks=state.get("tasks") or {},
         wave=state.get("wave") or 0,
         pending=[PendingInput.of(p) for p in pending],
+        pause_requested=await manager.deps.steering.pause_requested(run_id),
     )
 
 
@@ -183,3 +191,87 @@ async def cancel_run(run_id: str, container: ContainerDep) -> RunSummary:
     except RunConflictError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from None
     return RunSummary.of(await manager.get(run_id))
+
+
+# ------------------------------------------------------------------------------ steering
+@router.get("/{run_id}/messages", response_model=list[MessageOut])
+async def list_messages(run_id: str, container: ContainerDep) -> list[MessageOut]:
+    run = await _run_or_404(container.manager, run_id)
+    finished = RunStatus(run.status).is_terminal
+    out = []
+    for m in await container.deps.steering.messages(run_id):
+        stale = finished and m.status == PENDING
+        out.append(
+            MessageOut(
+                id=m.id,
+                task_id=m.task_id,
+                text=m.text,
+                status=EXPIRED if stale else m.status,
+                action=m.action,
+                reply=m.reply,
+                created_at=m.created_at,
+                updated_at=m.updated_at,
+            )
+        )
+    return out
+
+
+@router.post("/{run_id}/messages", response_model=MessageOut, status_code=status.HTTP_201_CREATED)
+async def post_message(run_id: str, body: MessageIn, container: ContainerDep) -> MessageOut:
+    """Chat to the run (or one task). Applied at the next safe point: the Planner/Architect
+    start, the scheduler before each wave, or the task's next developer turn."""
+    manager = container.manager
+    run = await _run_or_404(manager, run_id)
+    if RunStatus(run.status).is_terminal:
+        raise HTTPException(status.HTTP_409_CONFLICT, f"run is {run.status}")
+    if body.task_id is not None:
+        state = await manager.state(run_id)
+        known = set(state.get("tasks") or {}) | {
+            t["id"] for t in (state.get("plan") or {}).get("tasks") or []
+        }
+        if body.task_id not in known:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT, f"unknown task {body.task_id}"
+            )
+    m = await container.deps.steering.add_message(run_id, body.text, body.task_id)
+    await container.events.publish(
+        run_id,
+        EventType.MESSAGE,
+        node="steer",
+        task_id=m.task_id,
+        payload={"message_id": m.id, "text": m.text, "status": m.status},
+    )
+    return MessageOut(
+        id=m.id,
+        task_id=m.task_id,
+        text=m.text,
+        status=m.status,
+        action=None,
+        reply=None,
+        created_at=m.created_at,
+        updated_at=m.updated_at,
+    )
+
+
+@router.post("/{run_id}/pause", response_model=PauseState)
+async def pause_run(run_id: str, body: PauseRequest, container: ContainerDep) -> PauseState:
+    """Pause at the next safe point (before the next wave), or resume a paused run."""
+    manager = container.manager
+    run = await _run_or_404(manager, run_id)
+    if RunStatus(run.status).is_terminal:
+        raise HTTPException(status.HTTP_409_CONFLICT, f"run is {run.status}")
+    steering = container.deps.steering
+    await steering.set_pause(run_id, body.paused)
+    if not body.paused and not manager.is_busy(run_id):
+        paused = [
+            p for p in await manager.pending(run_id) if p.value.get("kind") == InterruptKind.PAUSE
+        ]
+        if paused:
+            try:
+                await manager.resume(
+                    run_id, ResumePayload(action=ResumeAction.APPROVE), paused[0].id
+                )
+            except RunConflictError as exc:
+                raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from None
+    run = await manager.get(run_id)
+    return PauseState(status=run.status, pause_requested=await steering.pause_requested(run_id))

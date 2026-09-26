@@ -18,6 +18,7 @@ from app.graph.runtime import (
     save_transcript,
 )
 from app.graph.state import Plan, dump
+from app.graph.steering import notes_text, with_notes
 from app.llm.models_config import Role
 from app.llm.structured import StructuredOutputError, generate_structured
 from app.tools.base import ToolSpec
@@ -60,6 +61,7 @@ def make_planner(deps: GraphDeps) -> NodeFn:
                 qa=qa_entries(qa_log, asker=NODE),
                 repo=state.get("repo_info"),
                 mode=state.get("mode"),
+                notes=notes_text(state.get("human_notes") or []),
             )
 
         outcome = await agent_turn(
@@ -105,7 +107,7 @@ def make_planner(deps: GraphDeps) -> NodeFn:
             },
         )
 
-    return planner
+    return with_notes(deps, "Planner", planner)
 
 
 async def escalate(deps: GraphDeps, run_id: str, node: str, reason: str) -> Command[str]:

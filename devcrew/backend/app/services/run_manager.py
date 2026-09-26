@@ -25,6 +25,7 @@ from app.events.types import EventType
 from app.graph.interrupts import ResumePayload
 from app.graph.runner import PendingInterrupt, RunDriver, RunOutcome
 from app.graph.runtime import GraphDeps, release_run_resources
+from app.graph.steering import expire_messages
 from app.tools.git import GitRepo, repo_lock
 
 logger = logging.getLogger(__name__)
@@ -32,11 +33,13 @@ logger = logging.getLogger(__name__)
 # Statuses in which the graph is (or should be) executing, i.e. not waiting for a human.
 ACTIVE_STATUSES = {
     RunStatus.PENDING,
+    RunStatus.PREPARING,
     RunStatus.PLANNING,
     RunStatus.DESIGNING,
     RunStatus.SCAFFOLDING,
     RunStatus.EXECUTING,
     RunStatus.INTEGRATING,
+    RunStatus.CHECKING,
     RunStatus.DELIVERING,
 }
 
@@ -145,6 +148,8 @@ class RunManager:
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await task
         await self.runs.update(run_id, status=RunStatus.CANCELLED)
+        await expire_messages(self.deps, run_id)
+        await self.deps.steering.set_pause(run_id, False)
         await self.events.publish(
             run_id, EventType.STATUS, payload={"status": RunStatus.CANCELLED.value, "error": None}
         )

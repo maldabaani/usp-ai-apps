@@ -26,6 +26,7 @@ class RunStatus(StrEnum):
     INTEGRATING = "integrating"
     CHECKING = "checking"  # quality gates
     WATCHING = "watching_pr"  # PR opened: following review comments, CI and conflicts
+    PAUSED = "paused"  # stopped at a safe point on request; resumed by the human
     AWAITING_FINAL_APPROVAL = "awaiting_final_approval"
     DELIVERING = "delivering"
     NEEDS_HUMAN = "needs_human"
@@ -49,6 +50,10 @@ class Run(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, default=RunStatus.PENDING)
     pr_url: Mapped[str | None] = mapped_column(String(500))
     error: Mapped[str | None] = mapped_column(Text)
+    # Phase 13: the human asked to pause at the next safe point.
+    pause_requested: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -118,4 +123,28 @@ class IssueRun(Base):
     comment_text: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class RunMessage(Base):
+    """A chat message from the human to a run (task_id None) or to one task (Phase 13)."""
+
+    __tablename__ = "run_messages"
+    __table_args__ = (Index("ix_run_messages_run_id_id", "run_id", "id"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("runs.id", ondelete="CASCADE"), nullable=False
+    )
+    task_id: Mapped[str | None] = mapped_column(String(64))
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    # pending -> delivered (given to an agent) | applied (Coordinator acted) | expired
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    action: Mapped[str | None] = mapped_column(String(32))  # note | add_task | cancel_task | answer
+    reply: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )

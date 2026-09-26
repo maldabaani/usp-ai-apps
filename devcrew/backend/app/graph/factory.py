@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.config import Settings
+from app.db.steering import InMemorySteeringStore, SteeringStore
 from app.events.bus import EventBus
 from app.github.client import GitHubClient
 from app.github.delivery import GitHubDelivery
@@ -34,6 +35,7 @@ def build_deps(
     sandbox: Sandbox | None = None,
     rag: RagService | None = None,
     github: GitHubDelivery | None = None,
+    steering: SteeringStore | None = None,
 ) -> GraphDeps:
     if sandbox is None and settings.sandbox_enabled:
         sandbox = Sandbox(DockerSandboxRunner(settings))
@@ -65,4 +67,5 @@ def build_deps(
         sandbox=sandbox,
         rag=rag,
         github=github,
+        steering=steering if steering is not None else InMemorySteeringStore(),
     )

@@ -100,3 +100,26 @@ async def test_watch_store_on_postgres(pg_engine: AsyncEngine) -> None:
             repo="acme/shop", issue_number=3, trigger="label:1", run_id="r" * 32
         )
     assert await store.delete_repo(row.id) and not await store.delete_repo(row.id)
+
+
+async def test_steering_store_on_postgres(pg_engine: AsyncEngine) -> None:
+    from app.db.models import Run
+    from app.db.steering import SteeringRepository
+
+    sm = create_sessionmaker(pg_engine)
+    store = SteeringRepository(sm)
+    async with sm() as session, session.begin():
+        session.add(Run(id="s" * 32, request="x", repo_target="o/r", status="executing"))
+    assert await store.pause_requested("s" * 32) is False
+    await store.set_pause("s" * 32, True)
+    assert await store.pause_requested("s" * 32) is True
+    first = await store.add_message("s" * 32, "use snake_case", None)
+    second = await store.add_message("s" * 32, "404 please", "T2")
+    await store.update_messages([first.id], status="applied", action="note", reply="ok")
+    rows = await store.messages("s" * 32)
+    assert [(r.text, r.status, r.task_id) for r in rows] == [
+        ("use snake_case", "applied", None),
+        ("404 please", "pending", "T2"),
+    ]
+    assert second.id > first.id
+    await store.update_messages([])  # no-op

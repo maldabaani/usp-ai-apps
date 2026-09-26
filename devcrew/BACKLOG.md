@@ -188,7 +188,7 @@ never pushes to the default branch of an existing repo, and never pushes before 
   - PR follow-up on review comments (from allow-listed users), CI failures and merge conflicts.
     Small, clear asks are fixed and pushed automatically; larger ones become a "needs you" step
     with the proposed change. Bounded number of rounds.
-- **Phase 13: steering running work**
+- **Phase 13: steering running work** *(done in P13)*
   - A chat on the run or on a task node. Messages go to the Coordinator and are applied at the
     next safe point.
   - Pause/Resume.
@@ -246,6 +246,23 @@ never pushes to the default branch of an existing repo, and never pushes before 
   a new comment.
 - [ ] **BL-136** (P3, from P12) The Overview of a run with many rounds is one long row.
   Collapse finished rounds (with BL-103).
+
+## Steering (Phase 13)
+
+- [ ] **BL-140** (P2, from P13) Pause only works between waves. A running task finishes its
+  current iterations first, up to `MAX_DEV_ITERATIONS` with review and QA. Pausing between a
+  task's developer iterations needs per-task interrupts inside the parallel wave.
+- [ ] **BL-141** (P2, from P13) Messages sent during the integration tests, gates, final
+  approval or PR watching wait for the next wave, so they often expire. Consider:
+  - turning them into final-approval feedback;
+  - using them in the next follow-up round.
+- [ ] **BL-142** (P2, from P13) The Coordinator's message sorting (note, add, cancel, answer)
+  was verified only with the scripted fake model. Check the quality with the real models
+  (with BL-002).
+- [ ] **BL-143** (P3, from P13) Notes accumulate without limit and are required prompt
+  sections. Many notes eat the context budget; cap or summarize them.
+- [ ] **BL-144** (P3, from P13) Messages cannot be edited or withdrawn. Cancelling applies only
+  to tasks that have not started; stopping a running task still needs the escalation flow.
 
 ## Parity with commercial coding agents (from the P10 gap review)
 
@@ -353,3 +370,14 @@ steering and security gates.
   - The Settings page (`/settings`).
   - GitHub actions approved for P12: issue comments, PR replies, resolving review threads, and
     non-force pushes to DevCrew's own PR branch.
+- [x] **BL-145** (from P13) Additions:
+  - Table `run_messages` and column `runs.pause_requested` (migration `0003`).
+  - Run status `paused`, task status `cancelled`, interrupt kind `pause` and event type
+    `message`.
+  - Graph node `pause`; the scheduler, Planner, Architect, developer and reviewer read
+    messages.
+  - Prompt `prompts/steer.md`.
+  - Run fields `human_notes` / `steer_applied`.
+  - Endpoints `/runs/{id}/messages` and `/runs/{id}/pause`.
+  - Fixed a Phase 11 bug: runs in `preparing` or `checking` were not recovered after a
+    backend restart.

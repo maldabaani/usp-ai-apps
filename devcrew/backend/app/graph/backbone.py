@@ -5,6 +5,8 @@ planner -> approve_plan -> architect -> approve_design -> scaffold -> schedule
         -> approve_final -> github_delivery -> done
 
 ask_human and coordinator/escalate are side exits that return to the calling node.
+Before every wave the scheduler is a safe point for steering: it pauses on request (`pause`)
+and applies the human's chat messages (app/graph/steering.py).
 
 Scheduling runs in waves: every task whose dependencies are merged is dispatched, up to
 MAX_PARALLEL_DEVS at a time, as parallel task_worker subgraphs (one worktree each). When the
@@ -24,6 +26,7 @@ from langgraph.types import Command, Send
 from app.db.models import RunStatus
 from app.events.types import EventType
 from app.graph.coordinator import make_run_coordinator, make_run_escalate
+from app.graph.interrupts import InterruptKind, InterruptRequest, ResumeAction, request_input
 from app.graph.nodes.approvals import make_approve_design, make_approve_final, make_approve_plan
 from app.graph.nodes.architect import make_architect
 from app.graph.nodes.finish import (
@@ -46,6 +49,7 @@ from app.graph.nodes.scaffold import make_scaffold
 from app.graph.replan import apply_changes
 from app.graph.runtime import GraphDeps, NodeFn, instrument
 from app.graph.state import RunState, TaskState, TaskStatus, dump, get_plan
+from app.graph.steering import apply_at_schedule
 from app.graph.task_subgraph import build_task_subgraph
 
 
@@ -61,7 +65,9 @@ def ready_tasks(state: dict[str, Any]) -> tuple[list[str], dict[str, dict[str, A
             if ts.status is not TaskStatus.PENDING:
                 continue
             deps = [tasks[d].status for d in plan.task(tid).depends_on]
-            if any(s in (TaskStatus.FAILED, TaskStatus.BLOCKED) for s in deps):
+            if any(
+                s in (TaskStatus.FAILED, TaskStatus.BLOCKED, TaskStatus.CANCELLED) for s in deps
+            ):
                 ts.status = TaskStatus.BLOCKED
                 ts.error = "a dependency failed"
                 updates[tid] = dump(ts)
@@ -73,7 +79,11 @@ def ready_tasks(state: dict[str, Any]) -> tuple[list[str], dict[str, dict[str, A
 def make_schedule(deps: GraphDeps) -> NodeFn:
     async def schedule(state: dict[str, Any]) -> Command[Any]:
         run_id = state["run_id"]
-        extra: dict[str, Any] = {}
+        # 0. Safe point (Phase 13): pause on request, then apply the human's chat messages.
+        if await deps.steering.pause_requested(run_id):
+            return Command(goto="pause", update={"status": RunStatus.PAUSED.value})
+        state, extra = await apply_at_schedule(deps, state)
+        steered_tasks = extra.pop("tasks", {})
         # 1. Apply Coordinator plan changes (replan/split) produced by the last wave.
         changes = state.get("plan_changes") or []
         applied = state.get("plan_changes_applied", 0)
@@ -82,7 +92,7 @@ def make_schedule(deps: GraphDeps) -> NodeFn:
                 get_plan(state), state.get("tasks", {}), changes[applied:]
             )
             state = {**state, "plan": dump(plan), "tasks": {**state["tasks"], **task_updates}}
-            extra = {"plan": dump(plan), "plan_changes_applied": len(changes), "errors": errors}
+            extra |= {"plan": dump(plan), "plan_changes_applied": len(changes), "errors": errors}
             for change in changes[applied:]:
                 await deps.emit(
                     run_id,
@@ -98,7 +108,7 @@ def make_schedule(deps: GraphDeps) -> NodeFn:
 
         # 2. Dispatch the next wave.
         ready, blocked = ready_tasks(state)
-        updates = {**task_updates, **blocked}
+        updates = {**steered_tasks, **task_updates, **blocked}
         if not ready:
             return Command(
                 goto="integration",
@@ -135,12 +145,31 @@ def make_schedule(deps: GraphDeps) -> NodeFn:
                         "workspace": state["workspace"],
                         "integration_branch": state["integration_branch"],
                         "tasks": {tid: dump(ts)},
+                        "human_notes": state.get("human_notes") or [],
                     },
                 )
             )
         return Command(goto=sends, update={"tasks": updates, "wave": wave, **extra})
 
     return schedule
+
+
+def make_pause(deps: GraphDeps) -> NodeFn:
+    """Paused between waves until the human resumes (approve)."""
+
+    async def pause(state: dict[str, Any]) -> Command[str]:
+        request_input(
+            InterruptRequest(
+                kind=InterruptKind.PAUSE,
+                title="Paused",
+                allowed_actions=[ResumeAction.APPROVE],
+                data={"node": "schedule", "wave": state.get("wave", 0)},
+            )
+        )
+        await deps.steering.set_pause(state["run_id"], False)
+        return Command(goto="schedule", update={"status": RunStatus.EXECUTING.value})
+
+    return pause
 
 
 def build_graph(
@@ -160,7 +189,8 @@ def build_graph(
         "coordinator": (make_run_coordinator(deps), ("planner", "architect", "escalate")),
         "escalate": (make_run_escalate(deps), ("prepare_repo", "planner", "architect", END)),
         "scaffold": (make_scaffold(deps), ("schedule",)),
-        "schedule": (make_schedule(deps), ("task_worker", "integration")),
+        "schedule": (make_schedule(deps), ("task_worker", "integration", "pause")),
+        "pause": (make_pause(deps), ("schedule",)),
         "integration": (make_integration(deps), ("gates",)),
         "gates": (make_gates(deps), ("approve_final", "schedule", "github_delivery")),
         "approve_final": (make_approve_final(deps), ("github_delivery", "schedule")),

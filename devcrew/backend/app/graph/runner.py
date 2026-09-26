@@ -51,6 +51,8 @@ def status_for_interrupt(value: dict[str, Any]) -> RunStatus:
         return AWAITING_STATUS.get(str(value.get("artifact")), RunStatus.NEEDS_HUMAN)
     if value.get("kind") == InterruptKind.WATCH:
         return RunStatus.WATCHING
+    if value.get("kind") == InterruptKind.PAUSE:
+        return RunStatus.PAUSED
     return RunStatus.NEEDS_HUMAN
 
 

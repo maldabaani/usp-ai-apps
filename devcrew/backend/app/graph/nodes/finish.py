@@ -16,6 +16,7 @@ from app.graph.interrupts import InterruptKind, InterruptRequest, ResumeAction, 
 from app.graph.layout import resolve_layout, sandbox_target
 from app.graph.runtime import GraphDeps, NodeFn, release_run_resources
 from app.graph.state import TaskState, TaskStatus, TestResult, dump, get_design
+from app.graph.steering import expire_messages
 from app.llm.tokens import tail_text
 from app.tools.git import GitRepo, repo_lock
 
@@ -73,6 +74,7 @@ def make_integration(deps: GraphDeps) -> NodeFn:
             "merged": sorted(t for t, s in tasks.items() if s.status is TaskStatus.MERGED),
             "failed": sorted(t for t, s in tasks.items() if s.status is TaskStatus.FAILED),
             "blocked": sorted(t for t, s in tasks.items() if s.status is TaskStatus.BLOCKED),
+            "cancelled": sorted(t for t, s in tasks.items() if s.status is TaskStatus.CANCELLED),
             "tests": results,
             "coverage": coverage,
         }
@@ -167,6 +169,8 @@ def make_delivery_failed(deps: GraphDeps) -> NodeFn:
 def make_done(deps: GraphDeps) -> NodeFn:
     async def done(state: dict[str, Any]) -> Command[str]:
         await release_run_resources(deps, state["run_id"])
+        await expire_messages(deps, state["run_id"])
+        await deps.steering.set_pause(state["run_id"], False)
         main = Path(state["workspace"])
         repo = GitRepo(main)
         async with repo_lock(main):

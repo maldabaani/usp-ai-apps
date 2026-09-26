@@ -104,6 +104,8 @@ class RunDetail(RunSummary):
     gates: dict[str, Any] | None = None
     issue: dict[str, Any] | None = None
     followup: dict[str, Any] | None = None
+    pause_requested: bool = False
+    human_notes: list[dict[str, Any]] = Field(default_factory=list)
     plan: dict[str, Any] | None = None
     design: dict[str, Any] | None = None
     tasks: dict[str, dict[str, Any]] = Field(default_factory=dict)
@@ -139,3 +141,36 @@ class DiffResponse(BaseModel):
     head: str
     diff: str
     truncated: bool = False
+
+
+class MessageIn(BaseModel):
+    text: str = Field(min_length=1, max_length=4000)
+    task_id: str | None = Field(default=None, description="a task id, or null for the whole run")
+
+    @field_validator("text")
+    @classmethod
+    def _strip(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("the message is empty")
+        return v
+
+
+class MessageOut(BaseModel):
+    id: int
+    task_id: str | None
+    text: str
+    status: str  # pending | delivered | applied | answered | expired
+    action: str | None
+    reply: str | None
+    created_at: datetime | None
+    updated_at: datetime | None
+
+
+class PauseRequest(BaseModel):
+    paused: bool
+
+
+class PauseState(BaseModel):
+    status: str
+    pause_requested: bool
