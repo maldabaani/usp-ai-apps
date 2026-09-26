@@ -154,6 +154,9 @@ flowchart TB
     PLAN --> BUILD --> SHIP
 ```
 
+> 👉 See the **[end-to-end example](docs/EXAMPLE.md)**: a TODO API from a requirements
+> document to a pull request, with every approval, a developer question and a review round-trip.
+
 Each task runs in its own subgraph, git worktree and sandbox container:
 
 ```mermaid
@@ -295,6 +298,7 @@ There is also a terminal client (`scripts/run_local.py`) and a benchmark runner
 
 | Document | Contents |
 |---|---|
+| 🧭 [End-to-end example](docs/EXAMPLE.md) | One run step by step: requirements → plan → design → parallel tasks → review/QA → gates → PR |
 | 📘 [Technical guide](docs/GUIDE.md) | Architecture, graph and design notes, HTTP API, sandbox, RAG, GitHub delivery and automation, steering, budgets, benchmark, and every run/dev command |
 | 🗂️ [Backlog](BACKLOG.md) | Open issues, deferred work and decisions, by priority |
 | 🧪 [Benchmark](benchmarks/README.md) | Benchmark tasks and hidden-test conventions |
