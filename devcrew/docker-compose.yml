@@ -1,5 +1,7 @@
-# DevCrew local stack. Ollama is NOT here: it runs on the host (GPU) and is reached via
-# OLLAMA_BASE_URL (default http://host.docker.internal:11434).
+# DevCrew local stack. Ollama normally runs on the host (GPU) and is reached via
+# OLLAMA_BASE_URL (default http://host.docker.internal:11434). The optional `ollama` service
+# (profile "ollama", used by start.command when no host Ollama is reachable) runs it in Docker
+# instead; add docker-compose.gpu.yml to give it an NVIDIA GPU.
 name: devcrew
 
 services:
@@ -70,6 +72,18 @@ services:
     depends_on:
       - backend
 
+  # Optional: Ollama in Docker (start.command uses it when no host Ollama is reachable).
+  # Not published on the host: only the backend talks to it, as http://ollama:11434.
+  ollama:
+    image: ollama/ollama:${OLLAMA_IMAGE_TAG:-latest}
+    profiles: ["ollama"]
+    environment:
+      OLLAMA_NUM_PARALLEL: ${MAX_PARALLEL_DEVS:-2}
+      OLLAMA_KEEP_ALIVE: 30m
+    volumes:
+      - ollama:/root/.ollama
+
 volumes:
   pgdata:
   chromadata:
+  ollama:

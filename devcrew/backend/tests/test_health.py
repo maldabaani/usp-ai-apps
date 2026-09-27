@@ -80,7 +80,7 @@ async def test_github_token_is_not_critical(settings: Settings) -> None:
     report = await _report(settings, _transport(list(REQUIRED)))
     gh = _by_name(report)["github_token"]
     assert not gh.ok and not gh.critical and "GITHUB_TOKEN is not set" in gh.detail
-    assert not report.ok
+    assert report.ok  # an optional check only warns: /health answers 200
     assert report.critical_failures == []
 
 

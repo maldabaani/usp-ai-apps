@@ -759,6 +759,12 @@ e.g. `backend/` + `frontend/`). Each stack's commands run in its own sub-directo
 
 ## Run
 
+The quickest way is `devcrew/start.command` (double-click on macOS; `./start.command` on Linux
+and in WSL2). It checks Docker, creates `.env`, finds or starts Ollama, pulls the models, builds
+the sandbox images and starts the stack; `stop`, `status` and `logs` do what they say. The
+optional `ollama` compose service (profile `ollama`, plus `docker-compose.gpu.yml` for an
+NVIDIA GPU) is what it starts when no host Ollama is reachable from containers. By hand:
+
 ```bash
 cd devcrew
 cp .env.example .env          # set POSTGRES_PASSWORD, DATABASE_URL, WORKSPACES_DIR, GITHUB_TOKEN
@@ -769,7 +775,8 @@ curl -s localhost:8080/health | jq
 
 The backend container runs `alembic upgrade head` on start. With `STARTUP_HEALTH_STRICT=true`
 (default) it refuses to start when a critical dependency is down and logs how to fix it.
-`GITHUB_TOKEN` is reported but is not critical: it is only needed for PR delivery.
+`GITHUB_TOKEN` is reported but is not critical: it is only needed for PR delivery. `/health`
+answers 503 only for critical failures; optional ones show as warnings in the UI.
 
 The UI is served at http://localhost:4200.
 

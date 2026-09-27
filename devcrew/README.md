@@ -226,7 +226,40 @@ flowchart LR
 
 ## 🚀 Quick start
 
-**Prerequisites:** Docker with docker compose, and [Ollama](https://ollama.com) on the host.
+**Prerequisites:** [Docker](https://docs.docker.com/get-docker/) (Docker Desktop on macOS and
+Windows). [Ollama](https://ollama.com) on the host is recommended (it uses your GPU or Apple
+silicon); without it DevCrew runs Ollama in Docker.
+
+### One click
+
+| | |
+|---|---|
+| 🍎 macOS | Double-click **`devcrew/start.command`** in Finder |
+| 🐧 Linux | `./devcrew/start.command` |
+| 🪟 Windows | In WSL2 (Ubuntu, with Docker Desktop's WSL integration on): `./devcrew/start.command` |
+
+The first start:
+1. checks Docker and creates `.env`, with a random database password and an optional GitHub
+   token prompt;
+2. finds a host Ollama that containers can reach, or starts one in Docker (with an NVIDIA GPU
+   if there is one);
+3. pulls the models from `backend/config/models.yaml`;
+4. builds the sandbox images and the app;
+5. starts everything, shows the health checks and opens the UI.
+
+The first start takes a while (model download, image builds). Later starts take seconds.
+
+```bash
+./start.command stop      # stop (data is kept)
+./start.command status    # containers and health checks
+./start.command logs      # follow the backend log
+DEVCREW_OLLAMA=docker ./start.command   # force Ollama in Docker (or =host)
+```
+
+On Linux, a host Ollama must listen on all interfaces for containers to reach it
+(`OLLAMA_HOST=0.0.0.0 ollama serve`). Otherwise the launcher uses Ollama in Docker.
+
+<details><summary>Manual steps (what the launcher does)</summary>
 
 ```bash
 # 1. Models (all local)
@@ -243,6 +276,8 @@ cp .env.example .env        # set POSTGRES_PASSWORD, DATABASE_URL, WORKSPACES_DI
 mkdir -p "$(grep ^WORKSPACES_DIR .env | cut -d= -f2)"
 docker compose up --build
 ```
+
+</details>
 
 | Service | URL |
 |---|---|

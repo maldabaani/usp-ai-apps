@@ -21,11 +21,12 @@ import { AgentIconComponent } from './shared/agent-icon.component';
       @if (health(); as h) {
         <span
           class="health"
-          [class.ok]="h.ok"
+          [class.ok]="h.ok && !warnings()"
+          [class.warn]="h.ok && warnings()"
           [title]="healthDetail()"
           tabindex="0"
           aria-label="Backend health"
-          >{{ h.ok ? 'healthy' : 'degraded' }}</span
+          >{{ !h.ok ? 'degraded' : warnings() ? warnings() + ' warning' + (warnings() > 1 ? 's' : '') : 'healthy' }}</span
         >
       } @else if (healthError()) {
         <span class="health" [title]="healthError() ?? ''" tabindex="0">backend unreachable</span>
@@ -48,6 +49,8 @@ import { AgentIconComponent } from './shared/agent-icon.component';
               border: 1px solid rgba(255, 90, 122, 0.55); background: rgba(255, 90, 122, 0.1); box-shadow: var(--dc-glow-red); }
     .health.ok { color: var(--dc-teal); border-color: rgba(45, 226, 176, 0.55); background: rgba(45, 226, 176, 0.1);
                  box-shadow: var(--dc-glow-teal); }
+    .health.warn { color: var(--dc-amber); border-color: rgba(255, 193, 77, 0.55); background: rgba(255, 193, 77, 0.1);
+                   box-shadow: none; }
     .content { max-width: 1600px; margin: 0 auto; padding: 16px; }
   `,
 })
@@ -67,6 +70,11 @@ export class AppComponent {
         }
       },
     });
+  }
+
+  /** Failed optional checks (e.g. no GitHub token): DevCrew works, some features are off. */
+  warnings(): number {
+    return (this.health()?.checks ?? []).filter((c) => !c.ok && !c.critical).length;
   }
 
   healthDetail(): string {

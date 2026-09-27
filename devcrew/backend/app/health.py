@@ -30,7 +30,7 @@ class CheckResult(BaseModel):
 
 
 class HealthReport(BaseModel):
-    ok: bool
+    ok: bool  # no CRITICAL check failed (optional ones, like the GitHub token, only warn)
     checks: list[CheckResult]
 
     @property
@@ -214,7 +214,7 @@ async def run_health_checks(
             await client.aclose()
 
     checks = [db, chroma, ollama, models, dock, images, gh]
-    return HealthReport(ok=all(c.ok for c in checks), checks=checks)
+    return HealthReport(ok=all(c.ok for c in checks if c.critical), checks=checks)
 
 
 def format_failures(report: HealthReport) -> str:
