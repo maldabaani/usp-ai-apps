@@ -11,8 +11,8 @@ from app.llm.models_config import ModelsConfig, ModelSpec, Role, load_models_con
 
 def test_default_config_shares_one_chat_model() -> None:
     cfg = load_models_config(BACKEND_DIR / "config" / "models.yaml")
-    assert {cfg.for_role(r).model for r in Role} == {"qwen2.5-coder:14b"}
-    assert cfg.required_models() == {"qwen2.5-coder:14b", "nomic-embed-text"}
+    assert {cfg.for_role(r).model for r in Role} == {"qwen2.5:14b"}
+    assert cfg.required_models() == {"qwen2.5:14b", "nomic-embed-text"}
 
 
 def test_role_temperatures() -> None:

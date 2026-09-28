@@ -18,14 +18,14 @@ from app.graph.runtime import (
     questions_asked,
     save_transcript,
 )
-from app.graph.state import Plan, dump
+from app.graph.state import Plan, PlanTask, dump
 from app.graph.steering import notes_text, with_notes
 from app.llm.models_config import Role
 from app.llm.structured import StructuredOutputError, generate_structured
 from app.tools.base import ToolSpec
 from app.tools.human import ask_human_tool
 from app.tools.search import search_codebase_tool
-from app.tools.workspace import Workspace, read_file_tool
+from app.tools.workspace import Workspace, is_test_path, read_file_tool
 
 NODE = "planner"
 
@@ -43,6 +43,60 @@ def repo_tools(deps: GraphDeps, state: dict[str, Any]) -> list[ToolSpec]:
 def plan_validation_context(state: dict[str, Any]) -> dict[str, Any]:
     projects = (state.get("repo_info") or {}).get("projects") or []
     return {"allowed_stacks": {p["stack"] for p in projects}} if projects else {}
+
+
+def _tests_only(task: PlanTask) -> bool:
+    return bool(task.target_files) and all(
+        is_test_path(path, [task.stack]) for path in task.target_files
+    )
+
+
+def fold_test_tasks(plan: Plan) -> Plan:
+    """Merge "write tests for X" tasks into the task they test.
+
+    QA writes the tests of every task, and may not write another task's files. A separate
+    tests-only task therefore leaves QA of the tested task without its test file, and a whole
+    task (developer, reviewer, QA) for work QA already does (Mac run: T3/T4 were tests-only).
+    The test files move to the most downstream dependency; dependents are rewired to it.
+    """
+    tasks = {t.id: t.model_copy(deep=True) for t in plan.tasks}
+    ancestors: dict[str, set[str]] = {}
+    for layer in plan.layers():
+        for tid in layer:
+            deps = tasks[tid].depends_on
+            ancestors[tid] = set(deps).union(*(ancestors[d] for d in deps))
+    folded: list[str] = []
+    for layer in plan.layers():
+        for tid in layer:
+            task = tasks.get(tid)
+            if task is None or not task.depends_on or not _tests_only(task):
+                continue
+            deps = [d for d in task.depends_on if d in tasks]
+            candidates = [d for d in deps if not any(d in ancestors[o] for o in deps if o != d)]
+            same_stack = [d for d in candidates if tasks[d].stack == task.stack]
+            if not same_stack:
+                continue
+            host = tasks[same_stack[-1]]
+            host.target_files += [f for f in task.target_files if f not in host.target_files]
+            host.story_ids += [s for s in task.story_ids if s not in host.story_ids]
+            host.description += f"\n\nTests (QA): {task.title}. {task.description}"
+            del tasks[tid]
+            for other in tasks.values():
+                if tid in other.depends_on:
+                    rewired = [host.id if d == tid else d for d in other.depends_on]
+                    other.depends_on = [
+                        d for i, d in enumerate(rewired) if d != other.id and d not in rewired[:i]
+                    ]
+            folded.append(f"{tid} into {host.id}")
+    if not folded:
+        return plan
+    summary = (
+        f"{plan.summary}\n\nTests-only tasks merged into the task they test (QA writes "
+        f"every task's tests): {', '.join(folded)}."
+    )
+    return Plan.model_validate(
+        {**dump(plan), "summary": summary, "tasks": [dump(t) for t in tasks.values()]}
+    )
 
 
 def make_planner(deps: GraphDeps) -> NodeFn:
@@ -109,7 +163,7 @@ def make_planner(deps: GraphDeps) -> NodeFn:
         return Command(
             goto="approve_plan",
             update={
-                "plan": dump(result.value),
+                "plan": dump(fold_test_tasks(result.value)),
                 "plan_feedback": None,
                 "scratch": {NODE: None},
                 "status": RunStatus.AWAITING_PLAN_APPROVAL.value,

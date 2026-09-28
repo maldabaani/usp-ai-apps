@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from langchain_core.messages import BaseMessage
 from langgraph.types import Command
 
 from app.db.models import RunStatus
 from app.graph.context_builder import architect_context, budget_for
+from app.graph.design_check import python_snippet_problems
 from app.graph.nodes.planner import escalate, repo_tools
 from app.graph.nodes.repository import repo_projects, repo_stack
 from app.graph.requirements import effective_request
@@ -18,7 +20,7 @@ from app.graph.runtime import (
     questions_asked,
     save_transcript,
 )
-from app.graph.state import Design, ExistingDesignDraft, dump, get_plan
+from app.graph.state import Design, ExistingDesignDraft, Plan, PlanAssessment, dump, get_plan
 from app.graph.steering import notes_text, with_notes
 from app.llm.models_config import Role
 from app.llm.structured import StructuredOutputError, generate_structured
@@ -26,6 +28,46 @@ from app.tools.catalog import list_templates_tool, read_rules_tool
 from app.tools.human import ask_human_tool
 
 NODE = "architect"
+
+
+async def structured_design(
+    deps: GraphDeps, plan: Plan, messages: list[BaseMessage], first_response: str | None
+) -> Design:
+    """The design, with its example code checked (names defined, stubs parse). A model that
+    cannot fix the code within the retries still delivers: the problems go into the plan
+    assessment the human reads at design approval, instead of failing the run."""
+    context: dict[str, Any] = {
+        "templates": deps.templates.ids_by_stack(),
+        "task_stacks": {t.stack for t in plan.tasks},
+    }
+    try:
+        return (
+            await generate_structured(
+                deps.llm,
+                Role.ARCHITECT,
+                messages,
+                Design,
+                context={**context, "check_code": True},
+                first_response=first_response,
+            )
+        ).value
+    except StructuredOutputError:
+        design = (
+            await generate_structured(
+                deps.llm,
+                Role.ARCHITECT,
+                messages,
+                Design,
+                context=context,
+                first_response=first_response,
+            )
+        ).value
+    problems = python_snippet_problems(design.design_doc)
+    if problems:
+        assessment = design.plan_assessment or PlanAssessment()
+        assessment.concerns += [f"Design code: {p}" for p in problems]
+        design.plan_assessment = assessment
+    return design
 
 
 def make_architect(deps: GraphDeps) -> NodeFn:
@@ -108,19 +150,9 @@ def make_architect(deps: GraphDeps) -> NodeFn:
                     context={"task_stacks": {t.stack for t in plan.tasks}},
                 )
             else:
-                design = (
-                    await generate_structured(
-                        deps.llm,
-                        Role.ARCHITECT,
-                        outcome.messages[:-1],
-                        Design,
-                        context={
-                            "templates": deps.templates.ids_by_stack(),
-                            "task_stacks": {t.stack for t in plan.tasks},
-                        },
-                        first_response=outcome.final_text,
-                    )
-                ).value
+                design = await structured_design(
+                    deps, plan, outcome.messages[:-1], outcome.final_text
+                )
         except (StructuredOutputError, ValueError) as exc:
             return await escalate(deps, run_id, NODE, str(exc))
         return Command(

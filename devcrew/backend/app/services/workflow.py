@@ -134,7 +134,7 @@ class WorkflowNode(BaseModel):
     stack: str | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
-    runs: int = 0  # how often the node started (re-runs after a rejection, retries)
+    runs: int = 0  # how often the node ran (re-runs, retries); approvals: decisions taken
     counters: dict[str, int] = Field(default_factory=dict)
     pending_interrupt_ids: list[str] = Field(default_factory=list)
     activity: list[Activity] = Field(default_factory=list)
@@ -409,10 +409,12 @@ def _apply_events(nodes: dict[str, WorkflowNode], events: Iterable[Event]) -> No
             if node.kind == "task":
                 node.step = event.node
                 node.runs += event.node == "developer"  # one per development attempt
-            elif event.node == PRIMARY_NODE.get(target):
+            elif event.node == PRIMARY_NODE.get(target) and node.kind != "approval":
                 node.runs += 1
             continue
         if event.type is EventType.NODE_FINISHED:
+            # an approval node starts again when the human answers: count decisions instead
+            node.runs += node.kind == "approval" and event.node == PRIMARY_NODE.get(target)
             if node.kind != "task" or event.node == "merge":
                 node.finished_at = event.created_at
             continue
@@ -502,9 +504,15 @@ def _apply_task_status(
         paused = node_status == "running" and status is RunStatus.PAUSED
         if paused:
             node_status = "waiting"
-        if node_status == "running" and status.is_terminal:
-            node_status = "failed"
-            node.detail = "run stopped"
+        stopped = status.is_terminal and node_status in ("running", "pending")
+        if stopped:
+            cancelled = status is RunStatus.CANCELLED
+            started = node_status == "running"
+            node_status = "failed" if started and not cancelled else "skipped"
+            node.detail = (
+                f"{'stopped' if started else 'not started'}: "
+                f"run {'cancelled' if cancelled else 'stopped'}"
+            )
         node.status = node_status
         iterations = int(ts.get("iterations") or 0)
         node.counters.update(
@@ -514,7 +522,9 @@ def _apply_task_status(
                 "conflict_rounds": int(ts.get("conflict_rounds") or 0),
             }
         )
-        if paused:
+        if stopped:
+            pass
+        elif paused:
             node.detail = "paused (continues when you resume)"
         elif node_status in ("running", "waiting"):
             step = TASK_STEPS.get(node.step or "", node.step or "starting")

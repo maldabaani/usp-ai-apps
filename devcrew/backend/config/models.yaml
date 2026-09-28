@@ -8,7 +8,7 @@ embeddings:
   model: nomic-embed-text
 
 defaults:
-  model: qwen2.5-coder:14b
+  model: qwen2.5:14b
   num_ctx: 16384
   temperature: 0.1
   # Tokens reserved for the model's answer; context builders keep prompts

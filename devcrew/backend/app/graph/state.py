@@ -15,6 +15,8 @@ from typing import Annotated, Any, Literal, Self, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
+from app.graph.design_check import python_snippet_problems
+
 TASK_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$")
 
 TaskStack = Literal["python", "java", "angular"]
@@ -260,6 +262,13 @@ class Design(BaseModel):
                 raise ValueError(
                     f"the plan has {missing} tasks but the design provides no template for them; "
                     "use stack 'mixed' with one component per stack"
+                )
+        if context.get("check_code"):
+            problems = python_snippet_problems(self.design_doc)
+            if problems:
+                raise ValueError(
+                    "design_doc example code is inconsistent (developers code against it): "
+                    + "; ".join(problems)
                 )
         return self
 

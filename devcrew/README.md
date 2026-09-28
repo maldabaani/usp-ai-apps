@@ -214,7 +214,7 @@ flowchart LR
 | Layer | Technology |
 |---|---|
 | **Agents & orchestration** | LangGraph (StateGraph, `Send` for parallel tasks, interrupts for human input, Postgres checkpointer), LangChain Ollama |
-| **Models** | Ollama, local only: `qwen2.5-coder:14b` for chat (one model, per-role settings in `models.yaml`) and `nomic-embed-text` for embeddings |
+| **Models** | Ollama, local only: `qwen2.5:14b` for chat (one model, per-role settings in `models.yaml`) and `nomic-embed-text` for embeddings |
 | **Backend** | Python 3.12, FastAPI, Pydantic v2, SQLAlchemy 2 (async), Alembic, httpx, Server-Sent Events |
 | **Storage** | PostgreSQL (runs, event log, checkpoints, chat, GitHub watch list), ChromaDB (per-run code index) |
 | **Retrieval** | Code-aware chunking (Python `ast`, brace matching for Java/TypeScript, Markdown headings), incremental re-indexing after every merge |
@@ -265,7 +265,7 @@ On Linux, a host Ollama must listen on all interfaces for containers to reach it
 
 ```bash
 # 1. Models (all local)
-ollama pull qwen2.5-coder:14b
+ollama pull qwen2.5:14b
 ollama pull nomic-embed-text
 OLLAMA_NUM_PARALLEL=2 OLLAMA_HOST=0.0.0.0 ollama serve     # NUM_PARALLEL >= MAX_PARALLEL_DEVS
 

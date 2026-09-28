@@ -745,7 +745,7 @@ e.g. `backend/` + `frontend/`). Each stack's commands run in its own sub-directo
 - Docker + docker compose
 - [Ollama](https://ollama.com) on the host, with the models pulled:
   ```bash
-  ollama pull qwen2.5-coder:14b
+  ollama pull qwen2.5:14b
   ollama pull nomic-embed-text
   ```
 - **`OLLAMA_NUM_PARALLEL` must be at least `MAX_PARALLEL_DEVS`** (default 2), otherwise parallel

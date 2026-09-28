@@ -18,6 +18,15 @@ def _clip(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[:limit] + "\n\n… (truncated)"
 
 
+def _attempts(task: Mapping[str, Any]) -> str:
+    """Developer iterations; a Coordinator retry restarts the count, so say it happened."""
+    attempts = str(task.get("iterations", 0))
+    actions = int(task.get("coordinator_actions") or 0)
+    if actions:
+        attempts += f" (after {actions} Coordinator action{'s' if actions != 1 else ''})"
+    return attempts
+
+
 def pr_title(request: str) -> str:
     first = request.strip().splitlines()[0] if request.strip() else "DevCrew run"
     return f"DevCrew: {first[:72]}{'…' if len(first) > 72 else ''}"
@@ -73,7 +82,7 @@ def pr_body(state: Mapping[str, Any]) -> str:
         )
         rows.append(
             f"| {tid} | {_cell(info.get('title', ''))} | {info.get('stack', '')} | "
-            f"{t.get('status', '')} | {t.get('iterations', 0)} | {result} |"
+            f"{t.get('status', '')} | {_attempts(t)} | {result} |"
         )
     parts.append("## Tasks\n\n" + "\n".join(rows))
 

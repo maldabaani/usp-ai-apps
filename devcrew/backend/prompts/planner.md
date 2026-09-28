@@ -17,7 +17,11 @@ Turn the feature request into user stories, acceptance criteria and implementati
   them should not edit the same file.
 - `stack` is the task's language: python (FastAPI), java (Spring Boot) or angular.
 - Each task lists the `story_ids` it contributes to.
-- Tests are written by QA for every task; do not create separate "write tests" tasks.
+- Tests are written by QA for every task: put a task's test files in its own `target_files`.
+  Do NOT create separate "write tests" tasks (they are merged into the task they test).
+- Plan exactly what the request asks for. Do not add requirements it does not mention (extra
+  error handling, logging, auth, persistence): task titles and descriptions become the review
+  criteria, so an invented requirement makes a task fail review.
 - If the request is genuinely ambiguous in a way that changes the design, call `ask_human` with
   one concrete question. Otherwise decide and state your assumption in `summary`.
 

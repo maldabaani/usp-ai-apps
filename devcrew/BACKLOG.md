@@ -11,7 +11,7 @@ robustness, **P3** = nice to have.
 
 - [ ] **BL-001** (P1, from P1) Build and run the backend image via `docker compose up --build`.
   The dev sandbox could not build it (no apt access from build containers).
-- [ ] **BL-002** (P1, from P2) First real run against Ollama `qwen2.5-coder:14b`: all runs so far
+- [ ] **BL-002** (P1, from P2) First real run against Ollama `qwen2.5:14b` (the default since the Mac runs; was `qwen2.5-coder:14b`): all runs so far
   used scripted fake models. Tune prompts, `num_ctx`/`num_predict`, and check tool-calling and
   JSON-schema output quality per role. *A first real run with `qwen2.5:3b` on CPU (no GPU
   available) found and fixed five bugs; see [docs/REAL-RUN.md](docs/REAL-RUN.md) and BL-180 to
@@ -350,6 +350,20 @@ never pushes to the default branch of an existing repo, and never pushes before 
 - [ ] **BL-189** (P2) Splits can nest without limit (T1 → T1-b → T1-b-a): every sub-task gets its
   own `MAX_COORDINATOR_ACTIONS`, so a task that keeps failing is split again and again. Limit the
   split depth (e.g. one level) and escalate to the human after that.
+- [x] **BL-190** (P1, Mac run with qwen2.5:32b/14b) The Planner created tests-only tasks (T3/T4),
+  so QA of the tested task could not write its own test file (another task's file). *Done:
+  tests-only tasks are merged into the task they test (`fold_test_tasks`); the Planner is told
+  not to add requirements the request does not mention (T2 was titled "with Specific Exception
+  Handling").*
+- [x] **BL-191** (P1, Mac run) The design's example code used an undefined `BookmarkService` and a
+  stub without a body; T2 failed review three times against it. *Done: the Architect's Python
+  blocks must parse and define what they use (validation error back to the model); if it cannot
+  fix them, the problems appear as plan-assessment concerns at design approval.* The Pydantic v1
+  part of BL-183 (rules) remains open.
+- [x] **BL-192** (P2, Mac run) The report of a cancelled run showed T2 "failed · run stopped" in
+  the timeline but "in_progress, 1 attempt" in the task table, unstarted tasks as "planned", and
+  approvals with 2 runs each. *Done: "stopped/not started: run cancelled", attempts mention
+  Coordinator retries, approvals count decisions.*
 
 ## Parity with commercial coding agents (from the P10 gap review)
 
