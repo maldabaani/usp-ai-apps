@@ -9,6 +9,7 @@
 #   ./start.command stop     stop DevCrew (data is kept)
 #   ./start.command status   show the containers and the health checks
 #   ./start.command logs     follow the backend log
+#   ./start.command token    save your GitHub token in .env (hidden input), check it, restart
 #
 # The first start creates .env (with a random database password), finds or starts Ollama,
 # pulls the models from backend/config/models.yaml, builds the sandbox images and the app,
@@ -346,6 +347,48 @@ start() {
   open_browser
 }
 
+set_token() {  # ask for the GitHub token without echoing it; never put it on a command line
+  [[ -f "$ENV_FILE" ]] || create_env
+  bold "GitHub token"
+  info "Paste the token and press Enter (nothing is shown while you paste)."
+  local token=""
+  IFS= read -rs -p "    Token: " token || true
+  echo
+  token="$(printf '%s' "$token" | tr -d '[:space:]')"
+  [[ -n "$token" ]] || fail "no token entered; nothing was changed"
+  [[ "$token" =~ ^[A-Za-z0-9_]+$ ]] \
+    || fail "that does not look like a GitHub token (letters, digits and _ only); nothing was changed"
+  # awk reads the value from its environment, so the token never appears in `ps`
+  local tmp
+  tmp="$(mktemp)"
+  DEVCREW_TOKEN="$token" awk -F= '
+    $1 == "GITHUB_TOKEN" { print "GITHUB_TOKEN=" ENVIRON["DEVCREW_TOKEN"]; done = 1; next }
+    { print }
+    END { if (!done) print "GITHUB_TOKEN=" ENVIRON["DEVCREW_TOKEN"] }' "$ENV_FILE" >"$tmp"
+  cat "$tmp" >"$ENV_FILE"
+  rm -f "$tmp"
+  chmod 600 "$ENV_FILE"
+  info "Saved in .env (readable only by you)."
+
+  local api answer login
+  api="$(env_get GITHUB_API_URL)"
+  api="${api:-https://api.github.com}"
+  # the header goes to curl through stdin (-K -), not as an argument
+  answer="$(printf 'header = "Authorization: Bearer %s"\n' "$token" \
+    | curl -sS -K - -H 'Accept: application/vnd.github+json' -w '\n%{http_code}' "$api/user" 2>&1 || true)"
+  token=""
+  case "${answer##*$'\n'}" in
+    200)
+      login="$(printf '%s' "$answer" | sed -n 's/.*"login": *"\([^"]*\)".*/\1/p' | head -n 1)"
+      info "GitHub accepted the token${login:+ (user $login)}."
+      ;;
+    401) fail "GitHub rejected the token (401). Check that you copied all of it, then run ./start.command token again." ;;
+    *) warn "Could not check the token with GitHub (no answer). It is saved; the health check will test it." ;;
+  esac
+  bold "Restarting DevCrew with the new token"
+  start
+}
+
 current_profiles() {  # stop/status/logs must include the Ollama service when it is in use
   [[ "$(env_get OLLAMA_BASE_URL)" == "http://ollama:11434" ]] && PROFILES=(--profile ollama)
   return 0
@@ -369,5 +412,6 @@ case "${1:-start}" in
     current_profiles
     compose logs -f --tail 100 backend
     ;;
-  *) fail "unknown command '$1' (use: start, stop, status or logs)" ;;
+  token) set_token ;;
+  *) fail "unknown command '$1' (use: start, stop, status, logs or token)" ;;
 esac

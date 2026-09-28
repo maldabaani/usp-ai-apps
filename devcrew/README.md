@@ -255,6 +255,7 @@ and prints the address to open.
 ./start.command stop      # stop (data is kept)
 ./start.command status    # containers and health checks
 ./start.command logs      # follow the backend log
+./start.command token     # save your GitHub token in .env (hidden input), check it, restart
 DEVCREW_OLLAMA=docker ./start.command   # force Ollama in Docker (or =host)
 ```
 
