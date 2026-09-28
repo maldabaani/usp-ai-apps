@@ -128,7 +128,14 @@ check_env() {
   fi
 }
 
-port_busy() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
+port_busy() {  # IPv4 or IPv6: dev servers (e.g. ng serve) often listen on ::1 only
+  if command -v lsof >/dev/null 2>&1; then
+    # match a real listener line: some lsof builds (busybox) ignore the filters
+    lsof -nP -iTCP:"$1" -sTCP:LISTEN 2>/dev/null | grep -q ":$1 (LISTEN)" && return 0
+  fi
+  (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null && return 0
+  (exec 3<>"/dev/tcp/::1/$1") 2>/dev/null
+}
 
 free_port() {  # free_port START: the first free port from START on
   local port="$1"
