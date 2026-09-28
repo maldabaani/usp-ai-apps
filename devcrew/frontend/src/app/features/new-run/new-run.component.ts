@@ -31,6 +31,18 @@ import { AgentIconComponent } from '../../shared/agent-icon.component';
 import { MarkdownPipe } from '../../shared/markdown.pipe';
 
 export const REPO_PATTERN = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/;
+
+/** A pasted GitHub URL (https://github.com/o/r(.git), git@github.com:o/r.git) becomes "o/r". */
+export function toRepo(text: string): string {
+  return text
+    .trim()
+    .replace(/^(?:https?:\/\/)?(?:www\.)?github\.com\//i, '')
+    .replace(/^git@github\.com:/i, '')
+    .replace(/(?:\.git)?\/*$/, '')
+    .split('/')
+    .slice(0, 2)
+    .join('/');
+}
 const ISSUE_URL = /^https:\/\/github\.com\/([^/\s]+\/[^/\s]+)\/issues\/(\d+)\/?$/;
 
 /** "#12", "12" or an issue URL (which also names the repository). */
@@ -170,7 +182,8 @@ function issueValidator(control: AbstractControl<string>): ValidationErrors | nu
 
           <mat-form-field appearance="outline">
             <mat-label>GitHub repository (owner/repo)</mat-label>
-            <input matInput formControlName="repo_target" placeholder="octocat/todo-api" />
+            <input matInput formControlName="repo_target" placeholder="octocat/todo-api"
+                   (blur)="form.controls.repo_target.setValue(toRepo(form.controls.repo_target.value))" />
             @if (form.controls.repo_target.hasError('pattern')) {
               <mat-error>Use the form owner/repo.</mat-error>
             }
@@ -289,6 +302,7 @@ export class NewRunComponent {
   readonly dragOver = signal(false);
   readonly loaded = signal<string[]>([]);
   readonly accept = ACCEPTED_EXTENSIONS.join(',');
+  readonly toRepo = toRepo;
   readonly crew = ['planner', 'architect', 'developer', 'reviewer', 'qa'];
 
   readonly form = inject(NonNullableFormBuilder).group({

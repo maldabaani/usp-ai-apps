@@ -13,7 +13,7 @@ const MODELS: ModelChoices = {
   installed: ['qwen:14b', 'qwen-coder:14b', 'qwen-coder:32b'],
 };
 import { ApiService } from '../../core/api.service';
-import { NewRunComponent, parseIssueRef } from './new-run.component';
+import { NewRunComponent, parseIssueRef, toRepo } from './new-run.component';
 
 const CONFIG: ClientConfig = {
   max_request_chars: 60, max_document_chars: 100, max_dev_iterations: 3, max_parallel_devs: 2, github_enabled: true, max_pr_rounds: 3,
@@ -227,5 +227,13 @@ describe('NewRunComponent', () => {
     c.removePreset();
     expect(c.presets()).toEqual([]);
     expect(localStorage.getItem('devcrew.presets')).toBe('[]');
+  });
+
+  it('turns a pasted GitHub URL into owner/repo', () => {
+    expect(toRepo('https://github.com/maldabaani/DevCrew.git')).toBe('maldabaani/DevCrew');
+    expect(toRepo(' github.com/acme/shop/ ')).toBe('acme/shop');
+    expect(toRepo('https://github.com/acme/shop/pull/12')).toBe('acme/shop');
+    expect(toRepo('git@github.com:acme/shop.git')).toBe('acme/shop');
+    expect(toRepo('acme/shop')).toBe('acme/shop');
   });
 });

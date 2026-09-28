@@ -14,7 +14,7 @@ import { IssueRun, WatchedRepo, WatchedRepoUpdate } from '../../core/api.models'
 import { ApiService } from '../../core/api.service';
 import { AgentIconComponent } from '../../shared/agent-icon.component';
 import { StatusChipComponent } from '../../shared/status-chip.component';
-import { REPO_PATTERN } from '../new-run/new-run.component';
+import { REPO_PATTERN, toRepo } from '../new-run/new-run.component';
 
 const REFRESH_MS = 10_000;
 export const MIN_POLL_S = 60;
@@ -68,7 +68,8 @@ function detail(err: ApiError): string {
         <form [formGroup]="form" (ngSubmit)="add()" class="add">
           <mat-form-field appearance="outline" class="repo">
             <mat-label>Repository (owner/repo)</mat-label>
-            <input matInput formControlName="repo" placeholder="acme/shop" />
+            <input matInput formControlName="repo" placeholder="acme/shop or a GitHub URL"
+                   (blur)="form.controls.repo.setValue(toRepo(form.controls.repo.value))" />
             @if (form.controls.repo.hasError('pattern')) { <mat-error>Use the form owner/repo.</mat-error> }
           </mat-form-field>
           <mat-form-field appearance="outline" class="interval">
@@ -167,6 +168,7 @@ function detail(err: ApiError): string {
   `,
 })
 export class SettingsComponent {
+  readonly toRepo = toRepo;
   private readonly api = inject(ApiService);
   private readonly destroyRef = inject(DestroyRef);
   readonly repos = signal<WatchedRepo[]>([]);
