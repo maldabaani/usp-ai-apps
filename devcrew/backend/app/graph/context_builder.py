@@ -91,6 +91,12 @@ def render_task(task: PlanTask) -> str:
     )
 
 
+def other_tasks_files(plan: Plan, task: PlanTask) -> dict[str, str]:
+    """Files other tasks of the plan deliver and this task does not target -> their task id."""
+    own = set(task.target_files)
+    return {f: t.id for t in plan.tasks if t.id != task.id for f in t.target_files if f not in own}
+
+
 def render_other_tasks(plan: Plan, task: PlanTask) -> str:
     """The rest of the plan, so a reviewer does not ask one task for another task's work."""
     return "\n".join(
@@ -273,7 +279,17 @@ def developer_context(
     sections = [
         Section("Your task", render_task(task), priority=0, required=True),
         *notes_sections(notes),
-        Section("Acceptance criteria", render_stories(plan, task.story_ids), priority=1),
+        Section(
+            "Acceptance criteria of the stories (shared with other tasks: only the part this "
+            "task delivers applies)",
+            render_stories(plan, task.story_ids),
+            priority=1,
+        ),
+        Section(
+            "Other tasks of the plan (they deliver their own files: do NOT write their work)",
+            render_other_tasks(plan, task),
+            priority=1,
+        ),
         Section(
             "Design contracts (code against these)",
             render_contracts(design, task.target_files),
@@ -348,7 +364,18 @@ def qa_context(
     return fit_sections(
         [
             Section("Task to test", render_task(task), priority=0, required=True),
-            Section("Acceptance criteria", render_stories(plan, task.story_ids), priority=0),
+            Section(
+                "Acceptance criteria of the stories (shared with other tasks: test only the "
+                "part this task delivers)",
+                render_stories(plan, task.story_ids),
+                priority=0,
+            ),
+            Section(
+                "Other tasks of the plan (not built yet or tested there: do NOT test their "
+                "code or write their files)",
+                render_other_tasks(plan, task),
+                priority=1,
+            ),
             Section("Files changed by the developer", "\n".join(changed_files) or "(none)", 1),
             Section("Design contracts", render_contracts(design, task.target_files), 3),
             Section("Test command (run for you after you finish)", test_cmd, 1),

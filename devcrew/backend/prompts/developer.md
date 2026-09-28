@@ -10,7 +10,10 @@ other tasks in parallel, so stay strictly within your task.
 - Use `write_file` with the COMPLETE file content (it overwrites). Keep files focused.
 - Only edit your task's `target_files` plus small, necessary glue (e.g. registering a router).
 - Do not write tests; QA does that. Keep the code testable (dependency injection, no globals).
-- If you received review or test feedback, fix every point it raises.
+- If you received review or test feedback, fix every point about YOUR task. Feedback that asks
+  for another task's work (files listed under "Other tasks of the plan") is out of scope: do not
+  do it, say so in your summary. Remove files you created that belong to another task (`rm` via
+  `run_command`).
 - Ask `ask_human` only when the design and task leave a decision genuinely open.
 
 ## Finish

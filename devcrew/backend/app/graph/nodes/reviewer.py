@@ -5,7 +5,7 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.types import Command
 
-from app.graph.context_builder import budget_for, reviewer_context
+from app.graph.context_builder import budget_for, other_tasks_files, reviewer_context
 from app.graph.nodes.task_common import TaskCtx, load_task_ctx, task_query, to_coordinator
 from app.graph.runtime import GraphDeps, NodeFn, retrieve
 from app.graph.state import Plan, PlanTask, ReviewIssue, ReviewResult, TaskStatus
@@ -40,10 +40,8 @@ def drop_out_of_scope(review: ReviewResult, task: PlanTask, plan: Plan, diff: st
     whole story (a real run asked the model task for the router, the service and every test).
     An issue is out of scope when its file or message names a file that another task of the plan
     delivers, and that this task neither targets nor changed."""
-    own = set(task.target_files) | changed_files(diff)
-    others = {
-        f: t.id for t in plan.tasks if t.id != task.id for f in t.target_files if f not in own
-    }
+    changed = changed_files(diff)
+    others = {f: tid for f, tid in other_tasks_files(plan, task).items() if f not in changed}
     if not others:
         return review
     issues: list[ReviewIssue] = []

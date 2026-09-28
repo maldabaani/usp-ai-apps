@@ -102,3 +102,30 @@ def test_the_reviewer_sees_the_other_tasks() -> None:
     assert "Other tasks of the plan" in text
     assert "T3 Bookmarks router (files: app/routers/bookmarks.py)" in text
     assert "T1 Define Bookmark Model (files" not in text
+
+
+def test_qa_may_not_write_another_tasks_test_file() -> None:
+    """Real run: QA of the schema task wrote the endpoint tests (T4's file), which could never
+    pass before the endpoints exist."""
+    from app.graph.context_builder import other_tasks_files
+    from app.graph.nodes.qa import qa_may_write
+
+    p = plan()
+    others = other_tasks_files(p, p.tasks[0])
+    assert others["tests/test_bookmarks_endpoints.py"] == "T4"
+    assert "app/schemas/bookmark.py" not in others
+    assert not qa_may_write("python", others, "tests/test_bookmarks_endpoints.py")
+    assert qa_may_write("python", others, "tests/test_bookmark_schema.py")
+    assert not qa_may_write("python", others, "app/schemas/bookmark.py")  # not a test file
+
+
+def test_developer_and_qa_see_the_other_tasks() -> None:
+    from app.graph.context_builder import developer_context, qa_context
+    from app.graph.state import TaskState
+
+    p = plan()
+    design = Design.model_validate(DESIGN)
+    dev = developer_context(p.tasks[0], p, design, TaskState(id="T1"), "", "", 8000)
+    assert "Other tasks of the plan" in dev and "T4 Endpoint tests" in dev
+    qa = qa_context(p.tasks[0], p, design, ["app/schemas/bookmark.py"], "pytest -q", "", 8000)
+    assert "do NOT test their code" in qa and "T3 Bookmarks router" in qa

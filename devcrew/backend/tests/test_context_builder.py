@@ -42,7 +42,9 @@ def test_developer_context_scoped_to_task() -> None:
         task, plan, Design.model_validate(DESIGN), ts, "rules", "app/main.py", budget=4000
     )
     assert "id: T2" in out and "Fix the 404 handling" in out and "attempt 2" in out
-    assert "Todo model" not in out  # other tasks are not included
+    # other tasks appear only as a boundary (title and files), not with their descriptions
+    assert "- T1 Todo model (files: app/schemas/todo.py)" in out
+    assert "Pydantic schemas" not in out
     assert "GET/POST /todos" in out
 
 

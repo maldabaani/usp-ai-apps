@@ -9,7 +9,12 @@ from langgraph.types import Command
 from app.events.types import EventType
 from app.gates.checks import secrets_gate
 from app.gates.runner import scan_secrets
-from app.graph.context_builder import budget_for, qa_context, qa_report_context
+from app.graph.context_builder import (
+    budget_for,
+    other_tasks_files,
+    qa_context,
+    qa_report_context,
+)
 from app.graph.nodes.task_common import (
     TEST_GLOBS,
     TaskCtx,
@@ -126,13 +131,20 @@ async def secret_findings(deps: GraphDeps, ctx: TaskCtx, changed: list[str]) -> 
     return gate.details if gate.status == "failed" else []
 
 
+def qa_may_write(stack: str, others: dict[str, str], path: str) -> bool:
+    """Test files only, and not a test file another task delivers (a real run's QA wrote the
+    endpoint tests into the schema task, where they could never pass)."""
+    return is_test_path(path, [stack]) and path not in others
+
+
 def qa_tools(deps: GraphDeps, ctx: TaskCtx) -> list[ToolSpec]:
     tools = [
         read_file_tool(ctx.workspace),
         write_file_tool(
             ctx.workspace,
-            partial(lambda stack, p: is_test_path(p, [stack]), ctx.task.stack),
-            note=f"QA may only write {ctx.task.stack} test files.",
+            partial(qa_may_write, ctx.task.stack, other_tasks_files(ctx.plan, ctx.task)),
+            note=f"QA may only write {ctx.task.stack} test files of this task (not files another "
+            "task of the plan delivers).",
         ),
     ]
     if deps.sandbox is not None:

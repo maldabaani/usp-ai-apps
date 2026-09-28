@@ -332,7 +332,11 @@ never pushes to the default branch of an existing repo, and never pushes before 
   rules, or check the design's code blocks against them.
 - [ ] **BL-184** (P2) QA wrote tests importing names that did not exist, and edited the
   template's existing `tests/test_health.py`. Give QA the task's public names; protect existing
-  tests unless the task targets them.
+  tests unless the task targets them. *Partly done: with qwen2.5:32b, the Reviewer asked the
+  schema task for the service, router and tests, and QA wrote the endpoint tests into it. The
+  Reviewer, Developer and QA now see the other tasks of the plan; out-of-scope review issues
+  do not block; QA cannot write a file another task delivers. Existing tests are not protected
+  yet.*
 - [ ] **BL-185** (P3) After a split, the sub-tasks followed the latest review complaint instead
   of the original task goal. Give the Coordinator the original task and plan when splitting.
 - [ ] **BL-186** (P3) Identical tool calls inside one answer are all executed; the repeat guard
