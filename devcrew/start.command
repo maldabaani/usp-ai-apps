@@ -59,7 +59,8 @@ random_password() { LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24 || tr
 COMPOSE_FILES=(-f docker-compose.yml)
 PROFILES=()
 
-compose() { docker compose "${COMPOSE_FILES[@]}" "${PROFILES[@]}" "$@"; }
+# ${arr[@]+"${arr[@]}"}: an empty array is an error under `set -u` in bash 3.2 (macOS)
+compose() { docker compose "${COMPOSE_FILES[@]}" ${PROFILES[@]+"${PROFILES[@]}"} "$@"; }
 
 use_docker_ollama() {
   PROFILES=(--profile ollama)
