@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -22,12 +23,41 @@ from app.tools.workspace import read_file_tool
 NODE = "reviewer"
 
 
-def render_feedback(review: ReviewResult) -> str:
+def merge_duplicate_issues(review: ReviewResult) -> ReviewResult:
+    """One issue per (file, severity, rule, message): a real review repeated the same complaint
+    for four lines, and eight near-identical rows buried the one thing to fix."""
+    merged: dict[tuple[str, str, str | None, str], ReviewIssue] = {}
+    extra_lines: dict[tuple[str, str, str | None, str], list[int]] = {}
+    for issue in review.issues:
+        key = (issue.file, issue.severity, issue.rule_ref, issue.message.strip())
+        if key not in merged:
+            merged[key] = issue
+        elif issue.line is not None:
+            extra_lines.setdefault(key, []).append(issue.line)
+    issues = []
+    for merged_key, issue in merged.items():
+        more = sorted(set(extra_lines.get(merged_key, [])) - {issue.line})
+        if more:
+            also = ", ".join(str(n) for n in more)
+            issue = issue.model_copy(update={"message": f"{issue.message} (also lines {also})"})
+        issues.append(issue)
+    return review.model_copy(update={"issues": issues})
+
+
+def render_feedback(review: ReviewResult, rule_texts: Mapping[str, str] | None = None) -> str:
+    """The developer sees what each cited rule actually says, so a misread rule is visible."""
+    rule_texts = rule_texts or {}
     lines = [f"Reviewer requested changes: {review.summary}".strip()]
     for issue in review.issues:
         where = f"{issue.file}:{issue.line}" if issue.line else issue.file
         rule = f" [{issue.rule_ref}]" if issue.rule_ref else ""
         lines.append(f"- ({issue.severity}){rule} {where}: {issue.message}")
+    cited = sorted({i.rule_ref for i in review.issues if i.rule_ref and i.rule_ref in rule_texts})
+    if cited:
+        lines.append(
+            "\nThe cited rules say (the rule text wins if a review message contradicts it):"
+        )
+        lines += [f"- {rid}: {rule_texts[rid]}" for rid in cited]
     return "\n".join(lines)
 
 
@@ -126,14 +156,16 @@ def make_reviewer(deps: GraphDeps) -> NodeFn:
                 )
             except StructuredOutputError as exc:
                 return await to_coordinator(deps, ctx, NODE, f"reviewer output invalid: {exc}")
-            review = drop_out_of_scope(result.value, ctx.task, ctx.plan, diff)
+            review = merge_duplicate_issues(
+                drop_out_of_scope(result.value, ctx.task, ctx.plan, diff)
+            )
 
         ctx.ts.review = review
         if review.decision == "approve":
             ctx.ts.status = TaskStatus.TESTING
             return Command(goto="qa", update=ctx.update())
         ctx.ts.status = TaskStatus.IN_PROGRESS
-        ctx.ts.feedback = render_feedback(review)
+        ctx.ts.feedback = render_feedback(review, deps.rules.rule_texts([ctx.task.stack]))
         return Command(goto="developer", update=ctx.update())
 
     return reviewer

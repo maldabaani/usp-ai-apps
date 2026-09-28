@@ -278,7 +278,6 @@ def developer_context(
 ) -> str:
     sections = [
         Section("Your task", render_task(task), priority=0, required=True),
-        *notes_sections(notes),
         Section(
             "Acceptance criteria of the stories (shared with other tasks: only the part this "
             "task delivers applies)",
@@ -312,6 +311,18 @@ def developer_context(
         )
     if qa:
         sections.append(Section("Q&A for this task", render_qa(qa), 1))
+    if notes:
+        # Last, so a small model reads them last: a real run's developer followed the task
+        # description ("return a dictionary") over the human's message that said the opposite.
+        sections.append(
+            Section(
+                "Instructions from the human (they OVERRIDE the task description, the feedback "
+                "and the design wherever they conflict)",
+                "\n".join(f"- {n}" for n in notes),
+                priority=0,
+                required=True,
+            )
+        )
     return fit_sections(sections, budget)
 
 

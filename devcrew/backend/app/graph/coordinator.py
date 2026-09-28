@@ -21,6 +21,7 @@ the LLM output cannot be validated, the Coordinator escalates to the human.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -42,8 +43,10 @@ from app.graph.nodes.task_common import TaskCtx, load_task_ctx
 from app.graph.replan import apply_replan, apply_split, replan_change, split_change
 from app.graph.runtime import GraphDeps, NodeFn, release_run_resources
 from app.graph.state import CoordinatorDecision, QAEntry, TaskStatus, dump
+from app.graph.steering import task_notes
 from app.llm.models_config import Role
 from app.llm.structured import StructuredOutputError, generate_structured
+from app.tools.base import ToolError
 from app.tools.git import repo_lock
 
 ESCALATION_ACTIONS = [ResumeAction.APPROVE, ResumeAction.ANSWER, ResumeAction.REJECT]
@@ -114,7 +117,15 @@ async def decide(
 # ============================================================================================
 # Task level (inside the task subgraph)
 # ============================================================================================
-def _task_context(ctx: TaskCtx, reason: str, kind: str, budget: int) -> str:
+def _task_context(
+    ctx: TaskCtx,
+    reason: str,
+    kind: str,
+    budget: int,
+    *,
+    notes: Sequence[str] = (),
+    rules: str = "",
+) -> str:
     ts = ctx.ts
     evidence = []
     if ts.review and ts.review.issues:
@@ -140,9 +151,25 @@ def _task_context(ctx: TaskCtx, reason: str, kind: str, budget: int) -> str:
             Section("Evidence", "\n\n".join(evidence) or "(none)", priority=1),
             Section("Design contracts", render_contracts(ctx.design, ctx.task.target_files), 3),
             Section("All tasks (ids are taken)", render_plan_tasks(ctx.plan), priority=2),
+            # A replan copied a review message that misread PY-003 ("return a dictionary")
+            # into the task; with the rules and the human's instructions it can check both.
+            Section(f"{ctx.task.stack} rules (a revised task must not contradict them)", rules, 2),
+            Section(
+                "Instructions from the human for this task (keep them in any revised task)",
+                "\n".join(f"- {n}" for n in notes),
+                priority=0,
+                required=True,
+            ),
         ],
         budget,
     )
+
+
+def _rules(deps: GraphDeps, stack: str) -> str:
+    try:
+        return deps.rules.read(stack)
+    except ToolError:
+        return ""
 
 
 def make_task_coordinator(deps: GraphDeps) -> NodeFn:
@@ -226,6 +253,8 @@ def make_task_coordinator(deps: GraphDeps) -> NodeFn:
                 reason,
                 kind,
                 budget_for(deps.llm.spec(Role.COORDINATOR).prompt_budget, ""),
+                notes=await task_notes(deps, state, ctx.task.id, deliver=False),
+                rules=_rules(deps, ctx.task.stack),
             ),
             allowed=allowed,
             validation={"existing_ids": existing, "task_depends_on": ctx.task.depends_on},

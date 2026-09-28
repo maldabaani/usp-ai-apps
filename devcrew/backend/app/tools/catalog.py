@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.tools.base import ToolError, ToolSpec
 
 RULE_ID_RE = re.compile(r"\*\*([A-Z]{2,5}-\d{3})\*\*")
+RULE_LINE_RE = re.compile(r"^- \*\*([A-Z]{2,5}-\d{3})\*\* (.+)$", re.MULTILINE)
 RULE_STACKS = ("python", "java", "angular")
 
 
@@ -37,6 +38,16 @@ class RulesCatalog:
             except ToolError:
                 continue
         return ids
+
+    def rule_texts(self, stacks: list[str]) -> dict[str, str]:
+        """Rule id -> the rule's text, e.g. PY-003 -> "Request/response bodies are ..."."""
+        texts: dict[str, str] = {}
+        for stack in stacks:
+            try:
+                texts.update(RULE_LINE_RE.findall(self.read(stack)))
+            except ToolError:
+                continue
+        return texts
 
 
 class TemplateInfo(BaseModel):

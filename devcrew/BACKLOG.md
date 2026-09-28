@@ -364,6 +364,12 @@ never pushes to the default branch of an existing repo, and never pushes before 
   the timeline but "in_progress, 1 attempt" in the task table, unstarted tasks as "planned", and
   approvals with 2 runs each. *Done: "stopped/not started: run cancelled", attempts mention
   Coordinator retries, approvals count decisions.*
+- [x] **BL-193** (P1, Mac run) T1 looped: the Reviewer misread PY-003 ("return a dictionary"),
+  the Coordinator copied that into the rewritten task, and the developer followed the task over
+  the human's message saying the opposite. *Done: the human's instructions come last in the
+  developer prompt and override the task; review feedback quotes the cited rules' text;
+  identical review issues are merged; the Coordinator sees the stack rules and the human's
+  instructions and must not add requirements or contradict the rules.*
 
 ## Parity with commercial coding agents (from the P10 gap review)
 
