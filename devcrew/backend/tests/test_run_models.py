@@ -73,3 +73,21 @@ async def test_any_model_name_is_accepted_when_ollama_cannot_be_asked(tmp_path: 
         assert resp.status_code == 201, resp.text
         run = await a.settle(resp.json()["id"])
         assert run["models"] == {"reviewer": "other:7b"}
+
+
+def test_token_counts_survive_a_cached_prompt() -> None:
+    """Real run: Ollama omits prompt_eval_count when the prompt is fully cached; langchain-ollama
+    then drops usage_metadata and the call was recorded as 0 tokens."""
+    from langchain_core.messages import AIMessage
+
+    from app.llm.client import token_counts
+
+    cached = AIMessage(content="ok", response_metadata={"eval_count": 57, "done": True})
+    assert cached.usage_metadata is None
+    assert token_counts(cached) == (0, 57)
+    full = AIMessage(
+        content="ok",
+        usage_metadata={"input_tokens": 900, "output_tokens": 40, "total_tokens": 940},
+    )
+    assert token_counts(full) == (900, 40)
+    assert token_counts(AIMessage(content="")) == (0, 0)

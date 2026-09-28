@@ -55,6 +55,17 @@ class CallUsage:
 UsageHook = Callable[[CallUsage], Awaitable[None]]
 
 
+def token_counts(message: AIMessage) -> tuple[int, int]:
+    """(input, output) tokens of a model answer. Ollama leaves out `prompt_eval_count` when the
+    whole prompt came from its cache, and langchain-ollama then drops the usage metadata
+    altogether; read Ollama's own counts in that case (a missing count is 0)."""
+    meta = message.usage_metadata
+    if meta:
+        return meta["input_tokens"], meta["output_tokens"]
+    raw = message.response_metadata or {}
+    return int(raw.get("prompt_eval_count") or 0), int(raw.get("eval_count") or 0)
+
+
 @dataclass
 class TokenUsage:
     input_tokens: int = 0
@@ -74,9 +85,7 @@ class UsageTracker:
     by_role: dict[Role, TokenUsage] = field(default_factory=dict)
 
     def record(self, role: Role, message: AIMessage) -> None:
-        meta = message.usage_metadata
-        tokens_in = meta["input_tokens"] if meta else 0
-        tokens_out = meta["output_tokens"] if meta else 0
+        tokens_in, tokens_out = token_counts(message)
         self.by_role.setdefault(role, TokenUsage()).add(tokens_in, tokens_out)
 
     def total(self) -> TokenUsage:
@@ -186,14 +195,14 @@ class LLMGateway:
         self.usage.record(role, result)
         scope = llm_scope.get()
         if self.on_usage is not None and scope is not None:
-            meta = result.usage_metadata
+            tokens_in, tokens_out = token_counts(result)
             await self.on_usage(
                 CallUsage(
                     scope=scope,
                     role=role,
                     model=self.spec(role).model,
-                    input_tokens=meta["input_tokens"] if meta else 0,
-                    output_tokens=meta["output_tokens"] if meta else 0,
+                    input_tokens=tokens_in,
+                    output_tokens=tokens_out,
                     duration_ms=duration_ms,
                 )
             )
