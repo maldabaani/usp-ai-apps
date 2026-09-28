@@ -480,6 +480,11 @@ def test_apply_changes_replan_split_and_invalid() -> None:
     assert new_plan.task("A").title == "A2" and new_plan.task("D").depends_on == ["A", "B-1", "B-2"]
     assert updates["A"]["status"] == "pending" and updates["A"]["reset_branch"] is True
     assert updates["A"]["iterations"] == 0 and updates["B"]["status"] == "split"
+    # the developer learns that earlier code is gone, and gets the guidance
+    assert updates["A"]["feedback"].startswith("This task was rewritten and starts again")
+    assert updates["A"]["feedback"].endswith("Coordinator guidance: g")
+    _, empty, _ = apply_changes(plan, tasks, [replan_change("A", revised, "")])
+    assert "Coordinator guidance" not in empty["A"]["feedback"]
     assert updates["B-1"]["status"] == "pending"
 
     cyclic = [

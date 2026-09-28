@@ -370,6 +370,11 @@ never pushes to the default branch of an existing repo, and never pushes before 
   developer prompt and override the task; review feedback quotes the cited rules' text;
   identical review issues are merged; the Coordinator sees the stack rules and the human's
   instructions and must not add requirements or contradict the rules.*
+- [x] **BL-194** (P1, Mac run) After a replan the developer got "Coordinator replanned this task: "
+  (empty guidance) and a description to "refactor" code the restart had discarded. *Done: the
+  feedback says the task restarts from the integration branch and earlier code is gone, and
+  falls back to the Coordinator's reason; the prompt asks for a complete task, never a
+  refactor of the previous attempt.*
 
 ## Parity with commercial coding agents (from the P10 gap review)
 

@@ -276,7 +276,9 @@ def make_task_coordinator(deps: GraphDeps) -> NodeFn:
                 if decision.action == "replan":
                     assert decision.revised_task is not None
                     apply_replan(ctx.plan, ctx.task.id, decision.revised_task)
-                    change = replan_change(ctx.task.id, decision.revised_task, decision.guidance)
+                    change = replan_change(
+                        ctx.task.id, decision.revised_task, decision.guidance or decision.reason
+                    )
                     ts.status = TaskStatus.PENDING
                 else:
                     apply_split(ctx.plan, ctx.task.id, decision.subtasks)

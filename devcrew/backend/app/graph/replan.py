@@ -16,6 +16,20 @@ def replan_change(task_id: str, revised: RevisedTask, guidance: str) -> dict[str
     return {"kind": "replan", "task_id": task_id, "revised": dump(revised), "guidance": guidance}
 
 
+RESTART_NOTE = (
+    "This task was rewritten and starts again from the integration branch: the code of the "
+    "earlier attempts is gone. Build the whole task as described; do not look for a previous "
+    "version to refactor."
+)
+
+
+def replan_feedback(guidance: str) -> str:
+    """A real run's developer got "Coordinator replanned this task: " with nothing after it,
+    and a description asking to "refactor" code that the restart had discarded."""
+    guidance = guidance.strip()
+    return f"{RESTART_NOTE}\n\nCoordinator guidance: {guidance}" if guidance else RESTART_NOTE
+
+
 def split_change(task_id: str, subtasks: Sequence[PlanTask]) -> dict[str, Any]:
     return {"kind": "split", "task_id": task_id, "subtasks": [dump(t) for t in subtasks]}
 
@@ -62,7 +76,7 @@ def apply_changes(
                         "status": TaskStatus.PENDING,
                         "iterations": 0,
                         "reset_branch": True,
-                        "feedback": f"Coordinator replanned this task: {change['guidance']}",
+                        "feedback": replan_feedback(str(change.get("guidance") or "")),
                         "review": None,
                         "test_results": None,
                         "conflict_rounds": 0,
