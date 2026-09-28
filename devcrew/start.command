@@ -23,7 +23,7 @@ cd "$(dirname "$0")"
 ROOT="$(pwd)"
 ENV_FILE="$ROOT/.env"
 MODELS_FILE="$ROOT/backend/config/models.yaml"
-UI_URL="http://localhost:4200"
+UI_URL="http://localhost:4200"   # updated from API_PORT / UI_PORT in .env (see sync_urls)
 API_URL="http://localhost:8080"
 
 bold() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
@@ -137,24 +137,32 @@ free_port() {  # free_port START: the first free port from START on
 
 check_ports() {
   # only when DevCrew is not running (its own containers hold these ports then)
-  [[ -z "$(compose ps -q 2>/dev/null)" ]] || return 0
-  local port
-  for port in 8080 4200; do
-    port_busy "$port" && fail "port $port is in use by another program; DevCrew needs it (stop that program first)."
-  done
-  # Postgres and Chroma are published only for development on the host: move them if taken
-  local key default current
-  for key in POSTGRES_PORT:5432 CHROMA_PORT:8000; do
-    default="${key#*:}"
-    key="${key%%:*}"
-    current="$(env_get "$key")"
-    current="${current:-$default}"
-    if port_busy "$current"; then
-      port="$(free_port "$((current + 1))")"
-      env_set "$key" "$port"
-      info "Port $current is in use: $key is now $port."
-    fi
-  done
+  if [[ -z "$(compose ps -q 2>/dev/null)" ]]; then
+    # every published port moves to the next free one when another program holds it
+    local entry key default current port
+    for entry in API_PORT:8080 UI_PORT:4200 POSTGRES_PORT:5432 CHROMA_PORT:8000; do
+      default="${entry#*:}"
+      key="${entry%%:*}"
+      current="$(env_get "$key")"
+      current="${current:-$default}"
+      if port_busy "$current"; then
+        port="$(free_port "$((current + 1))")"
+        env_set "$key" "$port"
+        info "Port $current is in use by another program: $key is now $port."
+      fi
+    done
+  fi
+  sync_urls
+}
+
+sync_urls() {  # the UI must call the API port, and the API must accept the UI's origin
+  local api ui
+  api="$(env_get API_PORT)"
+  ui="$(env_get UI_PORT)"
+  API_URL="http://localhost:${api:-8080}"
+  UI_URL="http://localhost:${ui:-4200}"
+  env_set DEVCREW_API_URL "$API_URL"
+  env_set CORS_ORIGINS "[\"$UI_URL\"]"
 }
 
 # ------------------------------------------------------------------------------ Ollama
@@ -344,6 +352,7 @@ case "${1:-start}" in
     ;;
   status)
     current_profiles
+    sync_urls
     compose ps
     bold "Health"
     show_health

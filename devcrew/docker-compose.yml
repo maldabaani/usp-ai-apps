@@ -43,7 +43,7 @@ services:
       RULES_DIR: /devcrew/rules
       TEMPLATES_DIR: /devcrew/templates
     ports:
-      - "127.0.0.1:8080:8080"  # no auth by design: never expose beyond localhost
+      - "127.0.0.1:${API_PORT:-8080}:8080"  # no auth by design: never expose beyond localhost
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -61,14 +61,14 @@ services:
       chromadb:
         condition: service_started
 
-  # Angular UI (static bundle served by nginx). It calls the backend at http://localhost:8080.
+  # Angular UI (static bundle served by nginx). It calls the backend at DEVCREW_API_URL.
   frontend:
     build: ./frontend
     environment:
       # where the browser reaches the backend (written to config.json at container start)
       DEVCREW_API_URL: ${DEVCREW_API_URL:-http://localhost:8080}
     ports:
-      - "127.0.0.1:4200:4200"
+      - "127.0.0.1:${UI_PORT:-4200}:4200"
     depends_on:
       - backend
 

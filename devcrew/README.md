@@ -247,7 +247,9 @@ The first start:
 4. builds the sandbox images and the app;
 5. starts everything, shows the health checks and opens the UI.
 
-The first start takes a while (model download, image builds). Later starts take seconds.
+The first start takes a while (model download, image builds). Later starts take seconds. If
+another program already uses port 8080, 4200, 5432 or 8000, DevCrew moves to the next free port
+and prints the address to open.
 
 ```bash
 ./start.command stop      # stop (data is kept)
