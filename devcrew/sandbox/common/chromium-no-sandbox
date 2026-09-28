@@ -1,0 +1,4 @@
+#!/bin/sh
+# Karma's ChromeHeadless launcher uses CHROME_BIN. Chromium's own sandbox cannot start inside an
+# unprivileged container (the container itself is the sandbox), so disable it here.
+exec /usr/bin/chromium --no-sandbox --disable-dev-shm-usage --disable-gpu "$@"

@@ -1,0 +1,11 @@
+# Gives the optional `ollama` service an NVIDIA GPU (needs the NVIDIA Container Toolkit).
+# start.command adds this file automatically when it finds a working GPU.
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
