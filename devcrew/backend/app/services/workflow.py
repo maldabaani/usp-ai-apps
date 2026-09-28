@@ -306,6 +306,7 @@ def build_workflow(
         nodes, RunStatus.COMPLETED if watching else run_status, pending, events, pr_url
     )
     _apply_task_status(nodes, task_states, run_status, max_dev_iterations)
+    _explain_waiting(nodes, plan_by_id, task_states, events)
     if watching:
         _apply_followup(nodes, followup, rounds, run_status, pending, task_ids)
 
@@ -531,6 +532,43 @@ def _apply_task_status(
             node.detail = _short(ts.get("error") or "failed", 120)
         elif node_status == "pending":
             node.detail = "planned"
+
+
+def _explain_waiting(
+    nodes: dict[str, WorkflowNode],
+    plan_by_id: Mapping[str, Mapping[str, Any]],
+    task_states: Mapping[str, Mapping[str, Any]],
+    events: Sequence[Event],
+) -> None:
+    """Say why a pending task has not started: no free developer, or unfinished dependencies."""
+    dispatch = next(
+        (
+            e.payload
+            for e in reversed(events)
+            if e.type is EventType.TOOL_RESULT and e.payload.get("tool") == "dispatch"
+        ),
+        None,
+    )
+    if dispatch is None:
+        return  # development has not started: "planned" says it all
+    waiting = set(dispatch.get("waiting") or [])
+    limit = len(dispatch.get("tasks") or [])
+    for node in nodes.values():
+        if node.kind != "task" or node.task_id is None or node.status != "pending":
+            continue
+        if node.task_id in waiting:
+            node.detail = f"ready · waiting for a free developer (MAX_PARALLEL_DEVS={limit})"
+            continue
+        open_deps = [
+            str(d)
+            for d in plan_by_id.get(node.task_id, {}).get("depends_on") or []
+            if (task_states.get(str(d)) or {}).get("status") != "merged"
+        ]
+        node.detail = (
+            f"waiting for {', '.join(open_deps)}"
+            if open_deps
+            else "ready · starts when the current wave finishes"
+        )
 
 
 def _apply_followup(
