@@ -59,6 +59,49 @@ def test_consistent_examples_pass() -> None:
     assert python_snippet_problems("no code, only prose") == []
 
 
+RULE_BREAKING = """
+```python
+bookmark_store: dict[int, dict[str, str]] = {}
+next_id = 1
+
+def create(data: dict[str, str]) -> dict[str, str]:
+    global next_id
+    next_id += 1
+    return dict(data.dict())
+```
+"""
+
+INSTANCE_STATE = """
+```python
+from fastapi import APIRouter
+
+router = APIRouter()
+
+class BookmarkService:
+    def __init__(self) -> None:
+        self._items: dict[int, str] = {}
+
+_service = BookmarkService()
+
+def get_bookmark_service() -> BookmarkService:
+    return _service
+
+def check(response: object) -> None:
+    assert response.json()
+```
+"""
+
+
+def test_stack_rule_violations_in_design_code() -> None:
+    # the Mac run's design: module-level store, global counter, Pydantic v1 .dict()
+    problems = " | ".join(python_snippet_problems(RULE_BREAKING))
+    assert "module-level mutable state (PY-005)" in problems
+    assert "`global next_id` (PY-005)" in problems
+    assert "Pydantic v1 `.dict()`" in problems
+    # state in a class instance behind Depends is the allowed pattern; response.json() is fine
+    assert python_snippet_problems(INSTANCE_STATE) == []
+
+
 def design(doc: str) -> dict[str, object]:
     return {
         "stack": "python",

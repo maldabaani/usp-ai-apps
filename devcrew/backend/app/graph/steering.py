@@ -351,9 +351,12 @@ async def task_notes(
         await deps.steering.update_messages(
             [m.id for m in fresh], status=DELIVERED, action="note", reply=reply
         )
-    return notes_text(state.get("human_notes") or []) + [
-        f"(for this task) {m.text.strip()}" for m in mine
-    ]
+    guidance = ((state.get("tasks") or {}).get(task_id) or {}).get("human_guidance") or []
+    return (
+        notes_text(state.get("human_notes") or [])
+        + [f"(for this task) {m.text.strip()}" for m in mine]
+        + [f"(your decision when this task was escalated) {g}" for g in guidance]
+    )
 
 
 async def take_for_feedback(

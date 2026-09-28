@@ -25,6 +25,7 @@ from app.events.types import EventType
 from app.graph.interrupts import ResumeAction, ResumePayload
 from app.graph.runner import PendingInterrupt, RunDriver, RunOutcome
 from app.graph.runtime import GraphDeps, release_run_resources
+from app.graph.state import unfinished_summary
 from app.graph.steering import expire_messages
 from app.tools.git import GitRepo, repo_lock
 
@@ -248,9 +249,16 @@ class RunManager:
         pr_url = state.get("pr_url")
         errors = state.get("errors") or []
         failed = outcome.status in (RunStatus.FAILED, RunStatus.CANCELLED)
-        if pr_url or (failed and (errors or outcome.error)):
+        unfinished = (
+            unfinished_summary(state.get("tasks") or {})
+            if outcome.status is RunStatus.COMPLETED
+            else None
+        )
+        if pr_url or unfinished or (failed and (errors or outcome.error)):
             # the exception that stopped the run beats an older, handled error in the state
             error = (outcome.error or errors[-1]) if failed else None
+            if unfinished:  # completed, but not everything was built
+                error = f"Finished with failed tasks: {unfinished}"
             await self.runs.update(run_id, pr_url=pr_url, error=error)
 
     async def _release(self, run_id: str) -> None:

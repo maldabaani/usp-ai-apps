@@ -351,6 +351,8 @@ def make_task_escalate(deps: GraphDeps) -> NodeFn:
         if payload.action is ResumeAction.ANSWER:
             guidance = payload.answer or ""
             ts.feedback = f"{ts.feedback or ''}\n\nHuman guidance: {guidance}".strip()
+            if guidance.strip():
+                ts.human_guidance = [*ts.human_guidance, guidance.strip()]
             update["qa_log"] = [_qa(ctx.task.id, question, guidance)]
         if kind == "merge_conflict":
             return Command(goto="coordinator", update=ctx.update(**update))

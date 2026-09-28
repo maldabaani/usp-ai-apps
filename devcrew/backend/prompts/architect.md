@@ -17,7 +17,9 @@ can implement tasks independently against stable contracts.
   DTO fields). These contracts are what developers code against, so be precise.
 - Example code in `design_doc` must be consistent: every name it uses is defined in the design
   or imported (no undefined classes such as a `Service` nobody defines), and every stub has a
-  body (`...`). Developers copy it; broken examples make tasks fail review.
+  body (`...`). Developers copy it; broken examples make tasks fail review. It must follow the
+  stack rules too: e.g. for Python no module-level mutable state or `global` (keep state in a
+  class instance provided with `Depends`), and Pydantic v2 only (`model_dump`, `ConfigDict`).
 - Keep the design minimal: no layers, services or dependencies the plan does not need.
 - `project_structure` lists the key files/directories of the finished project.
 - `design_doc` is concise Markdown: overview, module diagram (text), contracts, data model,

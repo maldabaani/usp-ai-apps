@@ -99,6 +99,42 @@ def fold_test_tasks(plan: Plan) -> Plan:
     )
 
 
+SMALL_PLAN_FILES = 8
+MIN_CHAIN_TO_MERGE = 3  # model -> endpoint is a fair split; longer chains are overhead
+
+
+def merge_serial_plan(plan: Plan) -> Plan:
+    """A small plan whose tasks can only run one after another becomes one task.
+
+    Every task costs a full developer/review/QA cycle; a chain gains no parallelism from the
+    split. A real run planned one endpoint as model -> service -> controller -> endpoint: four
+    serial cycles (and four chances to fail review) for about 40 lines of code.
+    """
+    layers = plan.layers()
+    files = list(dict.fromkeys(f for t in plan.tasks for f in t.target_files))
+    stacks = {t.stack for t in plan.tasks}
+    if len(plan.tasks) < MIN_CHAIN_TO_MERGE or any(len(layer) > 1 for layer in layers):
+        return plan
+    if len(files) > SMALL_PLAN_FILES or len(stacks) > 1:
+        return plan
+    ordered = [plan.task(layer[0]) for layer in layers]
+    steps = "\n".join(f"{i}. {t.title}: {t.description}" for i, t in enumerate(ordered, 1))
+    merged = PlanTask(
+        id=ordered[0].id,
+        title=f"{ordered[-1].title} (complete feature)",
+        description=f"Build the whole feature in one task, in this order:\n{steps}",
+        target_files=files,
+        depends_on=[],
+        stack=ordered[0].stack,
+        story_ids=list(dict.fromkeys(s for t in ordered for s in t.story_ids)),
+    )
+    summary = (
+        f"{plan.summary}\n\nThe {len(ordered)} planned tasks could only run one after another, "
+        f"so they were merged into one task ({', '.join(t.id for t in ordered)})."
+    )
+    return Plan.model_validate({**dump(plan), "summary": summary, "tasks": [dump(merged)]})
+
+
 def make_planner(deps: GraphDeps) -> NodeFn:
     async def planner(state: dict[str, Any]) -> Command[str]:
         run_id = state["run_id"]
@@ -163,7 +199,7 @@ def make_planner(deps: GraphDeps) -> NodeFn:
         return Command(
             goto="approve_plan",
             update={
-                "plan": dump(fold_test_tasks(result.value)),
+                "plan": dump(merge_serial_plan(fold_test_tasks(result.value))),
                 "plan_feedback": None,
                 "scratch": {NODE: None},
                 "status": RunStatus.AWAITING_PLAN_APPROVAL.value,

@@ -240,6 +240,10 @@ async def test_iteration_limit_escalates_and_blocks_dependents(tmp_path: Path) -
     assert outcome.status is RunStatus.AWAITING_FINAL_APPROVAL
     summary = outcome.interrupts[0].value["data"]["integration"]
     assert summary["failed"] == ["T1"] and summary["blocked"] == ["T2"]
+    # the final approval says the result is incomplete (a real run was approved unaware)
+    final_gate = outcome.interrupts[0].value
+    assert final_gate["title"].endswith("(incomplete: T1 failed; T2 blocked)")
+    assert final_gate["data"]["unfinished"] == "T1 failed; T2 blocked"
 
 
 async def test_escalation_answer_retries_with_guidance(tmp_path: Path) -> None:
@@ -266,6 +270,31 @@ async def test_escalation_answer_retries_with_guidance(tmp_path: Path) -> None:
     assert "Human guidance: Use a dataclass" in last_t1.text()
     state = await h.driver.state(RUN)
     assert state["qa_log"][-1]["asker"] == "coordinator"
+
+
+async def test_escalation_answer_survives_later_reviews(tmp_path: Path) -> None:
+    """Feedback is replaced by each new review; the human's answer must stay (a real run lost
+    it after one attempt and the task failed three more times)."""
+    h = make_harness(tmp_path, max_dev_iterations=2)
+    reject = {
+        "decision": "changes_requested",
+        "issues": [{"file": "x.py", "severity": "blocker", "message": "wrong"}],
+    }
+    reviews: Iterator[dict[str, Any]] = iter([reject, reject, reject])
+    h.brain.responders["reviewer"] = lambda c: final(next(reviews, {"decision": "approve"}))
+    await start(h)
+    await h.driver.resume(RUN, APPROVE)
+    outcome = await h.driver.resume(RUN, APPROVE)
+    assert outcome.interrupts[0].value["kind"] == "escalation"
+    outcome = await h.driver.resume(RUN, ResumePayload(action="answer", answer="Use a dataclass"))
+    assert outcome.status is RunStatus.AWAITING_FINAL_APPROVAL
+    attempts = [c for c in h.brain.calls_for("developer") if c.fresh and "id: T1" in c.text()]
+    assert len(attempts) == 4  # 2 before the escalation, 2 after the answer
+    last = attempts[-1].text()
+    assert "Human guidance" not in last  # the feedback now holds the latest review only
+    assert "(your decision when this task was escalated) Use a dataclass" in last
+    instructions = last.rsplit("## ", 1)[1]
+    assert instructions.startswith("Instructions from the human")
 
 
 async def test_malformed_tool_calls_route_to_coordinator(tmp_path: Path) -> None:

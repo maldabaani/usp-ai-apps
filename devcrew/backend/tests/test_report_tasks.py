@@ -28,3 +28,17 @@ def test_attempts_mention_coordinator_retries() -> None:
     assert _attempts({"iterations": 1, "coordinator_actions": 1}) == (
         "1 (after 1 Coordinator action)"
     )
+
+
+def test_unfinished_summary() -> None:
+    from app.graph.state import unfinished_summary
+
+    tasks = {
+        "T1": {"status": "merged"},
+        "T2": {"status": "failed"},
+        "T3": {"status": "blocked"},
+        "T4": {"status": "blocked"},
+        "T5": {"status": "cancelled"},  # dropped on purpose: not a failure
+    }
+    assert unfinished_summary(tasks) == "T2 failed; T3, T4 blocked"
+    assert unfinished_summary({"T1": {"status": "merged"}}) is None

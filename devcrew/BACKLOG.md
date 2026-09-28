@@ -375,6 +375,21 @@ never pushes to the default branch of an existing repo, and never pushes before 
   feedback says the task restarts from the integration branch and earlier code is gone, and
   falls back to the Coordinator's reason; the prompt asks for a complete task, never a
   refactor of the previous attempt.*
+- [x] **BL-195** (P1, Mac run) T2 failed 16 attempts: the design's own contract used a
+  module-level store, `global next_id` and Pydantic v1 `.dict()`, the developer copied it and
+  the Reviewer rejected it (PY-005). *Done: the design check flags module-level mutable state,
+  `global`, `.dict()`/`.parse_obj()` and `class Config`; developer and reviewer prompts say a
+  stack rule wins over design code.* Also closes the Pydantic v1 part of BL-183.
+- [x] **BL-196** (P1, Mac run) An escalation answer lived in the feedback, which the next review
+  replaced: it reached one attempt of three. *Done: answers are kept with the task and shown
+  in every later attempt, last and overriding (like task messages).*
+- [x] **BL-197** (P2, Mac run) A run with T2 failed and T3/T4 blocked ended "completed".
+  *Done: the final approval title says "incomplete: T2 failed; T3, T4 blocked"; the run keeps
+  "completed" but carries the summary as its error, and the UI shows an "incomplete" badge.*
+- [x] **BL-198** (P1, Mac run) One endpoint was planned as model -> service -> controller ->
+  endpoint: 4 serial cycles, no parallelism. *Done: the Planner splits by feature; a serial
+  plan of 3+ tasks with at most 8 files in one stack is merged into one task; the plan approval
+  title shows the shape ("4 tasks, one after another", "up to 3 in parallel").*
 
 ## Parity with commercial coding agents (from the P10 gap review)
 

@@ -68,6 +68,9 @@ const REFRESH_DEBOUNCE_MS = 300;
           <h1>{{ title() }}</h1>
           <div class="meta">
             <app-status-chip [status]="run.status" />
+            @if (run.status === 'completed' && run.error) {
+              <span class="badge warn" [title]="run.error">incomplete</span>
+            }
             <span>{{ run.repo_target }}</span>
             @if (run.target === 'existing') {
               <span class="badge">existing repo · {{ run.mode === 'quick' ? 'quick fix' : 'full' }}
@@ -488,7 +491,8 @@ export class RunDetailComponent {
       next: ({ run, workflow, messages, usage }) => {
         const before = this.run()?.status;
         if (before && before !== run.status && ['completed', 'failed'].includes(run.status)) {
-          this.notify.notify(`DevCrew run ${run.status}: ${requestTitle(run.request)}`,
+          const outcome = run.status === 'completed' && run.error ? 'finished incomplete' : run.status;
+          this.notify.notify(`DevCrew run ${outcome}: ${requestTitle(run.request)}`,
             run.pr_url ?? run.error ?? '', `devcrew-${run.id}`);
         }
         this.run.set(run);

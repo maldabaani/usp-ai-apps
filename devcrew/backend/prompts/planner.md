@@ -6,8 +6,13 @@ Turn the feature request into user stories, acceptance criteria and implementati
 ## Rules
 - Write user stories as "As a <user>, I want <goal> so that <benefit>", each with testable
   acceptance criteria.
-- Split the work into tasks that one developer can finish and test in a single sitting
-  (typically 1-4 files each).
+- Split by FEATURE, not by layer: a task delivers one working slice (e.g. one endpoint with its
+  schema, service code and tests), not "the model", "the service", "the router". Layer tasks
+  can only run one after another. When features share a model, put the shared model in one
+  small first task and let the feature tasks depend on it, so they run in parallel.
+- A small request (a few files, e.g. one endpoint) is ONE task. Each task costs a full
+  develop/review/test cycle; small serial plans are merged into one task automatically.
+- Each task should be finishable and testable in a single sitting (typically 1-6 files).
 - The tasks MUST form a DAG with MAXIMUM PARALLELISM: only add a `depends_on` entry when a task
   truly needs another task's code (e.g. it imports it). Independent modules must not depend on
   each other.

@@ -10,6 +10,8 @@ contracts, the stack rules and the acceptance criteria.
   never request it here. A story's acceptance criteria are shared between tasks.
 - Request changes only for real problems: contract mismatches, bugs, missing acceptance
   criteria of this task's part, security issues, or violations of the stack rules.
+- If the design's example code contradicts a stack rule, the rule wins: never ask the developer
+  to copy design code that violates a rule.
 - Every rule violation MUST cite the rule id in `rule_ref` (e.g. PY-003). Use null for issues
   that are not rule violations.
 - Severity: blocker (broken/incorrect), major (contract/rule violation that must be fixed),

@@ -114,6 +114,17 @@ class Plan(BaseModel):
                 del remaining[tid]
         return layers
 
+    def shape(self) -> str:
+        """How much the plan can run in parallel, e.g. "4 tasks, one after another"."""
+        layers = self.layers()
+        count = f"{len(self.tasks)} task{'s' if len(self.tasks) != 1 else ''}"
+        widest = max(len(layer) for layer in layers)
+        if len(self.tasks) == 1:
+            return count
+        if widest == 1:
+            return f"{count}, one after another"
+        return f"{count} in {len(layers)} steps, up to {widest} in parallel"
+
     def task(self, task_id: str) -> PlanTask:
         for t in self.tasks:
             if t.id == task_id:
@@ -371,10 +382,29 @@ class TaskState(BaseModel):
     conflict_files: list[str] = Field(default_factory=list)  # unresolved merge conflicts
     conflict_rounds: int = 0
     coordinator_actions: int = 0  # automatic Coordinator decisions taken for this task
+    # The human's escalation answers: shown in every later attempt (feedback is replaced by
+    # the next review, and a real run lost the answer after one attempt).
+    human_guidance: list[str] = Field(default_factory=list)
     reset_branch: bool = False  # replanned: restart from the integration branch
     # PR follow-up: merge this ref (the PR base) into the task branch first; the task result
     # is then fast-forwarded (not squashed) so the merge commit keeps the base as a parent.
     merge_from: str | None = None
+
+
+UNFINISHED_LABELS = (("failed", "failed"), ("blocked", "blocked"), ("needs_human", "unresolved"))
+
+
+def unfinished_summary(tasks: Mapping[str, Mapping[str, Any]]) -> str | None:
+    """Failed and blocked tasks at the end of a run, e.g. "T2 failed; T3, T4 blocked".
+
+    A real run ended "completed" with only T1 merged, T2 failed and T3/T4 blocked."""
+    by_status: dict[str, list[str]] = {}
+    for tid, t in tasks.items():
+        by_status.setdefault(str(t.get("status") or ""), []).append(tid)
+    parts = [
+        f"{', '.join(by_status[s])} {label}" for s, label in UNFINISHED_LABELS if by_status.get(s)
+    ]
+    return "; ".join(parts) or None
 
 
 class QAEntry(BaseModel):

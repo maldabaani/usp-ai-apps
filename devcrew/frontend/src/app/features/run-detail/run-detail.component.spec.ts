@@ -128,6 +128,19 @@ describe('RunDetailComponent', () => {
     expect(spy).toHaveBeenCalledWith('DevCrew run completed: TODO API', 'https://github.com/me/todo/pull/1', 'devcrew-r1');
   });
 
+  it('marks a completed run with failed tasks as incomplete', () => {
+    const notify = TestBed.inject(NotifyService);
+    const spy = spyOn(notify, 'notify').and.returnValue(true);
+    const error = 'Finished with failed tasks: T2 failed; T3, T4 blocked';
+    api.getRun.and.returnValue(of({ ...RUN, status: 'completed', pending: [], error }));
+    fixture.componentInstance['load']();
+    fixture.detectChanges();
+    const badge = (fixture.nativeElement as HTMLElement).querySelector('.badge.warn') as HTMLElement;
+    expect(badge.textContent).toContain('incomplete');
+    expect(badge.title).toBe(error);
+    expect(spy).toHaveBeenCalledWith('DevCrew run finished incomplete: TODO API', error, 'devcrew-r1');
+  });
+
   it('closing the panel keeps it closed until something new needs attention', () => {
     fixture.componentInstance.pick(null); // the panel's close button
     fixture.componentInstance['load']();

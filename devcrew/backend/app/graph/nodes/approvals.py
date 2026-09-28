@@ -22,6 +22,7 @@ from app.graph.state import (
     dump,
     get_design,
     get_plan,
+    unfinished_summary,
 )
 from app.graph.steering import take_for_feedback
 
@@ -53,7 +54,7 @@ def make_approve_plan(deps: GraphDeps) -> NodeFn:
                 InterruptRequest(
                     kind=InterruptKind.APPROVAL,
                     artifact="plan",
-                    title="Approve the plan",
+                    title=f"Approve the plan ({plan.shape()})",
                     allowed_actions=APPROVE_REJECT_EDIT,
                     data={"plan": dump(plan), "layers": plan.layers()},
                     error=error,
@@ -139,6 +140,7 @@ def make_approve_final(deps: GraphDeps) -> NodeFn:
         plan = get_plan(state)
         gates = GateReport.model_validate(state.get("gates") or {})
         blocked = bool(gates.blocking)
+        unfinished = unfinished_summary(state.get("tasks") or {})
         payload = request_input(
             InterruptRequest(
                 kind=InterruptKind.APPROVAL,
@@ -148,6 +150,7 @@ def make_approve_final(deps: GraphDeps) -> NodeFn:
                     if blocked
                     else "Approve the final result"
                     + (" (quality gates failed)" if gates.failed else "")
+                    + (f" (incomplete: {unfinished})" if unfinished else "")
                 ),
                 # A failed gate can be allowed (it is noted in the PR), except secrets.
                 allowed_actions=(
@@ -160,6 +163,7 @@ def make_approve_final(deps: GraphDeps) -> NodeFn:
                     "tasks": state.get("tasks", {}),
                     "integration": state.get("integration"),
                     "gates": state.get("gates"),
+                    "unfinished": unfinished,
                 },
             )
         )
