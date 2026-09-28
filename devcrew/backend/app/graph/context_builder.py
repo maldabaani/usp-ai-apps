@@ -91,6 +91,15 @@ def render_task(task: PlanTask) -> str:
     )
 
 
+def render_other_tasks(plan: Plan, task: PlanTask) -> str:
+    """The rest of the plan, so a reviewer does not ask one task for another task's work."""
+    return "\n".join(
+        f"- {t.id} {t.title} (files: {', '.join(t.target_files) or 'none listed'})"
+        for t in plan.tasks
+        if t.id != task.id
+    )
+
+
 def render_plan_tasks(plan: Plan) -> str:
     return "\n".join(
         f"- {t.id} [{t.stack}] {t.title} (depends on: {', '.join(t.depends_on) or 'none'}; "
@@ -305,7 +314,17 @@ def reviewer_context(
         [
             Section("Task under review", render_task(task), priority=0, required=True),
             *notes_sections(notes),
-            Section("Acceptance criteria", render_stories(plan, task.story_ids), priority=1),
+            Section(
+                "Other tasks of the plan (they deliver their own files: NOT expected in this diff)",
+                render_other_tasks(plan, task),
+                priority=1,
+            ),
+            Section(
+                "Acceptance criteria of the stories (shared with other tasks: judge only the "
+                "part this task delivers)",
+                render_stories(plan, task.story_ids),
+                priority=1,
+            ),
             Section("Design contracts", render_contracts(design, task.target_files), 2),
             Section("Diff (integration...task branch)", diff or "(no changes)", 3),
             Section(f"{task.stack} rules", rules, priority=4),

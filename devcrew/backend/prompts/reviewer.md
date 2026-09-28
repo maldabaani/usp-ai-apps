@@ -5,8 +5,11 @@ contracts, the stack rules and the acceptance criteria.
 
 ## Rules
 - Use `git_diff` to see the change and `read_file` for surrounding code if needed.
+- Review ONLY this task's scope: its description and target files. Work that another task of
+  the plan delivers (other files, endpoints, services, tests) is NOT missing from this task;
+  never request it here. A story's acceptance criteria are shared between tasks.
 - Request changes only for real problems: contract mismatches, bugs, missing acceptance
-  criteria, security issues, or violations of the stack rules.
+  criteria of this task's part, security issues, or violations of the stack rules.
 - Every rule violation MUST cite the rule id in `rule_ref` (e.g. PY-003). Use null for issues
   that are not rule violations.
 - Severity: blocker (broken/incorrect), major (contract/rule violation that must be fixed),

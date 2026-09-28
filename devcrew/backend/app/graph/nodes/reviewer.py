@@ -8,7 +8,7 @@ from langgraph.types import Command
 from app.graph.context_builder import budget_for, reviewer_context
 from app.graph.nodes.task_common import TaskCtx, load_task_ctx, task_query, to_coordinator
 from app.graph.runtime import GraphDeps, NodeFn, retrieve
-from app.graph.state import ReviewIssue, ReviewResult, TaskStatus
+from app.graph.state import Plan, PlanTask, ReviewIssue, ReviewResult, TaskStatus
 from app.graph.steering import task_notes
 from app.llm.agent import run_agent
 from app.llm.models_config import Role
@@ -29,6 +29,35 @@ def render_feedback(review: ReviewResult) -> str:
         rule = f" [{issue.rule_ref}]" if issue.rule_ref else ""
         lines.append(f"- ({issue.severity}){rule} {where}: {issue.message}")
     return "\n".join(lines)
+
+
+def changed_files(diff: str) -> set[str]:
+    return {line[6:].strip() for line in diff.splitlines() if line.startswith("+++ b/")}
+
+
+def drop_out_of_scope(review: ReviewResult, task: PlanTask, plan: Plan, diff: str) -> ReviewResult:
+    """Blocking issues about another task's files become `info`: small models ask one task for the
+    whole story (a real run asked the model task for the router, the service and every test).
+    An issue is out of scope when its file or message names a file that another task of the plan
+    delivers, and that this task neither targets nor changed."""
+    own = set(task.target_files) | changed_files(diff)
+    others = {
+        f: t.id for t in plan.tasks if t.id != task.id for f in t.target_files if f not in own
+    }
+    if not others:
+        return review
+    issues: list[ReviewIssue] = []
+    for issue in review.issues:
+        text = f"{issue.file} {issue.message}"
+        owner = next((tid for f, tid in others.items() if f in text), None)
+        if owner is not None and issue.severity in ("blocker", "major"):
+            issue = issue.model_copy(
+                update={"severity": "info", "message": f"[delivered by {owner}] {issue.message}"}
+            )
+        issues.append(issue)
+    blocking = any(i.severity in ("blocker", "major") for i in issues)
+    decision = review.decision if blocking else "approve"
+    return review.model_copy(update={"issues": issues, "decision": decision})
 
 
 def reviewer_tools(deps: GraphDeps, ctx: TaskCtx) -> list[ToolSpec]:
@@ -99,7 +128,7 @@ def make_reviewer(deps: GraphDeps) -> NodeFn:
                 )
             except StructuredOutputError as exc:
                 return await to_coordinator(deps, ctx, NODE, f"reviewer output invalid: {exc}")
-            review = result.value
+            review = drop_out_of_scope(result.value, ctx.task, ctx.plan, diff)
 
         ctx.ts.review = review
         if review.decision == "approve":
