@@ -18,7 +18,8 @@ robustness, **P3** = nice to have.
   BL-189. The intended 14B-on-GPU setup is still unverified.*
 - [ ] **BL-003** (P1, from P3) Build `devcrew-sandbox-node` and `devcrew-sandbox-mixed` and run
   the Angular template's `ng test` inside the node image (only verified on the host so far;
-  `deb.debian.org` was blocked in the dev sandbox).
+  `deb.debian.org` was blocked in the dev sandbox). *Both images built on a Mac with
+  `start.command`; `ng test` inside the node image is still to be seen in a real run.*
 - [ ] **BL-004** (P2, from P4) Measure retrieval quality with the real `nomic-embed-text`
   (tests use a hashing embedder). Candidate input for the Phase 9 benchmark.
 - [ ] **BL-005** (P1, from P8) First delivery to real GitHub with your token: create-repo (user
@@ -200,9 +201,10 @@ never pushes to the default branch of an existing repo, and never pushes before 
 
 ## Existing repositories and gates (Phase 11)
 
-- [ ] **BL-120** (P1, from P11) Rebuild all sandbox images with the gate tools
+- [x] **BL-120** (P1, from P11) Rebuild all sandbox images with the gate tools
   (`scripts/build_sandbox_images.sh`). The Python and Java images were rebuilt and verified
-  here; node/mixed still cannot be built in the dev sandbox (BL-003).
+  here; node/mixed still cannot be built in the dev sandbox (BL-003). *Done: all four images
+  built with the gate tools on a Mac by `start.command`.*
 - [ ] **BL-121** (P2, from P11) The dependency scan was verified only up to the network call:
   osv.dev and deps.dev are blocked in the dev sandbox, so the scan reported `error` there.
   - Check a real finding end to end, and the osv-scanner v2 JSON parsing, on your machine.
