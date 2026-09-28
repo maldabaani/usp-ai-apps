@@ -497,7 +497,7 @@ given. Results are rewritten after each task, so an interrupted benchmark keeps 
 
 With the stack up (`docker compose up`, Ollama on the host, `GITHUB_TOKEN` set):
 
-1. Open http://localhost:4200 and click **New run**. Enter
+1. Open http://localhost:4400 and click **New run**. Enter
    "Build a FastAPI TODO API with CRUD and pytest tests" and your `owner/repo`; tick "Create the
    repository if it is missing" if it does not exist yet.
 2. Review and approve the plan, then the design (or reject with feedback, or edit the JSON).
@@ -536,7 +536,7 @@ read/write, plus **Administration** write if DevCrew should create repositories.
 
 ## Web UI (Phase 7)
 
-`docker compose up` serves the UI at **http://localhost:4200** (nginx, static bundle). It calls
+`docker compose up` serves the UI at **http://localhost:4400** (nginx, static bundle). It calls
 the backend at `http://localhost:8080`, set in `frontend/src/environments/`.
 
 - **Runs list**: status, repository, PR link; refreshes every 5s.
@@ -566,7 +566,7 @@ Development:
 ```bash
 cd devcrew/frontend
 npm ci
-npx ng serve                      # http://localhost:4200, backend on :8080
+npx ng serve                      # http://localhost:4400, backend on :8080
 npx ng lint
 npx ng test --watch=false --browsers=ChromeHeadless
 ```
@@ -778,7 +778,7 @@ The backend container runs `alembic upgrade head` on start. With `STARTUP_HEALTH
 `GITHUB_TOKEN` is reported but is not critical: it is only needed for PR delivery. `/health`
 answers 503 only for critical failures; optional ones show as warnings in the UI.
 
-The UI is served at http://localhost:4200.
+The UI is served at http://localhost:4400.
 
 Note that `WORKSPACES_DIR` is mounted at the **same absolute path** in the backend container.
 Sandbox containers are started through the host Docker socket, so their bind mounts must be

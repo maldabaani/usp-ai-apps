@@ -5,7 +5,7 @@ backend. See the main [technical guide](../docs/GUIDE.md#web-ui-phase-7) for fea
 
 ```bash
 npm ci
-npx ng serve          # http://localhost:4200 (backend expected at http://localhost:8080)
+npx ng serve          # http://localhost:4400 (backend expected at http://localhost:8080)
 npx ng lint
 npx ng test --watch=false --browsers=ChromeHeadless
 npx ng build          # dist/frontend/browser (served by nginx in the Docker image)

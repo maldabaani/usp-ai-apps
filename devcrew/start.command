@@ -23,7 +23,7 @@ cd "$(dirname "$0")"
 ROOT="$(pwd)"
 ENV_FILE="$ROOT/.env"
 MODELS_FILE="$ROOT/backend/config/models.yaml"
-UI_URL="http://localhost:4200"   # updated from API_PORT / UI_PORT in .env (see sync_urls)
+UI_URL="http://localhost:4400"   # updated from API_PORT / UI_PORT in .env (see sync_urls)
 API_URL="http://localhost:8080"
 
 bold() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
@@ -148,7 +148,7 @@ check_ports() {
   if [[ -z "$(compose ps -q 2>/dev/null)" ]]; then
     # every published port moves to the next free one when another program holds it
     local entry key default current port
-    for entry in API_PORT:8080 UI_PORT:4200 POSTGRES_PORT:5432 CHROMA_PORT:8000; do
+    for entry in API_PORT:8080 UI_PORT:4400 POSTGRES_PORT:5432 CHROMA_PORT:8000; do
       default="${entry#*:}"
       key="${entry%%:*}"
       current="$(env_get "$key")"
@@ -168,7 +168,7 @@ sync_urls() {  # the UI must call the API port, and the API must accept the UI's
   api="$(env_get API_PORT)"
   ui="$(env_get UI_PORT)"
   API_URL="http://localhost:${api:-8080}"
-  UI_URL="http://localhost:${ui:-4200}"
+  UI_URL="http://localhost:${ui:-4400}"
   env_set DEVCREW_API_URL "$API_URL"
   env_set CORS_ORIGINS "[\"$UI_URL\"]"
 }

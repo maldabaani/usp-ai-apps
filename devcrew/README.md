@@ -198,7 +198,7 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    UI["🖥️ Angular 19 UI<br/>:4200"] -- "REST + SSE" --> API["⚡ FastAPI<br/>:8080"]
+    UI["🖥️ Angular 19 UI<br/>:4400"] -- "REST + SSE" --> API["⚡ FastAPI<br/>:8080"]
     API --> LG["🧠 LangGraph<br/>backbone + task subgraphs"]
     LG -- "chat & embeddings" --> OL["🦙 Ollama (local)"]
     LG -- "commands & tests" --> SB["🐳 Docker sandboxes<br/>python · java · node"]
@@ -248,7 +248,7 @@ The first start:
 5. starts everything, shows the health checks and opens the UI.
 
 The first start takes a while (model download, image builds). Later starts take seconds. If
-another program already uses port 8080, 4200, 5432 or 8000, DevCrew moves to the next free port
+another program already uses port 8080, 4400, 5432 or 8000, DevCrew moves to the next free port
 and prints the address to open.
 
 ```bash
@@ -283,7 +283,7 @@ docker compose up --build
 
 | Service | URL |
 |---|---|
-| 🖥️ Web UI | http://localhost:4200 |
+| 🖥️ Web UI | http://localhost:4400 |
 | ⚡ API + interactive docs | http://localhost:8080/docs |
 | ❤️ Health check | http://localhost:8080/health |
 
@@ -339,7 +339,7 @@ ruff check . && ruff format --check . && mypy app tests alembic/env.py && pytest
 
 # Frontend
 cd devcrew/frontend
-npm ci && npx ng serve                      # http://localhost:4200
+npm ci && npx ng serve                      # http://localhost:4400
 npx ng lint && npx ng test --watch=false --browsers=ChromeHeadless
 ```
 

@@ -108,7 +108,7 @@ class Settings(BaseSettings):
     )
 
     # --- Server -----------------------------------------------------------------------------
-    cors_origins: list[str] = ["http://localhost:4200"]
+    cors_origins: list[str] = ["http://localhost:4400"]
     log_level: str = "INFO"
     startup_health_strict: bool = Field(
         default=True,
