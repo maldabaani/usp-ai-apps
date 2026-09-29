@@ -25,6 +25,7 @@ from pipeline.runner import (
     start_job,
     update_tasks,
 )
+from pipeline.nodes.usage_tracking import empty_usage
 from pipeline.state import StoryForgeState, new_state, resolve_output_mode
 
 logger = logging.getLogger(__name__)
@@ -318,4 +319,5 @@ async def get_assessment_status(job_id: str, user: dict = Depends(require_auth))
         **state,
         "output_mode": resolve_output_mode(state, settings.OUTPUT_MODE),
         "warnings": state.get("warnings") or [],
+        "usage": state.get("usage") or empty_usage(),
     }

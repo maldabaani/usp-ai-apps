@@ -245,6 +245,55 @@
   font-size: 13px;
 }
 
+/* ── LLM usage panel ─────────────────────────────────────────────────────── */
+.sf-usage-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.sf-usage-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.sf-usage-label {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.sf-usage-summary {
+  color: var(--sf-muted);
+  font-size: 13px;
+  flex: 1;
+}
+
+.sf-usage-detail {
+  padding: 0 20px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sf-usage-node {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.sf-usage-name {
+  font-weight: 600;
+  flex: 0 0 140px;
+}
+
+.sf-usage-stat {
+  color: var(--sf-muted);
+}
+
 /* ── RAG context panel ───────────────────────────────────────────────────── */
 .sf-rag-card {
   padding: 0;

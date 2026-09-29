@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from typing import TypedDict
 
+from pipeline.nodes.usage_tracking import empty_usage
+
 
 class StoryForgeState(TypedDict):
     # Project metadata
@@ -59,6 +61,12 @@ class StoryForgeState(TypedDict):
     warnings: list[str]
     status: str  # "analyzing|detecting_ambiguities|clarifying|generating|reviewing|creating|done|error|cancelled"
 
+    # Token usage from this job's own LLM calls (clarify_node/generate_node
+    # only -- see pipeline/nodes/usage_tracking.py). Older checkpoints
+    # predating this field won't have it; usage_tracking.merge_into()
+    # treats a missing/None value the same as an empty total.
+    usage: dict
+
 
 def new_state(
     job_id: str,
@@ -97,6 +105,7 @@ def new_state(
         errors=[],
         warnings=[],
         status="analyzing",
+        usage=empty_usage(),
     )
 
 

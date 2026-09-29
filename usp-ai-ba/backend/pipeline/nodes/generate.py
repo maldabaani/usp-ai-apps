@@ -10,7 +10,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_ollama import ChatOllama
 
 from config import settings
-from pipeline.nodes import assessment_llm
+from pipeline.nodes import assessment_llm, usage_tracking
 from pipeline.nodes.json_response import extract_json, extract_text
 from pipeline.nodes.llm_retry import invoke_and_parse_with_fallback
 from pipeline.state import StoryForgeState
@@ -149,6 +149,7 @@ def _log_and_parse_stories(raw_text: str) -> list[dict]:
 async def generate_node(state: StoryForgeState) -> StoryForgeState:
     """Send the SDD + RAG context + clarification answers to the LLM and parse stories."""
     fallback_llm = _get_ollama_fallback_llm() if settings.ASSESSMENT_MODEL == "claude" else None
+    usage_calls: list[dict] = []
     try:
         stories = await invoke_and_parse_with_fallback(
             _get_llm(),
@@ -162,6 +163,7 @@ async def generate_node(state: StoryForgeState) -> StoryForgeState:
             base_seed=BASE_SEED,
             node_name="generate_node",
             supports_seed=settings.ASSESSMENT_MODEL != "claude",
+            on_usage=usage_calls.append,
         )
     except Exception as exc:  # noqa: BLE001 - surfaced to caller via state errors
         logger.exception("generate_node failed after retries")
@@ -169,10 +171,12 @@ async def generate_node(state: StoryForgeState) -> StoryForgeState:
             **state,
             "errors": state["errors"] + [f"generate_node: {exc}"],
             "status": "error",
+            "usage": usage_tracking.merge_into(state.get("usage"), "generate_node", usage_calls),
         }
 
     return {
         **state,
         "generated_stories": stories,
         "status": "reviewing" if state["review_mode"] else "creating",
+        "usage": usage_tracking.merge_into(state.get("usage"), "generate_node", usage_calls),
     }

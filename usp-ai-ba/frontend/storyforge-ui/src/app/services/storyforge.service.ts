@@ -132,6 +132,23 @@ export interface StoryForgeJobState {
   errors: string[];
   warnings: string[];
   status: string;
+  usage: AssessmentUsage;
+}
+
+export interface AssessmentUsageByNode {
+  calls: number;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  models: string[];
+}
+
+export interface AssessmentUsage {
+  calls: number;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  by_node: Record<string, AssessmentUsageByNode>;
 }
 
 export interface IngestFileRecord {

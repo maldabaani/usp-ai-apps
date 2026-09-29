@@ -84,6 +84,12 @@ export class StatusComponent implements OnInit, OnDestroy {
   showRagContext = false;
   expandedChunks: Record<string, boolean> = {};
 
+  showUsage = false;
+  private readonly usageNodeLabels: Record<string, string> = {
+    clarify_node: 'Clarification',
+    generate_node: 'Story Generation',
+  };
+
   private lastActiveStep = '';
   private pollHandle: ReturnType<typeof setInterval> | null = null;
   private redirected = false;
@@ -432,6 +438,18 @@ export class StatusComponent implements OnInit, OnDestroy {
 
   toggleRagContext(): void {
     this.showRagContext = !this.showRagContext;
+  }
+
+  toggleUsage(): void {
+    this.showUsage = !this.showUsage;
+  }
+
+  get usageByNode(): { label: string; calls: number; input_tokens: number; output_tokens: number; total_tokens: number; models: string[] }[] {
+    const byNode = this.state?.usage?.by_node ?? {};
+    return Object.entries(byNode).map(([key, node]) => ({
+      label: this.usageNodeLabels[key] ?? key,
+      ...node,
+    }));
   }
 
   toggleChunk(chunkKey: string): void {

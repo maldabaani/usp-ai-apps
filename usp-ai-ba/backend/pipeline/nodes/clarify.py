@@ -11,7 +11,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_ollama import ChatOllama
 
 from config import settings
-from pipeline.nodes import assessment_llm
+from pipeline.nodes import assessment_llm, usage_tracking
 from pipeline.nodes.json_response import extract_json, extract_text
 from pipeline.nodes.llm_retry import invoke_and_parse_with_fallback
 from pipeline.state import StoryForgeState
@@ -123,6 +123,7 @@ def _log_and_parse_ambiguities(raw_text: str) -> list[str]:
 async def clarify_node(state: StoryForgeState) -> StoryForgeState:
     """Ask the LLM to flag in-scope ambiguities; pause the graph if any are found."""
     fallback_llm = _get_ollama_fallback_llm() if settings.ASSESSMENT_MODEL == "claude" else None
+    usage_calls: list[dict] = []
     try:
         ambiguities = await invoke_and_parse_with_fallback(
             _get_llm(),
@@ -136,6 +137,7 @@ async def clarify_node(state: StoryForgeState) -> StoryForgeState:
             base_seed=BASE_SEED,
             node_name="clarify_node",
             supports_seed=settings.ASSESSMENT_MODEL != "claude",
+            on_usage=usage_calls.append,
         )
     except Exception as exc:  # noqa: BLE001 - surfaced to caller via state errors
         logger.exception("clarify_node failed after retries; proceeding without clarification")
@@ -144,14 +146,17 @@ async def clarify_node(state: StoryForgeState) -> StoryForgeState:
             "clarification_needed": False,
             "clarification_questions": [],
             "errors": state["errors"] + [f"clarify_node: {exc}"],
+            "usage": usage_tracking.merge_into(state.get("usage"), "clarify_node", usage_calls),
         }
 
+    usage = usage_tracking.merge_into(state.get("usage"), "clarify_node", usage_calls)
     if ambiguities:
         return {
             **state,
             "clarification_needed": True,
             "clarification_questions": ambiguities,
             "status": "clarifying",
+            "usage": usage,
         }
 
     return {
@@ -159,4 +164,5 @@ async def clarify_node(state: StoryForgeState) -> StoryForgeState:
         "clarification_needed": False,
         "clarification_questions": [],
         "status": "generating",
+        "usage": usage,
     }

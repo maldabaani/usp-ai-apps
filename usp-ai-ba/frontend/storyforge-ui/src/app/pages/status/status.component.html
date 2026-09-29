@@ -76,6 +76,28 @@
     </p>
   </div>
 
+  <!-- LLM usage: only the clarify/generate steps call an LLM at all -->
+  <div class="sf-card sf-usage-card" *ngIf="state?.usage?.calls">
+    <div class="sf-usage-toggle" (click)="toggleUsage()">
+      <span class="sf-usage-label">LLM Usage</span>
+      <span class="sf-usage-summary">
+        {{ state?.usage?.total_tokens | number }} tokens · {{ state?.usage?.calls }} calls
+      </span>
+      <span>{{ showUsage ? '▴' : '▾' }}</span>
+    </div>
+    <div class="sf-usage-detail" *ngIf="showUsage">
+      <div class="sf-usage-node" *ngFor="let node of usageByNode">
+        <span class="sf-usage-name">{{ node.label }}</span>
+        <span class="sf-usage-stat">
+          {{ node.total_tokens | number }} tokens
+          ({{ node.input_tokens | number }} in / {{ node.output_tokens | number }} out)
+          · {{ node.calls }} calls
+          <span *ngIf="node.models.length"> · {{ node.models.join(', ') }}</span>
+        </span>
+      </div>
+    </div>
+  </div>
+
   <!-- RAG context panel -->
   <div class="sf-card sf-rag-card" *ngIf="totalChunks > 0">
     <div class="sf-rag-toggle" (click)="toggleRagContext()">

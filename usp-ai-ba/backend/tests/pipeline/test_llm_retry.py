@@ -16,9 +16,15 @@ _real_sleep = asyncio.sleep  # captured before any test monkeypatches asyncio.sl
 
 
 class _FakeResponse:
-    def __init__(self, content: str, response_metadata: dict | None = None) -> None:
+    def __init__(
+        self,
+        content: str,
+        response_metadata: dict | None = None,
+        usage_metadata: dict | None = None,
+    ) -> None:
         self.content = content
         self.response_metadata = response_metadata or {}
+        self.usage_metadata = usage_metadata
 
 
 class _FakeChat:
@@ -30,10 +36,11 @@ class _FakeChat:
     seed and, on the currently installed langchain-ollama/ollama versions,
     crashes with a TypeError -- see llm_retry.py's module docstring)."""
 
-    def __init__(self, responses: list):
+    def __init__(self, responses: list, model: str = "fake-model"):
         self._responses = list(responses)
         self.ainvoke_calls = 0
         self.model_copy_calls: list[dict] = []
+        self.model = model
 
     def model_copy(self, *, update=None):
         self.model_copy_calls.append(update or {})
@@ -289,3 +296,110 @@ def test_model_copy_seed_override_nests_correctly_for_real_chatollama():
     assert params["options"]["seed"] == 43  # the bump actually took effect
     assert params["options"]["num_predict"] == 100  # other options preserved
     assert copy._async_client is llm._async_client  # no wasted reconnect
+
+
+def test_on_usage_called_with_input_output_tokens_and_model(monkeypatch):
+    monkeypatch.setattr(asyncio, "sleep", lambda _: _real_sleep(0))
+    chat = _FakeChat(
+        [_FakeResponse("result", usage_metadata={"input_tokens": 100, "output_tokens": 20})],
+        model="qwen2.5:14b",
+    )
+    recorded: list[dict] = []
+
+    result = asyncio.run(
+        invoke_and_parse_with_retry(
+            chat, [], _parse, _extract_text, base_seed=42, node_name="test_node", on_usage=recorded.append
+        )
+    )
+
+    assert result == "result"
+    assert recorded == [{"input_tokens": 100, "output_tokens": 20, "model": "qwen2.5:14b"}]
+
+
+def test_on_usage_called_once_per_attempt_including_truncated_ones(monkeypatch):
+    """A truncated/rejected attempt still spent real tokens -- it must still
+    be counted, not just the attempt that finally succeeds."""
+    monkeypatch.setattr(asyncio, "sleep", lambda _: _real_sleep(0))
+    chat = _FakeChat(
+        [
+            _FakeResponse(
+                "[cut off",
+                response_metadata={"done_reason": "length"},
+                usage_metadata={"input_tokens": 50, "output_tokens": 16384},
+            ),
+            _FakeResponse("result", usage_metadata={"input_tokens": 50, "output_tokens": 30}),
+        ]
+    )
+    recorded: list[dict] = []
+
+    asyncio.run(
+        invoke_and_parse_with_retry(
+            chat, [], _parse, _extract_text, base_seed=42, node_name="test_node", on_usage=recorded.append
+        )
+    )
+
+    assert len(recorded) == 2
+    assert recorded[0]["output_tokens"] == 16384
+    assert recorded[1]["output_tokens"] == 30
+
+
+def test_on_usage_not_called_when_ainvoke_raises(monkeypatch):
+    monkeypatch.setattr(asyncio, "sleep", lambda _: _real_sleep(0))
+    chat = _FakeChat([RuntimeError("boom"), _FakeResponse("result", usage_metadata={"input_tokens": 1, "output_tokens": 1})])
+    recorded: list[dict] = []
+
+    asyncio.run(
+        invoke_and_parse_with_retry(
+            chat, [], _parse, _extract_text, base_seed=42, node_name="test_node", on_usage=recorded.append
+        )
+    )
+
+    assert len(recorded) == 1  # only the attempt that actually got a response
+
+
+def test_on_usage_absent_metadata_is_a_silent_noop(monkeypatch):
+    """Response has no usage_metadata at all (e.g. some Ollama versions) --
+    on_usage is simply never called for that attempt, not passed a None/0
+    entry."""
+    monkeypatch.setattr(asyncio, "sleep", lambda _: _real_sleep(0))
+    chat = _FakeChat(["result"])  # plain string -> _FakeResponse with usage_metadata=None
+    recorded: list[dict] = []
+
+    asyncio.run(
+        invoke_and_parse_with_retry(
+            chat, [], _parse, _extract_text, base_seed=42, node_name="test_node", on_usage=recorded.append
+        )
+    )
+
+    assert recorded == []
+
+
+def test_on_usage_threaded_through_both_primary_and_fallback(monkeypatch):
+    monkeypatch.setattr(asyncio, "sleep", lambda _: _real_sleep(0))
+    primary = _FakeChat(
+        [RuntimeError("claude down")] * 3, model="claude-x"
+    )
+    fallback = _FakeChat(
+        [_FakeResponse("fallback result", usage_metadata={"input_tokens": 5, "output_tokens": 5})],
+        model="qwen2.5:14b",
+    )
+    recorded: list[dict] = []
+
+    result = asyncio.run(
+        invoke_and_parse_with_fallback(
+            primary,
+            fallback,
+            [],
+            _parse,
+            _extract_text,
+            base_seed=42,
+            node_name="test_node",
+            supports_seed=False,
+            on_usage=recorded.append,
+        )
+    )
+
+    assert result == "fallback result"
+    # Primary's 3 failed attempts never got a response, so nothing recorded
+    # for them -- only the fallback's one successful call.
+    assert recorded == [{"input_tokens": 5, "output_tokens": 5, "model": "qwen2.5:14b"}]

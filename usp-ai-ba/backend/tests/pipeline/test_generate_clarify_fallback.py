@@ -15,14 +15,16 @@ _real_sleep = asyncio.sleep
 
 
 class _FakeResponse:
-    def __init__(self, content: str) -> None:
+    def __init__(self, content: str, usage_metadata: dict | None = None) -> None:
         self.content = content
+        self.usage_metadata = usage_metadata
 
 
 class _FakeChat:
-    def __init__(self, responses: list):
+    def __init__(self, responses: list, model: str = "fake-model"):
         self._responses = list(responses)
         self.ainvoke_calls = 0
+        self.model = model
 
     def model_copy(self, *, update=None):
         return self
@@ -32,6 +34,8 @@ class _FakeChat:
         response = self._responses.pop(0)
         if isinstance(response, Exception):
             raise response
+        if isinstance(response, _FakeResponse):
+            return response
         return _FakeResponse(response)
 
 
@@ -146,3 +150,58 @@ def test_clarify_node_falls_back_to_ollama_when_claude_fails(monkeypatch):
         assert result["clarification_questions"] == ["What is X?"]
     finally:
         settings.apply_updates({"ASSESSMENT_MODEL": original})
+
+
+def test_generate_node_records_usage_on_state(monkeypatch):
+    monkeypatch.setattr(asyncio, "sleep", lambda _: _real_sleep(0))
+    chat = _FakeChat(
+        [
+            _FakeResponse(
+                '[{"epic_title": "E", "user_story": "U", "acceptance_criteria": [], '
+                '"dev_tasks": [], "unit_test_tasks": []}]',
+                usage_metadata={"input_tokens": 1000, "output_tokens": 200},
+            )
+        ],
+        model="qwen2.5:14b",
+    )
+    monkeypatch.setattr(generate, "_get_llm", lambda: chat)
+
+    result = asyncio.run(generate.generate_node(_new_state()))
+
+    usage = result["usage"]
+    assert usage["total_tokens"] == 1200
+    assert usage["by_node"]["generate_node"] == {
+        "calls": 1,
+        "input_tokens": 1000,
+        "output_tokens": 200,
+        "total_tokens": 1200,
+        "models": ["qwen2.5:14b"],
+    }
+
+
+def test_clarify_then_generate_usage_accumulates_across_both_nodes(monkeypatch):
+    monkeypatch.setattr(asyncio, "sleep", lambda _: _real_sleep(0))
+    clarify_chat = _FakeChat(
+        [_FakeResponse('{"ambiguities": []}', usage_metadata={"input_tokens": 300, "output_tokens": 20})],
+        model="qwen2.5:14b",
+    )
+    monkeypatch.setattr(clarify, "_get_llm", lambda: clarify_chat)
+    after_clarify = asyncio.run(clarify.clarify_node(_new_state()))
+
+    generate_chat = _FakeChat(
+        [
+            _FakeResponse(
+                '[{"epic_title": "E", "user_story": "U", "acceptance_criteria": [], '
+                '"dev_tasks": [], "unit_test_tasks": []}]',
+                usage_metadata={"input_tokens": 1000, "output_tokens": 200},
+            )
+        ],
+        model="qwen2.5:14b",
+    )
+    monkeypatch.setattr(generate, "_get_llm", lambda: generate_chat)
+    after_generate = asyncio.run(generate.generate_node(_new_state(usage=after_clarify["usage"])))
+
+    usage = after_generate["usage"]
+    assert set(usage["by_node"]) == {"clarify_node", "generate_node"}
+    assert usage["total_tokens"] == 320 + 1200
+    assert usage["calls"] == 2

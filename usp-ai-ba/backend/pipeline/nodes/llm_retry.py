@@ -42,6 +42,28 @@ T = TypeVar("T")
 MAX_ATTEMPTS = 3
 BASE_DELAY_SECONDS = 1.0
 
+UsageCallback = Callable[[dict], None]
+
+
+def _report_usage(response, call_llm: BaseChatModel, on_usage: UsageCallback | None) -> None:
+    """Real tokens are spent the moment the provider returns a response, so
+    this runs before the truncation check below -- a truncated or otherwise
+    rejected response still cost real money and should still count toward
+    the job's usage total, not just the one attempt that eventually parses
+    cleanly."""
+    if on_usage is None:
+        return
+    usage = getattr(response, "usage_metadata", None)
+    if not usage:
+        return
+    on_usage(
+        {
+            "input_tokens": usage.get("input_tokens") or 0,
+            "output_tokens": usage.get("output_tokens") or 0,
+            "model": getattr(call_llm, "model", None),
+        }
+    )
+
 
 def _is_truncated(response) -> bool:
     """True when the model's own completion signal says the response was cut
@@ -67,11 +89,15 @@ async def invoke_and_parse_with_retry(
     base_seed: int,
     node_name: str,
     supports_seed: bool = True,
+    on_usage: UsageCallback | None = None,
 ) -> T:
     """Invoke `llm`, extract its text, and parse it -- retrying on any failure.
 
     Raises the last exception if every attempt fails, so callers keep their
-    existing fail-open / fail-error handling unchanged.
+    existing fail-open / fail-error handling unchanged. `on_usage`, when
+    given, is called once per attempt that gets a response at all (see
+    _report_usage) -- including attempts later rejected as truncated or
+    unparseable, since those still spent real tokens.
     """
     last_exc: Exception | None = None
     for attempt in range(1, MAX_ATTEMPTS + 1):
@@ -81,6 +107,7 @@ async def invoke_and_parse_with_retry(
             call_llm = llm.model_copy(update={"seed": base_seed + attempt - 1})
         try:
             response = await call_llm.ainvoke(messages)
+            _report_usage(response, call_llm, on_usage)
             if _is_truncated(response):
                 raise RuntimeError(
                     f"{node_name}: LLM response was truncated by the output token "
@@ -112,6 +139,7 @@ async def invoke_and_parse_with_fallback(
     base_seed: int,
     node_name: str,
     supports_seed: bool = True,
+    on_usage: UsageCallback | None = None,
 ) -> T:
     """Runs invoke_and_parse_with_retry against `llm` (its own full
     MAX_ATTEMPTS-attempt cycle); if that's completely exhausted and a
@@ -126,7 +154,14 @@ async def invoke_and_parse_with_fallback(
     fallback_llm was given) if that also fails."""
     try:
         return await invoke_and_parse_with_retry(
-            llm, messages, parse, extract_text, base_seed=base_seed, node_name=node_name, supports_seed=supports_seed
+            llm,
+            messages,
+            parse,
+            extract_text,
+            base_seed=base_seed,
+            node_name=node_name,
+            supports_seed=supports_seed,
+            on_usage=on_usage,
         )
     except Exception as primary_exc:  # noqa: BLE001 - re-raised below if no fallback applies
         if fallback_llm is None:
@@ -144,4 +179,5 @@ async def invoke_and_parse_with_fallback(
             extract_text,
             base_seed=base_seed,
             node_name=f"{node_name} (ollama fallback)",
+            on_usage=on_usage,
         )
