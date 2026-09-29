@@ -118,10 +118,37 @@ class RagService:
 
 
 def chroma_http_client(settings: Settings) -> Callable[[], ChromaClient]:
+    """Standalone-DevCrew wiring: a separate chromadb-client -> remote Chroma
+    HTTP server (settings.chroma_host/chroma_port), matching its own
+    docker-compose.yml's dedicated chromadb service. Kept for anyone running
+    devcrew/backend/app/main.py's standalone create_app() outside the merge
+    (see the merge plan's Phase 10 note); the merged app uses
+    chroma_embedded_client below instead."""
+
     def factory() -> ChromaClient:
         import chromadb
 
         client = chromadb.HttpClient(host=settings.chroma_host, port=settings.chroma_port)
         return cast(ChromaClient, client)
+
+    return factory
+
+
+def chroma_embedded_client() -> Callable[[], ChromaClient]:
+    """Merged-app wiring (see the merge plan's Phase 4): reuses StoryForge's
+    own already-installed chromadb package and its single embedded, on-disk
+    chromadb.PersistentClient (ingestion/chroma_client.py's get_chroma_client(),
+    persisted at settings.CHROMA_PERSIST_PATH) instead of DevCrew's original
+    remote chromadb-client -> separate Chroma HTTP server. Same underlying
+    library (both resolve to the same 1.5.9, confirmed during the port), same
+    process, same on-disk store -- DevCrew's per-run collections
+    (run_<run_id>) simply live alongside StoryForge's own sf_codebase/
+    sf_jpa_entities/sf_user_manuals collections in that one store, with no
+    naming collision (different prefixes) and no separate service to run."""
+
+    def factory() -> ChromaClient:
+        from ingestion.chroma_client import get_chroma_client
+
+        return cast(ChromaClient, get_chroma_client())
 
     return factory

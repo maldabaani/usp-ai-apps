@@ -25,6 +25,7 @@ from devcrew.tools.catalog import read_rules_tool
 from devcrew.tools.human import ask_human_tool
 from devcrew.tools.sandbox import run_command_tool
 from devcrew.tools.search import search_codebase_tool
+from devcrew.tools.storyforge_rag import retrieve_storyforge_context_tool
 from devcrew.tools.workspace import list_dir_tool, read_file_tool, write_file_tool
 
 NODE = "developer"
@@ -53,6 +54,8 @@ def developer_tools(deps: GraphDeps, ctx: TaskCtx, budget: QuestionBudget) -> li
         )
     if deps.rag is not None:
         tools.append(search_codebase_tool(deps.rag, ctx.run_id))
+    if deps.storyforge_retrieval is not None:
+        tools.append(retrieve_storyforge_context_tool(deps.storyforge_retrieval))
     return tools
 
 

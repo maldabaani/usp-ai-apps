@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
+
 from devcrew.config import Settings
 from devcrew.db.steering import InMemorySteeringStore, SteeringStore
 from devcrew.events.bus import EventBus
@@ -12,7 +14,7 @@ from devcrew.llm.client import LLMGateway
 from devcrew.llm.models_config import load_models_config
 from devcrew.prompts import PromptLibrary
 from devcrew.rag.embeddings import Embedder
-from devcrew.rag.service import RagService, chroma_http_client
+from devcrew.rag.service import RagService, chroma_embedded_client
 from devcrew.sandbox.docker_preview import DockerPreviewBackend
 from devcrew.sandbox.docker_runner import DockerSandboxRunner
 from devcrew.sandbox.preview import PreviewManager
@@ -29,6 +31,17 @@ def build_llm(settings: Settings) -> LLMGateway:
     )
 
 
+async def _storyforge_retrieval(query: str, top_k: int) -> dict[str, list[dict]]:
+    # Deferred import, same reasoning as chroma_embedded_client() above:
+    # devcrew/ must stay importable standalone (outside the merge, where
+    # StoryForge's ingestion package doesn't exist on the path) -- this
+    # only actually runs if an agent calls the retrieve_storyforge_context
+    # tool, which only happens inside the merged app.
+    from ingestion.retrieval import retrieve_all_collections
+
+    return await retrieve_all_collections(query, top_k)
+
+
 def build_deps(
     settings: Settings,
     events: EventBus,
@@ -38,6 +51,9 @@ def build_deps(
     rag: RagService | None = None,
     github: GitHubDelivery | None = None,
     steering: SteeringStore | None = None,
+    storyforge_retrieval: (
+        Callable[[str, int], Awaitable[dict[str, list[dict]]]] | None
+    ) = _storyforge_retrieval,
 ) -> GraphDeps:
     preview = None
     if sandbox is None and settings.sandbox_enabled:
@@ -48,7 +64,7 @@ def build_deps(
     llm = llm or build_llm(settings)
     if rag is None and settings.rag_enabled:
         rag = RagService(
-            chroma_http_client(settings),
+            chroma_embedded_client(),
             Embedder(
                 llm.embeddings(),
                 model_name=llm.models.embeddings.model,
@@ -75,4 +91,5 @@ def build_deps(
         github=github,
         steering=steering if steering is not None else InMemorySteeringStore(),
         preview=preview,
+        storyforge_retrieval=storyforge_retrieval,
     )

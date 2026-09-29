@@ -31,6 +31,7 @@ from devcrew.llm.tokens import tail_text
 from devcrew.tools.base import ToolError, ToolSpec
 from devcrew.tools.sandbox import run_command_tool
 from devcrew.tools.search import search_codebase_tool
+from devcrew.tools.storyforge_rag import retrieve_storyforge_context_tool
 from devcrew.tools.workspace import is_test_path, read_file_tool, write_file_tool
 
 NODE = "qa"
@@ -153,6 +154,8 @@ def qa_tools(deps: GraphDeps, ctx: TaskCtx) -> list[ToolSpec]:
         )
     if deps.rag is not None:
         tools.append(search_codebase_tool(deps.rag, ctx.run_id))
+    if deps.storyforge_retrieval is not None:
+        tools.append(retrieve_storyforge_context_tool(deps.storyforge_retrieval))
     return tools
 
 

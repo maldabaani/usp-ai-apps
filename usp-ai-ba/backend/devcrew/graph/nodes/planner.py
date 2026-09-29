@@ -25,6 +25,7 @@ from devcrew.llm.structured import StructuredOutputError, generate_structured
 from devcrew.tools.base import ToolSpec
 from devcrew.tools.human import ask_human_tool
 from devcrew.tools.search import search_codebase_tool
+from devcrew.tools.storyforge_rag import retrieve_storyforge_context_tool
 from devcrew.tools.workspace import Workspace, is_test_path, read_file_tool
 
 NODE = "planner"
@@ -37,6 +38,8 @@ def repo_tools(deps: GraphDeps, state: dict[str, Any]) -> list[ToolSpec]:
     tools = [read_file_tool(Workspace(Path(state["workspace"])))]
     if deps.rag is not None:
         tools.append(search_codebase_tool(deps.rag, state["run_id"]))
+    if deps.storyforge_retrieval is not None:
+        tools.append(retrieve_storyforge_context_tool(deps.storyforge_retrieval))
     return tools
 
 

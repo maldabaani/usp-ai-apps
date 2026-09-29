@@ -54,6 +54,12 @@ class GraphDeps:
     sandbox: Sandbox | None = None  # None: commands/tests are not executed
     rag: RagService | None = None  # None: no retrieval
     github: GitHubDelivery | None = None  # None: no push / PR (benchmarks)
+    # StoryForge's own persistent, already-ingested corpus (manuals/codebase/
+    # entities) -- ingestion.retrieval.retrieve_all_collections when running
+    # inside the merged app (see graph/factory.py::build_deps), None when
+    # running devcrew/backend standalone. See tools/storyforge_rag.py and
+    # the merge plan's Phase 4.
+    storyforge_retrieval: Callable[[str, int], Awaitable[dict[str, list[dict]]]] | None = None
     # Phase 13: chat messages and the pause flag (Postgres in production)
     steering: SteeringStore = field(default_factory=InMemorySteeringStore)
     # Phase 16: live preview of the generated app (None: sandbox or preview disabled)
