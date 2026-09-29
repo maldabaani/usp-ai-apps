@@ -1,0 +1,49 @@
+<div class="dc-canvas-scroll">
+  <div class="dc-canvas-inner" [style.width.px]="render.width" [style.height.px]="render.height">
+    <svg class="dc-canvas-svg" [attr.width]="render.width" [attr.height]="render.height">
+      <defs>
+        <pattern id="dc-grid-dots" width="18" height="18" patternUnits="userSpaceOnUse">
+          <circle cx="1.5" cy="1.5" r="1.5" fill="#2a2d3d" />
+        </pattern>
+      </defs>
+      <rect width="100%" height="100%" fill="url(#dc-grid-dots)" />
+
+      <path
+        *ngFor="let p of render.flowPaths"
+        [attr.d]="p.d"
+        class="dc-edge-flow"
+        [class.dc-edge-active]="p.active"
+      />
+
+      <ng-container *ngFor="let p of render.loopPaths">
+        <path [attr.d]="p.d" class="dc-edge-loop" />
+        <text *ngIf="p.label" [attr.x]="p.labelX" [attr.y]="p.labelY + 4" class="dc-edge-label" text-anchor="middle">
+          {{ p.label }}
+        </text>
+      </ng-container>
+    </svg>
+
+    <div
+      class="dc-node-card"
+      *ngFor="let p of render.positioned"
+      [style.left.px]="p.x + canvasPadding"
+      [style.top.px]="p.y + canvasPadding"
+      [style.width.px]="nodeWidth"
+      [style.height.px]="nodeHeight"
+      [class]="'status-' + p.node.status"
+      [class.dc-node-selected]="p.node.id === selectedId"
+      [class.dc-node-attention]="attention.includes(p.node.id)"
+      (click)="onSelect(p.node.id)"
+    >
+      <div class="dc-node-bar"></div>
+      <div class="dc-node-body">
+        <div class="dc-node-top">
+          <span class="dc-node-label">{{ p.node.label }}</span>
+          <span class="dc-node-stack" *ngIf="p.node.stack">{{ p.node.stack }}</span>
+        </div>
+        <span class="dc-node-status-badge">{{ humanizeStatus(p.node.status) }}</span>
+        <span class="dc-node-detail" *ngIf="p.node.detail" [title]="p.node.detail">{{ p.node.detail }}</span>
+      </div>
+    </div>
+  </div>
+</div>

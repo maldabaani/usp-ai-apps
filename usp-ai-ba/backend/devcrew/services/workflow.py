@@ -314,7 +314,9 @@ def build_workflow(
     requirements.status = "done"
     requirements.started_at = requirements.finished_at = created_at
     requirements.detail = f"{len(request):,} characters"
-    if existing:
+    if state.get("storyforge_epic"):
+        requirements.detail += " · from StoryForge epic"
+    elif existing:
         mode = "quick fix" if state.get("mode") == "quick" else "full"
         requirements.detail += f" · {mode} change"
     _apply_repository_and_gates(nodes, state, run_status)
@@ -348,9 +350,14 @@ def _apply_repository_and_gates(
         projects = ", ".join(f"{p['stack']} ({p['path']})" for p in repo.get("projects") or [])
         nodes["prepare_repo"].detail = f"{projects} · base {repo.get('base_branch')}"
     if state.get("target") == "existing" and state.get("mode") == "quick":
+        detail = (
+            "design provided by StoryForge"
+            if state.get("storyforge_epic")
+            else "quick fix: no design step"
+        )
         for sid in ("architect", "approve_design"):
             nodes[sid].status = "skipped"
-            nodes[sid].detail = "quick fix: no design step"
+            nodes[sid].detail = detail
     gates = state.get("gates") or {}
     results = gates.get("results") or []
     if results:

@@ -46,76 +46,68 @@
   color: #1d4ed8;
 }
 
-/* ── Workflow node list ──────────────────────────────────────────────────── */
-.dc-node-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+/* ── Workflow canvas + node detail panel ─────────────────────────────────── */
+.dc-canvas-row {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  gap: 16px;
+  margin-bottom: 20px;
+  align-items: flex-start;
 }
 
-.dc-node {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: 6px;
-  border: 1px solid var(--sf-border);
+.dc-canvas-row app-workflow-canvas {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.dc-node-panel {
+  flex: 0 0 360px;
+  max-height: 480px;
+  overflow-y: auto;
+}
+
+.dc-panel-meta {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--sf-muted);
+}
+
+.dc-detail-list {
+  margin: 10px 0 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
   font-size: 13px;
 }
 
-.dc-node-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  background: var(--sf-border);
-}
-
-.dc-node-done .dc-node-dot {
-  background: var(--sf-success);
-}
-
-.dc-node-failed .dc-node-dot {
-  background: var(--sf-error);
-}
-
-.dc-node-running .dc-node-dot {
-  background: #1d4ed8;
-}
-
-.dc-node-waiting .dc-node-dot {
-  background: #d97706;
-}
-
-.dc-node-skipped .dc-node-dot {
-  background: var(--sf-muted);
-}
-
-.dc-node-label {
+.dc-detail-list dt {
+  color: var(--sf-muted);
   font-weight: 600;
-  flex: 0 0 160px;
 }
 
-.dc-node-status {
-  color: var(--sf-muted);
-  text-transform: capitalize;
-  flex: 0 0 90px;
+.dc-detail-list dd {
+  margin: 0;
+  word-break: break-word;
 }
 
-.dc-node-detail {
-  color: var(--sf-muted);
+.dc-activity-feed {
+  margin: 10px 0 0;
+  padding-left: 16px;
   font-size: 12px;
+  color: var(--sf-muted);
 }
 
-/* ── Gate card ────────────────────────────────────────────────────────────── */
-.dc-gate-card {
-  border-color: #fde047;
-  background: #fefce8;
+@media (max-width: 900px) {
+  .dc-canvas-row {
+    flex-direction: column;
+  }
+
+  .dc-node-panel {
+    flex-basis: auto;
+    width: 100%;
+  }
 }
 
+/* ── Gate form ────────────────────────────────────────────────────────────── */
 .dc-gate-kind {
   color: var(--sf-muted);
   font-size: 13px;

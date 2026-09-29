@@ -9,16 +9,20 @@ import {
   PendingInput,
   RunDetail,
   RunUsage,
+  TaskStateOut,
   Workflow,
+  WorkflowNode,
 } from '../../../services/devcrew.service';
+import { humanizeStatus } from '../../../services/format-status.util';
 import { extractErrorMessage } from '../../../services/http-error.util';
+import { WorkflowCanvasComponent } from './workflow-canvas/workflow-canvas.component';
 
 const POLL_MS = 3000;
 
 @Component({
   selector: 'app-devcrew-run-detail',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, FormsModule, RouterLink, WorkflowCanvasComponent],
   templateUrl: './run-detail.component.html',
   styleUrl: './run-detail.component.css',
 })
@@ -28,6 +32,9 @@ export class RunDetailComponent implements OnInit, OnDestroy {
   workflow: Workflow | null = null;
   messages: MessageOut[] = [];
   usage: RunUsage | null = null;
+
+  selectedNodeId: string | null = null;
+  readonly humanizeStatus = humanizeStatus;
 
   loading = true;
   loadError = '';
@@ -77,7 +84,10 @@ export class RunDetailComponent implements OnInit, OnDestroy {
       },
     });
     this.devCrewService.getWorkflow(this.runId).subscribe({
-      next: (workflow) => (this.workflow = workflow),
+      next: (workflow) => {
+        this.workflow = workflow;
+        this.autoSelectNode(workflow);
+      },
       error: () => {},
     });
     this.devCrewService.listMessages(this.runId).subscribe({
@@ -94,25 +104,47 @@ export class RunDetailComponent implements OnInit, OnDestroy {
     return this.run?.pending?.[0] ?? null;
   }
 
-  get taskList(): { id: string; title: string; stack: string; status: string }[] {
-    if (!this.run) {
-      return [];
+  get selectedNode(): WorkflowNode | null {
+    return this.workflow?.nodes.find((n) => n.id === this.selectedNodeId) ?? null;
+  }
+
+  selectNode(id: string): void {
+    this.selectedNodeId = id;
+  }
+
+  get panelKind(): 'empty' | 'requirements' | 'plan' | 'design' | 'approval' | 'task' | 'generic' {
+    const node = this.selectedNode;
+    if (!node) return 'empty';
+    if (node.id === 'requirements') return 'requirements';
+    if (node.id === 'planner' && this.run?.plan) return 'plan';
+    if (node.id === 'architect' && this.run?.design) return 'design';
+    if (node.kind === 'approval') return 'approval';
+    if (node.kind === 'task') return 'task';
+    return 'generic';
+  }
+
+  get selectedTask(): TaskStateOut | null {
+    const node = this.selectedNode;
+    if (!node?.task_id || !this.run) {
+      return null;
     }
-    const planTasks = this.run.plan?.tasks ?? [];
-    if (planTasks.length) {
-      return planTasks.map((t) => ({
-        id: t.id,
-        title: t.title,
-        stack: t.stack,
-        status: this.run!.tasks[t.id]?.status ?? 'pending',
-      }));
+    return this.run.tasks[node.task_id] ?? null;
+  }
+
+  get selectedNodeNeedsGate(): boolean {
+    const node = this.selectedNode;
+    return !!node && !!this.workflow?.attention.includes(node.id) && !!this.pendingGate;
+  }
+
+  private autoSelectNode(workflow: Workflow): void {
+    const stillPresent = workflow.nodes.some((n) => n.id === this.selectedNodeId);
+    if (this.selectedNodeId && stillPresent) {
+      return;
     }
-    return Object.values(this.run.tasks).map((t) => ({
-      id: t.id,
-      title: t.id,
-      stack: '',
-      status: t.status,
-    }));
+    const attention = workflow.attention[0];
+    const running = workflow.nodes.find((n) => n.status === 'running')?.id;
+    const last = workflow.nodes[workflow.nodes.length - 1]?.id;
+    this.selectedNodeId = attention ?? running ?? last ?? null;
   }
 
   resolveGate(action: 'approve' | 'reject'): void {
@@ -183,14 +215,5 @@ export class RunDetailComponent implements OnInit, OnDestroy {
     if (status === 'completed' || status === 'done') return 'dc-status-done';
     if (status === 'failed' || status === 'cancelled') return 'dc-status-error';
     return 'dc-status-active';
-  }
-
-  nodeStatusClass(status: string): string {
-    if (status === 'done') return 'dc-node-done';
-    if (status === 'failed') return 'dc-node-failed';
-    if (status === 'running') return 'dc-node-running';
-    if (status === 'waiting') return 'dc-node-waiting';
-    if (status === 'skipped') return 'dc-node-skipped';
-    return 'dc-node-pending';
   }
 }

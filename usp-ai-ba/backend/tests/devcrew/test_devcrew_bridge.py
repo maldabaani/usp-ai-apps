@@ -21,6 +21,7 @@ from pathlib import Path
 import pytest
 
 from devcrew.graph.state import Plan, dump
+from devcrew.services.workflow import build_workflow
 from pipeline.devcrew_bridge import UnsupportedStackError, build_design, build_plan
 from tests.devcrew.test_existing_repo import RUN, existing_harness
 
@@ -203,3 +204,51 @@ async def test_bridged_run_design_reflects_storyforges_own_content(tmp_path: Pat
     round_tripped_plan = Plan.model_validate(state["plan"])  # survives unchanged through the graph
     assert round_tripped_plan.tasks[0].id == "T1"
     assert "discount" in (state["design"]["design_doc"] or "").lower()
+
+
+async def test_bridged_run_workflow_detail_is_not_mislabeled_quick_fix(tmp_path: Path) -> None:
+    """Regression test: workflow.py used to mark a bridged run's Architect/Design
+    approval/Requirements nodes with the same "quick fix: no design step" text a
+    genuine quick-fix run gets, even though a bridged run *does* have a real,
+    StoryForge-authored design (see build_bridged_run_design_reflects_storyforges_own_content
+    above) -- both cases set target="existing", mode="quick", and only
+    storyforge_epic tells them apart. The workflow UI should say so, not imply
+    there's no design at all."""
+    h, gh, sha = existing_harness(tmp_path)
+    h.brain.responders["planner"] = lambda call: (_ for _ in ()).throw(
+        AssertionError("planner must not be called")
+    )
+    h.brain.responders["architect"] = lambda call: (_ for _ in ()).throw(
+        AssertionError("architect must not be called")
+    )
+    plan = build_plan(STORY)
+
+    await h.driver.start(
+        RUN,
+        "Add a discount field to todos",
+        "acme/shop",
+        target="existing",
+        mode="quick",
+        plan=dump(plan),
+        storyforge_epic=STORY,
+    )
+
+    state = await h.driver.state(RUN)
+    events = await h.events(RUN)
+    wf = build_workflow(
+        run_id=RUN,
+        status=state["status"],
+        request=state["request"],
+        created_at=None,
+        state=state,
+        events=events,
+        pending=await h.driver.pending_interrupts(RUN),
+        pr_url=None,
+        max_dev_iterations=3,
+    )
+    nodes = {n.id: n for n in wf.nodes}
+    assert nodes["architect"].status == "skipped" and nodes["approve_design"].status == "skipped"
+    assert "StoryForge" in (nodes["architect"].detail or "")
+    assert "StoryForge" in (nodes["approve_design"].detail or "")
+    assert "quick fix" not in (nodes["architect"].detail or "")
+    assert "StoryForge" in (nodes["requirements"].detail or "")

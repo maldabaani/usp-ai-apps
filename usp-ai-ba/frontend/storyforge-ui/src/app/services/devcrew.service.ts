@@ -92,23 +92,47 @@ export interface PendingInput {
   error: string | null;
 }
 
+export type NodeKind = 'input' | 'agent' | 'approval' | 'system' | 'task' | 'output';
+export type NodeStatus = 'pending' | 'running' | 'waiting' | 'done' | 'failed' | 'skipped';
+
+export interface WorkflowActivity {
+  at: string;
+  kind: string;
+  text: string;
+  ok: boolean | null;
+}
+
 export interface WorkflowNode {
   id: string;
-  kind: string;
+  kind: NodeKind;
   label: string;
-  status: string;
+  status: NodeStatus;
   detail: string | null;
   step: string | null;
   task_id: string | null;
   stack: string | null;
+  started_at: string | null;
+  finished_at: string | null;
   runs: number;
+  counters: Record<string, number>;
+  pending_interrupt_ids: string[];
+  activity: WorkflowActivity[];
+}
+
+export interface WorkflowEdge {
+  id: string;
+  source: string;
+  target: string;
+  kind: 'flow' | 'loop';
+  active: boolean;
+  label: string | null;
 }
 
 export interface Workflow {
   run_id: string;
   status: string;
   nodes: WorkflowNode[];
-  edges: { id: string; source: string; target: string; active: boolean }[];
+  edges: WorkflowEdge[];
   attention: string[];
 }
 

@@ -9,7 +9,7 @@
         <h1 class="sf-status-title">{{ run.request }}</h1>
         <p class="sf-status-meta">
           {{ run.repo_target }}
-          <span class="dc-status-badge" [ngClass]="statusClass(run.status)">{{ run.status }}</span>
+          <span class="dc-status-badge" [ngClass]="statusClass(run.status)">{{ humanizeStatus(run.status) }}</span>
         </p>
       </div>
       <a *ngIf="run.pr_url" class="sf-btn sf-btn-secondary" [href]="run.pr_url" target="_blank">
@@ -28,87 +28,143 @@
     <p class="sf-error-text" *ngIf="run.error">{{ run.error }}</p>
     <p class="sf-error-text" *ngIf="retryError">{{ retryError }}</p>
 
-    <!-- Workflow -->
-    <div class="sf-card dc-section" *ngIf="workflow">
-      <h2 class="dc-section-title">Workflow</h2>
-      <ul class="dc-node-list">
-        <li class="dc-node" *ngFor="let node of workflow.nodes" [ngClass]="nodeStatusClass(node.status)">
-          <span class="dc-node-dot"></span>
-          <span class="dc-node-label">{{ node.label }}</span>
-          <span class="dc-node-status">{{ node.status }}</span>
-          <span class="dc-node-detail" *ngIf="node.detail">{{ node.detail }}</span>
-        </li>
-      </ul>
-    </div>
+    <!-- Workflow canvas + node detail panel -->
+    <div class="dc-canvas-row" *ngIf="workflow; else workflowLoading">
+      <app-workflow-canvas
+        [nodes]="workflow.nodes"
+        [edges]="workflow.edges"
+        [attention]="workflow.attention"
+        [selectedId]="selectedNodeId"
+        (select)="selectNode($event)"
+      ></app-workflow-canvas>
 
-    <!-- Pending gate -->
-    <div class="sf-card dc-section dc-gate-card" *ngIf="pendingGate as gate">
-      <h2 class="dc-section-title">Action needed: {{ gate.title }}</h2>
-      <p class="dc-gate-kind">{{ gate.kind }}</p>
-      <pre class="dc-gate-data" *ngIf="gate.data && (gate.data | json) !== '{}'">{{ gate.data | json }}</pre>
-      <textarea
-        class="sf-textarea"
-        rows="3"
-        placeholder="Optional feedback for this gate"
-        [(ngModel)]="gateFeedback"
-        name="gateFeedback"
-      ></textarea>
-      <p class="sf-error-text" *ngIf="gateError">{{ gateError }}</p>
-      <div class="dc-gate-actions">
-        <button
-          class="sf-btn"
-          [disabled]="gateBusy || !gate.allowed_actions.includes('approve')"
-          (click)="resolveGate('approve')"
-        >
-          Approve
-        </button>
-        <button
-          class="sf-btn sf-btn-danger"
-          [disabled]="gateBusy || !gate.allowed_actions.includes('reject')"
-          (click)="resolveGate('reject')"
-        >
-          Reject
-        </button>
+      <div class="sf-card dc-node-panel" [ngSwitch]="panelKind">
+        <p class="dc-empty" *ngSwitchCase="'empty'">Select a node to see its details.</p>
+
+        <!-- Requirements -->
+        <div *ngSwitchCase="'requirements'">
+          <h2 class="dc-section-title">Requirements</h2>
+          <p class="dc-plan-summary">{{ run.request }}</p>
+          <p class="dc-panel-meta">
+            {{ run.repo_target }} · {{ run.target }} · {{ run.mode }}
+            <span *ngIf="run.base_branch"> · base {{ run.base_branch }}</span>
+          </p>
+        </div>
+
+        <!-- Plan -->
+        <div *ngSwitchCase="'plan'">
+          <h2 class="dc-section-title">Plan</h2>
+          <p class="dc-plan-summary">{{ run.plan?.summary }}</p>
+        </div>
+
+        <!-- Design -->
+        <div *ngSwitchCase="'design'">
+          <h2 class="dc-section-title">Design</h2>
+          <ul class="dc-decisions" *ngIf="run.design?.key_decisions?.length">
+            <li *ngFor="let d of run.design?.key_decisions">{{ d }}</li>
+          </ul>
+          <pre class="dc-design-doc">{{ run.design?.design_doc }}</pre>
+        </div>
+
+        <!-- Approval node: gate form when pending, otherwise resolved detail -->
+        <div *ngSwitchCase="'approval'">
+          <ng-container *ngIf="selectedNodeNeedsGate">
+            <ng-container *ngIf="pendingGate as gate">
+              <h2 class="dc-section-title">Action needed: {{ gate.title }}</h2>
+              <p class="dc-gate-kind">{{ gate.kind }}</p>
+              <pre class="dc-gate-data" *ngIf="gate.data && (gate.data | json) !== '{}'">{{ gate.data | json }}</pre>
+              <textarea
+                class="sf-textarea"
+                rows="3"
+                placeholder="Optional feedback for this gate"
+                [(ngModel)]="gateFeedback"
+                name="gateFeedback"
+              ></textarea>
+              <p class="sf-error-text" *ngIf="gateError">{{ gateError }}</p>
+              <div class="dc-gate-actions">
+                <button
+                  class="sf-btn"
+                  [disabled]="gateBusy || !gate.allowed_actions.includes('approve')"
+                  (click)="resolveGate('approve')"
+                >
+                  Approve
+                </button>
+                <button
+                  class="sf-btn sf-btn-danger"
+                  [disabled]="gateBusy || !gate.allowed_actions.includes('reject')"
+                  (click)="resolveGate('reject')"
+                >
+                  Reject
+                </button>
+              </div>
+            </ng-container>
+          </ng-container>
+          <ng-container *ngIf="!selectedNodeNeedsGate">
+            <ng-container *ngIf="selectedNode as node">
+              <h2 class="dc-section-title">{{ node.label }}</h2>
+              <span class="dc-status-badge" [ngClass]="statusClass(node.status)">
+                {{ humanizeStatus(node.status) }}
+              </span>
+              <p class="dc-panel-meta" *ngIf="node.detail">{{ node.detail }}</p>
+            </ng-container>
+          </ng-container>
+        </div>
+
+        <!-- Task node -->
+        <div *ngSwitchCase="'task'">
+          <h2 class="dc-section-title">{{ selectedNode?.label }}</h2>
+          <ng-container *ngIf="selectedTask as task">
+            <span class="dc-status-badge" [ngClass]="statusClass(task.status)">
+              {{ humanizeStatus(task.status) }}
+            </span>
+            <dl class="dc-detail-list">
+              <ng-container *ngIf="task.branch">
+                <dt>Branch</dt>
+                <dd>{{ task.branch }}</dd>
+              </ng-container>
+              <ng-container *ngIf="task.commit">
+                <dt>Commit</dt>
+                <dd>{{ task.commit }}</dd>
+              </ng-container>
+              <dt>Iterations</dt>
+              <dd>{{ task.iterations }}</dd>
+              <ng-container *ngIf="task.wave !== null">
+                <dt>Wave / lane</dt>
+                <dd>{{ task.wave }} / {{ task.lane }}</dd>
+              </ng-container>
+              <ng-container *ngIf="task.feedback">
+                <dt>Feedback</dt>
+                <dd>{{ task.feedback }}</dd>
+              </ng-container>
+            </dl>
+            <p class="sf-error-text" *ngIf="task.error">{{ task.error }}</p>
+          </ng-container>
+        </div>
+
+        <!-- Generic fallback: prepare_repo, scaffold, integration, gates, delivery, follow-up nodes -->
+        <div *ngSwitchDefault>
+          <ng-container *ngIf="selectedNode as node">
+            <h2 class="dc-section-title">{{ node.label }}</h2>
+            <span class="dc-status-badge" [ngClass]="statusClass(node.status)">
+              {{ humanizeStatus(node.status) }}
+            </span>
+            <p class="dc-panel-meta" *ngIf="node.detail">{{ node.detail }}</p>
+            <dl class="dc-detail-list" *ngIf="(node.counters | keyvalue)?.length">
+              <ng-container *ngFor="let c of node.counters | keyvalue">
+                <dt>{{ c.key }}</dt>
+                <dd>{{ c.value }}</dd>
+              </ng-container>
+            </dl>
+            <ul class="dc-activity-feed" *ngIf="node.activity.length">
+              <li *ngFor="let a of node.activity">{{ a.text }}</li>
+            </ul>
+          </ng-container>
+        </div>
       </div>
     </div>
-
-    <!-- Plan -->
-    <div class="sf-card dc-section" *ngIf="run.plan as plan">
-      <h2 class="dc-section-title">Plan</h2>
-      <p class="dc-plan-summary">{{ plan.summary }}</p>
-    </div>
-
-    <!-- Design -->
-    <div class="sf-card dc-section" *ngIf="run.design as design">
-      <h2 class="dc-section-title">Design</h2>
-      <ul class="dc-decisions" *ngIf="design.key_decisions?.length">
-        <li *ngFor="let d of design.key_decisions">{{ d }}</li>
-      </ul>
-      <pre class="dc-design-doc">{{ design.design_doc }}</pre>
-    </div>
-
-    <!-- Tasks -->
-    <div class="sf-card dc-section" *ngIf="taskList.length">
-      <h2 class="dc-section-title">Tasks</h2>
-      <table class="sf-table">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Title</th>
-            <th>Stack</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr *ngFor="let task of taskList">
-            <td>{{ task.id }}</td>
-            <td>{{ task.title }}</td>
-            <td>{{ task.stack }}</td>
-            <td><span class="dc-status-badge" [ngClass]="statusClass(task.status)">{{ task.status }}</span></td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    <ng-template #workflowLoading>
+      <p class="dc-empty">Loading workflow…</p>
+    </ng-template>
 
     <!-- Usage -->
     <div class="sf-card dc-section" *ngIf="usage">

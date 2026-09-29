@@ -1,0 +1,158 @@
+/* Self-contained dark canvas theme -- local values only, nothing here
+   touches the app's global --sf-* tokens. */
+
+.dc-canvas-scroll {
+  overflow: auto;
+  border-radius: 10px;
+  background: #12131a;
+  height: 480px;
+}
+
+.dc-canvas-inner {
+  position: relative;
+  min-width: 100%;
+  min-height: 100%;
+}
+
+.dc-canvas-svg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.dc-edge-flow {
+  fill: none;
+  stroke: #3f4257;
+  stroke-width: 2;
+}
+
+.dc-edge-active {
+  stroke: #3b82f6;
+  stroke-width: 2.5;
+}
+
+.dc-edge-loop {
+  fill: none;
+  stroke: #d97706;
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+}
+
+.dc-edge-label {
+  fill: #d97706;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.dc-node-card {
+  position: absolute;
+  display: flex;
+  border-radius: 8px;
+  background: #1c1e29;
+  border: 1px solid #2c2f3d;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.dc-node-card:hover {
+  border-color: #4b4f66;
+}
+
+.dc-node-selected {
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.45);
+}
+
+.dc-node-bar {
+  width: 4px;
+  flex-shrink: 0;
+  background: #4b5563;
+}
+
+.status-pending .dc-node-bar {
+  background: #4b5563;
+}
+
+.status-running .dc-node-bar {
+  background: #3b82f6;
+}
+
+.status-waiting .dc-node-bar {
+  background: #eab308;
+}
+
+.status-done .dc-node-bar {
+  background: #22c55e;
+}
+
+.status-failed .dc-node-bar {
+  background: #ef4444;
+}
+
+.status-skipped {
+  opacity: 0.55;
+}
+
+.status-skipped .dc-node-bar {
+  background: #374151;
+}
+
+.dc-node-body {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.dc-node-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.dc-node-label {
+  color: #e4e6ef;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dc-node-stack {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: #8b8fa3;
+  text-transform: uppercase;
+}
+
+.dc-node-status-badge {
+  font-size: 11px;
+  color: #8b8fa3;
+}
+
+.dc-node-detail {
+  font-size: 11px;
+  color: #6b6f85;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@keyframes dc-attention-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.55);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(234, 179, 8, 0);
+  }
+}
+
+.dc-node-attention {
+  animation: dc-attention-pulse 1.8s ease-in-out infinite;
+}
