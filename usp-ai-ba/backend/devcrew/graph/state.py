@@ -545,6 +545,14 @@ class RunState(TypedDict, total=False):
     mode: str  # "full" | "quick" (existing repositories only)
     base_branch: str  # PR base: "main" for new projects, the default branch otherwise
     repo_info: dict[str, Any] | None  # detected projects + repository summary
+    # Merge only (see pipeline/devcrew_bridge.py and the merge plan's Phase 6):
+    # the raw StoryForge epic dict ({epic_title, user_story, acceptance_criteria,
+    # dev_tasks, unit_test_tasks}) a "Send to DevCrew" dispatch pre-seeds this
+    # run with, alongside a pre-built `plan` above. Its presence is what tells
+    # prepare_repo to skip planner/architect and build `design` itself once
+    # repo_info is known, going straight to scaffold. None for every normal,
+    # non-bridged run.
+    storyforge_epic: dict[str, Any] | None
     gate_baseline: dict[str, Any] | None  # coverage / known vulnerabilities on the base branch
     gates: dict[str, Any] | None  # latest GateReport (integration)
     gate_fix_rounds: int

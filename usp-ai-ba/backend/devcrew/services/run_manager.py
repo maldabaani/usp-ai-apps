@@ -101,6 +101,8 @@ class RunManager:
         issue: dict[str, Any] | None = None,
         budget: dict[str, int] | None = None,
         models: dict[str, str] | None = None,
+        plan: dict[str, Any] | None = None,
+        storyforge_epic: dict[str, Any] | None = None,
     ) -> Run:
         run = await self.runs.create(
             request=request, repo_target=repo_target, create_repo=create_repo
@@ -117,6 +119,8 @@ class RunManager:
                 issue=issue,
                 budget=budget,
                 models=models,
+                plan=plan,
+                storyforge_epic=storyforge_epic,
             ),
         )
         return run

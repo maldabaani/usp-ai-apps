@@ -14,7 +14,7 @@ from devcrew.events.types import EventType
 from devcrew.github.delivery import DeliveryError
 from devcrew.graph.nodes.scaffold import workspace_path
 from devcrew.graph.runtime import GraphDeps, NodeFn, reindex
-from devcrew.graph.state import Design, ExistingProject, ModuleContract, Plan, Stack
+from devcrew.graph.state import Design, ExistingProject, ModuleContract, Plan, Stack, dump
 from devcrew.repo.detect import DetectionError, detect_projects, repository_map
 from devcrew.tools.git import GitError, GitRepo
 
@@ -139,6 +139,28 @@ def make_prepare_repo(deps: GraphDeps) -> NodeFn:
                 await deps.emit(
                     run_id, EventType.ERROR, node=NODE, message=f"indexing rules failed: {exc}"
                 )
+        if state.get("plan") and state.get("storyforge_epic"):
+            # Merge only (see pipeline/devcrew_bridge.py and the merge plan's
+            # Phase 6): this run was dispatched from StoryForge's Review page
+            # with a pre-built Plan already in state -- skip planner AND
+            # architect (and both their human-approval gates) entirely,
+            # building the Design here (no LLM call, same no-LLM shape as
+            # quick_design() below) now that repo_info is actually known,
+            # and going straight to scaffold.
+            from pipeline.devcrew_bridge import build_design  # deferred: avoid an import cycle
+
+            plan = Plan.model_validate(state["plan"])
+            design = build_design(info, state["storyforge_epic"], plan)
+            return Command(
+                goto="scaffold",
+                update={
+                    "workspace": str(root),
+                    "base_branch": base,
+                    "repo_info": info,
+                    "design": dump(design),
+                    "status": RunStatus.SCAFFOLDING.value,
+                },
+            )
         return Command(
             goto="planner",
             update={

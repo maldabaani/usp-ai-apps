@@ -188,7 +188,7 @@ def build_graph(
 ) -> CompiledStateGraph[Any, Any, Any, Any]:
     g = StateGraph(RunState)
     nodes: dict[str, tuple[NodeFn, tuple[str, ...]]] = {
-        "prepare_repo": (make_prepare_repo(deps), ("planner", "escalate")),
+        "prepare_repo": (make_prepare_repo(deps), ("planner", "escalate", "scaffold")),
         "planner": (make_planner(deps), ("approve_plan", "ask_human", "coordinator")),
         "approve_plan": (make_approve_plan(deps), ("architect", "planner", "scaffold")),
         "architect": (make_architect(deps), ("approve_design", "ask_human", "coordinator")),
@@ -244,6 +244,8 @@ def initial_state(
     issue: dict[str, Any] | None = None,
     budget: dict[str, int] | None = None,
     models: dict[str, str] | None = None,
+    plan: dict[str, Any] | None = None,
+    storyforge_epic: dict[str, Any] | None = None,
 ) -> RunState:
     existing = target == "existing"
     state = RunState(
@@ -254,6 +256,7 @@ def initial_state(
         target=target,
         mode=mode if existing else "full",
         repo_info=None,
+        storyforge_epic=storyforge_epic,
         gate_baseline=None,
         gates=None,
         gate_fix_rounds=0,
@@ -263,7 +266,7 @@ def initial_state(
         followup_triage=None,
         followup_active=False,
         status=(RunStatus.PREPARING if existing else RunStatus.PLANNING).value,
-        plan=None,
+        plan=plan,
         design=None,
         tasks={},
         qa_log=[],

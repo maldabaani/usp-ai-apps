@@ -86,6 +86,8 @@ class RunDriver:
         issue: dict[str, Any] | None = None,
         budget: dict[str, int] | None = None,
         models: dict[str, str] | None = None,
+        plan: dict[str, Any] | None = None,
+        storyforge_epic: dict[str, Any] | None = None,
     ) -> RunOutcome:
         state = initial_state(
             run_id,
@@ -97,6 +99,8 @@ class RunDriver:
             issue=issue,
             budget=budget,
             models=models,
+            plan=plan,
+            storyforge_epic=storyforge_epic,
         )
         await self._set_status(run_id, RunStatus(state["status"]))
         return await self._drive(run_id, state)
