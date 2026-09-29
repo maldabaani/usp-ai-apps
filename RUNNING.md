@@ -27,13 +27,20 @@ below).
 
 ## Running locally
 
-**Requirements:** Python 3.11+, Node.js 18+, Ollama running locally with
-`nomic-embed-text` (embeddings) and `qwen2.5:14b` (StoryForge's
-clarify/generate nodes, and optionally ingestion's LLM-summary enrichment
-tier if you enable Ollama there — see below) pulled. `ANTHROPIC_API_KEY` is
-required for ingestion's default (Claude) enrichment agent and Ask
-Technical/Business (Claude is the default there too); StoryForge's own
-assessment pipeline doesn't call Claude anywhere.
+**Requirements:** Python 3.12 (raised from 3.11 once DevCrew merged in --
+see below; DevCrew's own dependencies pin `>=3.12,<3.13`), Node.js 18+,
+Ollama running locally with `nomic-embed-text` (embeddings) and
+`qwen2.5:14b` (StoryForge's clarify/generate nodes, and optionally
+ingestion's LLM-summary enrichment tier if you enable Ollama there — see
+below) pulled. `ANTHROPIC_API_KEY` is required for ingestion's default
+(Claude) enrichment agent and Ask Technical/Business (Claude is the
+default there too); StoryForge's own assessment pipeline doesn't call
+Claude anywhere -- **neither does DevCrew's**: its Planner/Architect/
+Developer/Reviewer/QA agents are hard-locked to local Ollama by design
+(paired with Docker sandboxing and deterministic quality gates, since
+these agents write and execute real code), sharing the same
+`qwen2.5:14b` default as StoryForge's own nodes -- pulling it once covers
+both. `ANTHROPIC_API_KEY` is never read anywhere in `devcrew/`.
 
 **Fastest path:** run `./dev-up.sh` from the repo root (after the one-time
 setup below). Ctrl+C stops both processes.

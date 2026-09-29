@@ -172,7 +172,7 @@ frontend/storyforge-ui/
 
 ## Prerequisites
 
-- Python 3.11+
+- Python 3.12 (raised from 3.11 once DevCrew merged in -- see RUNNING.md)
 - Node.js 18+ and npm (for the Angular frontend)
 - Node.js (separately) for the Azure DevOps MCP server process the backend spawns over stdio
 - [Ollama](https://ollama.com) running locally with an embedding model pulled (default: `nomic-embed-text`) and a chat model pulled for clarify/generate (default: `qwen2.5:14b`)
