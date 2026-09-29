@@ -75,7 +75,7 @@ npm install
 npm start                   # ng serve -> http://localhost:4200
 ```
 
-Open **http://localhost:4200**. The landing page has four cards:
+Open **http://localhost:4200**. The landing page has five cards:
 
 - **AI Business Analyst** — turns an SDD PDF into an Epic → User Story →
   Dev/Unit-Test Task hierarchy (local Ollama model + RAG over ChromaDB),
@@ -85,6 +85,14 @@ Open **http://localhost:4200**. The landing page has four cards:
   shared corpus (`/ingestion`).
 - **Ask Technical** / **Ask Business** — standing Q&A pages over that same
   corpus, for the dev team and business team respectively.
+- **DevCrew Runs** — the multi-agent Planner/Architect/Developer/Reviewer/QA
+  team's own run list and live workflow view. Runs get here two ways: an
+  epic dispatched from an assessment's Status page via **Send to DevCrew**
+  (skips Planner/Architect, starts straight at Developer -- the normal
+  path), or a free-text run created directly against `POST
+  /api/devcrew/runs` (full Planner → Architect flow, for ad hoc requests
+  not tied to a StoryForge assessment). Either way, DevCrew needs Postgres
+  and a reachable Docker daemon -- see "DevCrew requirements" below.
 
 ### 3. One-time ingestion (before first assessment)
 
@@ -136,6 +144,34 @@ serve`) are worth tuning for throughput:
 
 ---
 
+## DevCrew requirements
+
+DevCrew (the multi-agent Planner/Architect/Developer/Reviewer/QA pipeline,
+mounted under `/api/devcrew`) needs two things StoryForge's own features
+don't:
+
+- **Postgres** for its own `runs`/`run_events`/`watched_repos`/
+  `issue_runs`/`run_messages` tables (`devcrew_alembic/` migrations; keep
+  this separate from StoryForge's own SQLite job checkpoints -- see
+  `CLAUDE.md`'s "Job registries" note). Point `DEVCREW_DATABASE_URL` at it
+  (`.env`), or use the `devcrew-postgres` Compose service below.
+- **A reachable Docker daemon** -- each Developer task runs inside its own
+  sandboxed, network-isolated container (`network_mode=none`, `cap_drop:
+  ALL`, read-only rootfs), so DevCrew needs `/var/run/docker.sock` (or
+  equivalent) reachable from wherever the backend runs.
+
+`./dev-up.sh` checks both at startup and warns (doesn't fail) if either is
+missing -- StoryForge's own pages keep working either way, but DevCrew's
+routes and "Send to DevCrew" won't until both are up. `GET
+/api/devcrew/health` reports the live status of Postgres, Docker, Ollama,
+the sandbox images, and the GitHub token, if you need to check by hand.
+
+GitHub PR delivery (DevCrew's final step) also needs `DEVCREW_GITHUB_TOKEN`
+set to a PAT with `repo` scope -- optional until you actually want a run to
+open a real pull request.
+
+---
+
 ## Unified deployment (Docker Compose)
 
 `storyforge-ui`'s landing page ("/") has the same cards described above. In
@@ -170,3 +206,13 @@ Data persistence: ChromaDB, the job registries, uploads/exports, and
 ingestion's enrichment manifests are all written under `/data` inside the
 container, backed by the `storyforge-data` named Docker volume — it
 survives `docker compose down` (but not `docker compose down -v`).
+
+DevCrew's own infra comes up automatically with this stack: `docker
+compose up` also starts `devcrew-postgres` (data in the `devcrew-pgdata`
+volume) and mounts the **host's Docker socket** into `storyforge-backend`
+(so DevCrew can launch its own sandboxed task containers as siblings, not
+nested inside the backend's container) plus a `devcrew-workspaces` volume
+for its per-run git worktrees. Mounting the host socket is a real trust
+boundary — the backend container can start other containers on the host —
+accepted as part of the DevCrew merge; don't run this compose stack
+somewhere that boundary isn't acceptable.
