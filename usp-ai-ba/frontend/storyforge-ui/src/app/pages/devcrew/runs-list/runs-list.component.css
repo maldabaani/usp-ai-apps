@@ -1,0 +1,41 @@
+.dc-intro {
+  color: var(--sf-muted);
+  font-size: 13px;
+  margin: 0 0 20px;
+  max-width: 720px;
+}
+
+.dc-empty {
+  color: var(--sf-muted);
+  font-size: 14px;
+  margin: 0;
+}
+
+.dc-status-badge {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 10px;
+  text-transform: capitalize;
+}
+
+.dc-status-waiting {
+  background: #fef9c3;
+  color: #92620a;
+}
+
+.dc-status-done {
+  background: #dcfce7;
+  color: var(--sf-success);
+}
+
+.dc-status-error {
+  background: #fee2e2;
+  color: var(--sf-error);
+}
+
+.dc-status-active {
+  background: #dbeafe;
+  color: #1d4ed8;
+}

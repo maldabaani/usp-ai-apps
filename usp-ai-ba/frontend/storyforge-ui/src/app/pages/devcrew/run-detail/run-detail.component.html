@@ -1,0 +1,161 @@
+<div class="sf-page">
+  <a routerLink="/devcrew/runs" class="sf-back-link">← Back to DevCrew runs</a>
+
+  <p class="sf-error-text" *ngIf="loadError">{{ loadError }}</p>
+
+  <ng-container *ngIf="run">
+    <div class="sf-status-header">
+      <div>
+        <h1 class="sf-status-title">{{ run.request }}</h1>
+        <p class="sf-status-meta">
+          {{ run.repo_target }}
+          <span class="dc-status-badge" [ngClass]="statusClass(run.status)">{{ run.status }}</span>
+        </p>
+      </div>
+      <a *ngIf="run.pr_url" class="sf-btn sf-btn-secondary" [href]="run.pr_url" target="_blank">
+        Open PR ↗
+      </a>
+    </div>
+
+    <p class="sf-error-text" *ngIf="run.error">{{ run.error }}</p>
+
+    <!-- Workflow -->
+    <div class="sf-card dc-section" *ngIf="workflow">
+      <h2 class="dc-section-title">Workflow</h2>
+      <ul class="dc-node-list">
+        <li class="dc-node" *ngFor="let node of workflow.nodes" [ngClass]="nodeStatusClass(node.status)">
+          <span class="dc-node-dot"></span>
+          <span class="dc-node-label">{{ node.label }}</span>
+          <span class="dc-node-status">{{ node.status }}</span>
+          <span class="dc-node-detail" *ngIf="node.detail">{{ node.detail }}</span>
+        </li>
+      </ul>
+    </div>
+
+    <!-- Pending gate -->
+    <div class="sf-card dc-section dc-gate-card" *ngIf="pendingGate as gate">
+      <h2 class="dc-section-title">Action needed: {{ gate.title }}</h2>
+      <p class="dc-gate-kind">{{ gate.kind }}</p>
+      <pre class="dc-gate-data" *ngIf="gate.data && (gate.data | json) !== '{}'">{{ gate.data | json }}</pre>
+      <textarea
+        class="sf-textarea"
+        rows="3"
+        placeholder="Optional feedback for this gate"
+        [(ngModel)]="gateFeedback"
+        name="gateFeedback"
+      ></textarea>
+      <p class="sf-error-text" *ngIf="gateError">{{ gateError }}</p>
+      <div class="dc-gate-actions">
+        <button
+          class="sf-btn"
+          [disabled]="gateBusy || !gate.allowed_actions.includes('approve')"
+          (click)="resolveGate('approve')"
+        >
+          Approve
+        </button>
+        <button
+          class="sf-btn sf-btn-danger"
+          [disabled]="gateBusy || !gate.allowed_actions.includes('reject')"
+          (click)="resolveGate('reject')"
+        >
+          Reject
+        </button>
+      </div>
+    </div>
+
+    <!-- Plan -->
+    <div class="sf-card dc-section" *ngIf="run.plan as plan">
+      <h2 class="dc-section-title">Plan</h2>
+      <p class="dc-plan-summary">{{ plan.summary }}</p>
+    </div>
+
+    <!-- Design -->
+    <div class="sf-card dc-section" *ngIf="run.design as design">
+      <h2 class="dc-section-title">Design</h2>
+      <ul class="dc-decisions" *ngIf="design.key_decisions?.length">
+        <li *ngFor="let d of design.key_decisions">{{ d }}</li>
+      </ul>
+      <pre class="dc-design-doc">{{ design.design_doc }}</pre>
+    </div>
+
+    <!-- Tasks -->
+    <div class="sf-card dc-section" *ngIf="taskList.length">
+      <h2 class="dc-section-title">Tasks</h2>
+      <table class="sf-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Title</th>
+            <th>Stack</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let task of taskList">
+            <td>{{ task.id }}</td>
+            <td>{{ task.title }}</td>
+            <td>{{ task.stack }}</td>
+            <td><span class="dc-status-badge" [ngClass]="statusClass(task.status)">{{ task.status }}</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Usage -->
+    <div class="sf-card dc-section" *ngIf="usage">
+      <h2 class="dc-section-title">Usage</h2>
+      <div class="dc-usage-stats">
+        <div class="dc-usage-stat">
+          <span class="dc-usage-value">{{ usage.calls }}</span>
+          <span class="dc-usage-label">LLM calls</span>
+        </div>
+        <div class="dc-usage-stat">
+          <span class="dc-usage-value">{{ usage.total_tokens | number }}</span>
+          <span class="dc-usage-label">Total tokens</span>
+        </div>
+        <div class="dc-usage-stat">
+          <span class="dc-usage-value">{{ usage.active_s | number: '1.0-0' }}s</span>
+          <span class="dc-usage-label">Active time</span>
+        </div>
+        <div class="dc-usage-stat">
+          <span class="dc-usage-value">{{ usage.waiting_s | number: '1.0-0' }}s</span>
+          <span class="dc-usage-label">Waiting on human</span>
+        </div>
+      </div>
+      <p class="dc-usage-budget" *ngIf="usage.budget">
+        Budget: {{ usage.budget['tokens'] || 'no token limit' }} tokens ·
+        {{ usage.budget['minutes'] || 'no time limit' }} min
+      </p>
+    </div>
+
+    <!-- Chat / steering -->
+    <div class="sf-card dc-section">
+      <h2 class="dc-section-title">Messages</h2>
+      <div class="dc-messages" *ngIf="messages.length; else noMessages">
+        <div class="dc-message" *ngFor="let msg of messages">
+          <p class="dc-message-text">{{ msg.text }}</p>
+          <p class="dc-message-reply" *ngIf="msg.reply">{{ msg.reply }}</p>
+          <span class="dc-message-status">{{ msg.status }}</span>
+        </div>
+      </div>
+      <ng-template #noMessages>
+        <p class="dc-empty">No messages yet.</p>
+      </ng-template>
+      <div class="dc-message-form">
+        <input
+          class="sf-input"
+          type="text"
+          placeholder="Send a note to the crew"
+          [(ngModel)]="newMessage"
+          name="newMessage"
+          (keyup.enter)="sendMessage()"
+        />
+        <button class="sf-btn sf-btn-secondary" [disabled]="sendingMessage || !newMessage.trim()" (click)="sendMessage()">
+          Send
+        </button>
+      </div>
+    </div>
+  </ng-container>
+
+  <p class="dc-empty" *ngIf="loading && !run">Loading…</p>
+</div>

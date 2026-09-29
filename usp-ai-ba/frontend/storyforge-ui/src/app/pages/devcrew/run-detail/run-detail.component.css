@@ -1,0 +1,236 @@
+.dc-section {
+  padding: 20px 24px;
+  margin-bottom: 20px;
+}
+
+.dc-section-title {
+  margin: 0 0 14px;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.dc-empty {
+  color: var(--sf-muted);
+  font-size: 14px;
+  margin: 0;
+}
+
+/* ── Status badges (shared with runs-list) ──────────────────────────────── */
+.dc-status-badge {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 10px;
+  text-transform: capitalize;
+  margin-left: 8px;
+}
+
+.dc-status-waiting {
+  background: #fef9c3;
+  color: #92620a;
+}
+
+.dc-status-done {
+  background: #dcfce7;
+  color: var(--sf-success);
+}
+
+.dc-status-error {
+  background: #fee2e2;
+  color: var(--sf-error);
+}
+
+.dc-status-active {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+/* ── Workflow node list ──────────────────────────────────────────────────── */
+.dc-node-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dc-node {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--sf-border);
+  font-size: 13px;
+}
+
+.dc-node-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--sf-border);
+}
+
+.dc-node-done .dc-node-dot {
+  background: var(--sf-success);
+}
+
+.dc-node-failed .dc-node-dot {
+  background: var(--sf-error);
+}
+
+.dc-node-running .dc-node-dot {
+  background: #1d4ed8;
+}
+
+.dc-node-waiting .dc-node-dot {
+  background: #d97706;
+}
+
+.dc-node-skipped .dc-node-dot {
+  background: var(--sf-muted);
+}
+
+.dc-node-label {
+  font-weight: 600;
+  flex: 0 0 160px;
+}
+
+.dc-node-status {
+  color: var(--sf-muted);
+  text-transform: capitalize;
+  flex: 0 0 90px;
+}
+
+.dc-node-detail {
+  color: var(--sf-muted);
+  font-size: 12px;
+}
+
+/* ── Gate card ────────────────────────────────────────────────────────────── */
+.dc-gate-card {
+  border-color: #fde047;
+  background: #fefce8;
+}
+
+.dc-gate-kind {
+  color: var(--sf-muted);
+  font-size: 13px;
+  margin: 0 0 10px;
+  text-transform: capitalize;
+}
+
+.dc-gate-data {
+  background: var(--sf-bg);
+  border: 1px solid var(--sf-border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 12px;
+  white-space: pre-wrap;
+  max-height: 220px;
+  overflow-y: auto;
+  margin: 0 0 10px;
+}
+
+.dc-gate-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+/* ── Plan / design ────────────────────────────────────────────────────────── */
+.dc-plan-summary {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.dc-decisions {
+  margin: 0 0 12px;
+  padding-left: 18px;
+  font-size: 13px;
+}
+
+.dc-design-doc {
+  white-space: pre-wrap;
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+/* ── Usage ────────────────────────────────────────────────────────────────── */
+.dc-usage-stats {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.dc-usage-stat {
+  display: flex;
+  flex-direction: column;
+}
+
+.dc-usage-value {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.dc-usage-label {
+  font-size: 12px;
+  color: var(--sf-muted);
+}
+
+.dc-usage-budget {
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: var(--sf-muted);
+}
+
+/* ── Messages ─────────────────────────────────────────────────────────────── */
+.dc-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.dc-message {
+  border: 1px solid var(--sf-border);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.dc-message-text {
+  margin: 0 0 4px;
+  font-size: 13px;
+}
+
+.dc-message-reply {
+  margin: 0 0 4px;
+  font-size: 13px;
+  color: var(--sf-muted);
+  padding-left: 10px;
+  border-left: 2px solid var(--sf-border);
+}
+
+.dc-message-status {
+  font-size: 11px;
+  color: var(--sf-muted);
+  text-transform: capitalize;
+}
+
+.dc-message-form {
+  display: flex;
+  gap: 10px;
+}
+
+.dc-message-form .sf-input {
+  flex: 1;
+}

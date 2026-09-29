@@ -1,0 +1,46 @@
+<div class="sf-page">
+  <a routerLink="/" class="sf-back-link">← Back</a>
+
+  <div class="sf-status-header">
+    <h1>DevCrew Runs</h1>
+    <button class="sf-btn sf-btn-secondary" (click)="load()" [disabled]="loading">
+      {{ loading ? 'Loading…' : 'Refresh' }}
+    </button>
+  </div>
+
+  <p class="dc-intro">
+    A multi-agent team (Planner, Architect, Developer, Reviewer, QA) that plans, builds and opens
+    a pull request for real work. Runs dispatched from StoryForge's Status page (Send to DevCrew)
+    skip Planner/Architect entirely and start straight from Developer.
+  </p>
+
+  <p class="sf-error-text" *ngIf="loadError">{{ loadError }}</p>
+
+  <div class="sf-card" *ngIf="!loading && !runs.length && !loadError">
+    <p class="dc-empty">No DevCrew runs yet.</p>
+  </div>
+
+  <table class="sf-table" *ngIf="runs.length">
+    <thead>
+      <tr>
+        <th>Request</th>
+        <th>Repo</th>
+        <th>Status</th>
+        <th>PR</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr *ngFor="let run of runs">
+        <td>{{ run.request }}</td>
+        <td>{{ run.repo_target }}</td>
+        <td><span class="dc-status-badge" [ngClass]="statusClass(run.status)">{{ run.status }}</span></td>
+        <td>
+          <a *ngIf="run.pr_url" [href]="run.pr_url" target="_blank">Open PR ↗</a>
+          <span *ngIf="!run.pr_url">—</span>
+        </td>
+        <td><a class="sf-btn sf-btn-secondary" [routerLink]="['/devcrew/runs', run.id]">View</a></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
