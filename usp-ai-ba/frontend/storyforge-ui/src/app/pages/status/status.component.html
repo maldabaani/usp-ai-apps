@@ -192,4 +192,42 @@
       <a class="sf-btn sf-btn-secondary" [href]="documentDownloadUrl" target="_blank">Download Document</a>
     </div>
   </div>
+
+  <!-- Send epics to DevCrew: a multi-agent Planner-Architect-Developer-QA
+       team that plans, builds and opens a PR for one epic's worth of work
+       against a real GitHub repo. Skips its own Planner/Architect (this
+       epic's own Dev Tasks/Unit Test Tasks already are the plan/design) and
+       goes straight to Developer -> Reviewer -> QA, pausing only once more,
+       right before it opens the PR. -->
+  <div class="sf-card" *ngIf="state?.status === 'done' && state?.approved_stories?.length">
+    <h2>Send to DevCrew</h2>
+    <p class="sf-devcrew-desc">
+      Hand one epic's Dev Tasks/Unit Test Tasks to DevCrew, a multi-agent team that builds it
+      against a real repo and opens a pull request. You'll approve the result once more before
+      the PR is opened.
+    </p>
+    <p class="sf-error-text" *ngIf="devCrewError">{{ devCrewError }}</p>
+    <table class="sf-table">
+      <thead>
+        <tr>
+          <th>Epic</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let epic of state?.approved_stories; let i = index">
+          <td>{{ epic.epic_title }}</td>
+          <td>
+            <button
+              class="sf-btn sf-btn-secondary"
+              (click)="sendToDevCrew(i)"
+              [disabled]="sendingToDevCrew !== null || !!devCrewDispatches[i]"
+            >
+              {{ devCrewDispatches[i] ? 'Sent (run ' + devCrewDispatches[i] + ')' : (sendingToDevCrew === i ? 'Sending…' : 'Send to DevCrew') }}
+            </button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
 </div>

@@ -20,12 +20,14 @@ from devcrew.api.schemas import (
     ResumeRequest,
     RunDetail,
     RunSummary,
+    SendToDevCrewRequest,
 )
 from devcrew.api.sse import event_stream
 from devcrew.db.models import RunStatus
 from devcrew.events.types import EventType
 from devcrew.graph.budget import current_limit
 from devcrew.graph.interrupts import ResumeAction
+from devcrew.graph.state import dump
 from devcrew.graph.steering import EXPIRED, PENDING, WITHDRAWN
 from devcrew.services.code_search import code_search_status
 from devcrew.services.report import run_report
@@ -130,6 +132,61 @@ async def create_run(body: CreateRunRequest, container: ContainerDep) -> RunSumm
         budget=body.budget(),
         models=await _checked_models(container, body.models),
     )
+    return RunSummary.of(run, busy=True)
+
+
+@router.post(
+    "/from-storyforge-epic", response_model=RunSummary, status_code=status.HTTP_201_CREATED
+)
+async def create_run_from_storyforge_epic(
+    body: SendToDevCrewRequest, container: ContainerDep
+) -> RunSummary:
+    """See the merge plan's Phase 7: "Send to DevCrew". Deferred imports
+    (pipeline/, api/) -- devcrew/ must stay importable standalone outside
+    the merge (see pipeline/devcrew_bridge.py's own module docstring for
+    the same reasoning)."""
+    from api.devcrew_dispatch_registry import record_dispatch
+    from pipeline.devcrew_bridge import UnsupportedStackError, build_plan
+    from pipeline.runner import get_job_state
+
+    if container.deps.github is None:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "working on an existing repository needs GitHub access: set GITHUB_TOKEN and "
+            "GITHUB_DELIVERY_ENABLED=true",
+        )
+
+    state = await get_job_state(body.job_id)
+    if state is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"assessment job {body.job_id} not found")
+
+    stories = state.get("approved_stories") or state.get("generated_stories") or []
+    if body.epic_index >= len(stories):
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            f"epic {body.epic_index} not found in job {body.job_id} ({len(stories)} epic(s))",
+        )
+    story = stories[body.epic_index]
+    if not story:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, f"epic {body.epic_index} was not approved"
+        )
+
+    try:
+        plan = build_plan(story)
+    except UnsupportedStackError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
+
+    run = await container.manager.start(
+        request=f"[StoryForge] {story.get('epic_title', '')}",
+        repo_target=body.repo_target,
+        create_repo=False,
+        target="existing",
+        mode="quick",
+        plan=dump(plan),
+        storyforge_epic=story,
+    )
+    record_dispatch(body.job_id, body.epic_index, story.get("epic_title", ""), run.id)
     return RunSummary.of(run, busy=True)
 
 

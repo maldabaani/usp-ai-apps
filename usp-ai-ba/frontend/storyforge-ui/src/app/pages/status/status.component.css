@@ -401,3 +401,10 @@
   gap: 10px;
   margin-top: 12px;
 }
+
+/* ── Send to DevCrew ─────────────────────────────────────────────────────── */
+.sf-devcrew-desc {
+  color: var(--sf-muted);
+  font-size: 13px;
+  margin: 0 0 12px;
+}

@@ -58,6 +58,9 @@ export class StatusComponent implements OnInit, OnDestroy {
   updateError = '';
   cancelling = false;
   cancelError = '';
+  sendingToDevCrew: number | null = null;
+  devCrewError = '';
+  devCrewDispatches: Record<number, string> = {}; // epic index -> DevCrew run id
 
   readonly stepDefs = STEP_DEFS;
   readonly ragSections: { key: keyof RetrievedContext; label: string }[] = [
@@ -284,6 +287,29 @@ export class StatusComponent implements OnInit, OnDestroy {
       error: (err) => {
         this.cancelling = false;
         this.cancelError = err?.error?.detail || 'Cancel failed.';
+      },
+    });
+  }
+
+  sendToDevCrew(epicIndex: number): void {
+    if (!this.jobId || this.sendingToDevCrew !== null) return;
+    const repoTarget = prompt(
+      'GitHub repo to send this epic to (owner/repo) -- DevCrew\'s Developer agents will work ' +
+        'against this repo and open a PR there:'
+    );
+    if (!repoTarget || !repoTarget.trim()) return;
+
+    this.sendingToDevCrew = epicIndex;
+    this.devCrewError = '';
+
+    this.storyForgeService.sendEpicToDevCrew(this.jobId, epicIndex, repoTarget.trim()).subscribe({
+      next: (run) => {
+        this.sendingToDevCrew = null;
+        this.devCrewDispatches[epicIndex] = run.id;
+      },
+      error: (err) => {
+        this.sendingToDevCrew = null;
+        this.devCrewError = err?.error?.detail || 'Failed to send this epic to DevCrew.';
       },
     });
   }

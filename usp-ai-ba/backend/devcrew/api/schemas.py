@@ -49,6 +49,24 @@ class CreateRunRequest(BaseModel):
         return v.strip()
 
 
+class SendToDevCrewRequest(BaseModel):
+    """See the merge plan's Phase 7: "Send to DevCrew" -- starts a run
+    seeded from one already-approved StoryForge assessment epic, skipping
+    the Planner/Architect entirely (pipeline/devcrew_bridge.py). `target`
+    is always "existing" (the same repo StoryForge's own ingestion already
+    indexes, per the merge's decision 3) -- not client-supplied. There is
+    no automatic way to derive a GitHub owner/repo from StoryForge's own
+    ingestion config today (it addresses repos by local filesystem path,
+    not a GitHub remote) -- repo_target is a known, deliberate manual
+    input here, not an oversight."""
+
+    job_id: str = Field(
+        min_length=1, description="the StoryForge assessment job this epic is from"
+    )
+    epic_index: int = Field(ge=0, description="index into that job's approved_stories")
+    repo_target: str = Field(pattern=REPO_RE, description="owner/repo on GitHub to work against")
+
+
 class ResumeRequest(BaseModel):
     action: ResumeAction
     feedback: str | None = None
