@@ -90,6 +90,8 @@ export class StatusComponent implements OnInit, OnDestroy {
     generate_node: 'Story Generation',
   };
 
+  showOriginalStories = false;
+
   private lastActiveStep = '';
   private pollHandle: ReturnType<typeof setInterval> | null = null;
   private redirected = false;
@@ -450,6 +452,23 @@ export class StatusComponent implements OnInit, OnDestroy {
       label: this.usageNodeLabels[key] ?? key,
       ...node,
     }));
+  }
+
+  // review_mode off just copies generated_stories straight into
+  // approved_stories (see pipeline/nodes/review.py) -- nothing to diff in
+  // that case, only when a human actually had the chance to edit them.
+  get hasReviewChanges(): boolean {
+    const s = this.state;
+    if (!s?.review_mode || !s.generated_stories?.length) return false;
+    return JSON.stringify(s.generated_stories) !== JSON.stringify(s.approved_stories);
+  }
+
+  get originalStoriesText(): string {
+    return this.state ? this.formatStories(this.state.generated_stories) : '';
+  }
+
+  toggleOriginalStories(): void {
+    this.showOriginalStories = !this.showOriginalStories;
   }
 
   toggleChunk(chunkKey: string): void {

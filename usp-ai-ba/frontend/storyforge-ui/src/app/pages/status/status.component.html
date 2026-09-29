@@ -213,6 +213,17 @@
       <button class="sf-btn sf-copy-btn" (click)="copyToClipboard()">{{ copyButtonLabel }}</button>
       <a class="sf-btn sf-btn-secondary" [href]="documentDownloadUrl" target="_blank">Download Document</a>
     </div>
+    <ng-container *ngIf="hasReviewChanges">
+      <a class="sf-back-link" (click)="toggleOriginalStories()">
+        {{ showOriginalStories ? 'Hide' : 'Show' }} the original AI-generated version (before your review edits)
+      </a>
+      <textarea
+        *ngIf="showOriginalStories"
+        class="sf-textarea sf-stories-output"
+        readonly
+        [value]="originalStoriesText"
+      ></textarea>
+    </ng-container>
   </div>
 
   <!-- Send epics to DevCrew: a multi-agent Planner-Architect-Developer-QA
