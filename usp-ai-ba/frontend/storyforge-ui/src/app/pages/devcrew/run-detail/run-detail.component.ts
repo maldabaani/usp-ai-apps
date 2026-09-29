@@ -53,6 +53,9 @@ export class RunDetailComponent implements OnInit, OnDestroy {
   pauseBusy = false;
   pauseError = '';
 
+  cancelBusy = false;
+  cancelError = '';
+
   private pollHandle: ReturnType<typeof setInterval> | null = null;
 
   constructor(
@@ -212,6 +215,27 @@ export class RunDetailComponent implements OnInit, OnDestroy {
       error: (err) => {
         this.pauseBusy = false;
         this.pauseError = extractErrorMessage(err, 'Could not change the pause state. Try again.');
+      },
+    });
+  }
+
+  cancel(): void {
+    if (!this.run || this.runIsTerminal || this.cancelBusy) {
+      return;
+    }
+    if (!confirm('Cancel this run? This cannot be resumed -- you would need to start a new one.')) {
+      return;
+    }
+    this.cancelBusy = true;
+    this.cancelError = '';
+    this.devCrewService.cancelRun(this.runId).subscribe({
+      next: () => {
+        this.cancelBusy = false;
+        this.load();
+      },
+      error: (err) => {
+        this.cancelBusy = false;
+        this.cancelError = extractErrorMessage(err, 'Could not cancel this run. Try again.');
       },
     });
   }

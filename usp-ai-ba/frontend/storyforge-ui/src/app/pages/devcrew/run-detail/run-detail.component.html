@@ -31,11 +31,20 @@
       >
         {{ pauseBusy ? 'Working…' : (run.pause_requested ? 'Resume' : 'Pause') }}
       </button>
+      <button
+        *ngIf="!runIsTerminal"
+        class="sf-btn sf-btn-danger"
+        [disabled]="cancelBusy"
+        (click)="cancel()"
+      >
+        {{ cancelBusy ? 'Cancelling…' : 'Cancel' }}
+      </button>
     </div>
 
     <p class="sf-error-text" *ngIf="run.error">{{ run.error }}</p>
     <p class="sf-error-text" *ngIf="retryError">{{ retryError }}</p>
     <p class="sf-error-text" *ngIf="pauseError">{{ pauseError }}</p>
+    <p class="sf-error-text" *ngIf="cancelError">{{ cancelError }}</p>
     <p class="dc-panel-meta" *ngIf="run.pause_requested && run.status !== 'paused' && !runIsTerminal">
       Pause requested — will stop before the next wave starts.
     </p>
