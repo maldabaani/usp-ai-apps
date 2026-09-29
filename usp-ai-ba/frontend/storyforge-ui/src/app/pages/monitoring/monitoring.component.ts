@@ -1,12 +1,13 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit } from '@angular/core';
+import { RouterLink } from '@angular/router';
 
 import { ErrorRecord, MonitoringService } from '../../services/monitoring.service';
 
 @Component({
   selector: 'app-monitoring',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, RouterLink],
   templateUrl: './monitoring.component.html',
   styleUrl: './monitoring.component.css',
 })

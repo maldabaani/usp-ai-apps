@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 
 import { SettingsService } from '../../services/settings.service';
 import { StoryForgeService } from '../../services/storyforge.service';
@@ -9,7 +9,7 @@ import { StoryForgeService } from '../../services/storyforge.service';
 @Component({
   selector: 'app-assess',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RouterLink],
   templateUrl: './assess.component.html',
   styleUrl: './assess.component.css',
 })

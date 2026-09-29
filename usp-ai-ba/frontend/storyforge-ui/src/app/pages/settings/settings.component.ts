@@ -1,6 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 
 import { extractErrorMessage } from '../../services/http-error.util';
 import { AskPrompts, PromptsService } from '../../services/prompts.service';
@@ -9,7 +10,7 @@ import { AppSettings, AppSettingsUpdate, SettingsService } from '../../services/
 @Component({
   selector: 'app-settings',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RouterLink],
   templateUrl: './settings.component.html',
   styleUrl: './settings.component.css',
 })
