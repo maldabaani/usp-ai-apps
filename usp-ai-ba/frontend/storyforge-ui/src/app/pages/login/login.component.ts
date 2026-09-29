@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 
 import { AuthService } from '../../services/auth.service';
+import { extractErrorMessage } from '../../services/http-error.util';
 
 @Component({
   selector: 'app-login',
@@ -39,7 +40,7 @@ export class LoginComponent {
       },
       error: (err) => {
         this.submitting = false;
-        this.loginError = err?.error?.detail || 'Invalid username or password.';
+        this.loginError = extractErrorMessage(err, 'Invalid username or password.');
       },
     });
   }

@@ -1,8 +1,11 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectorRef, Component, OnDestroy, OnInit } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 
 import { AuthService } from '../../services/auth.service';
+import { extractErrorMessage } from '../../services/http-error.util';
+import { isValidRepoTarget, normalizeRepoTarget } from '../../services/repo-target.util';
 import {
   DevTask,
   GeneratedStory,
@@ -40,7 +43,7 @@ export type StepState = 'pending' | 'active' | 'done' | 'error';
 @Component({
   selector: 'app-status',
   standalone: true,
-  imports: [CommonModule, RouterLink],
+  imports: [CommonModule, FormsModule, RouterLink],
   templateUrl: './status.component.html',
   styleUrl: './status.component.css',
 })
@@ -61,6 +64,14 @@ export class StatusComponent implements OnInit, OnDestroy {
   sendingToDevCrew: number | null = null;
   devCrewError = '';
   devCrewDispatches: Record<number, string> = {}; // epic index -> DevCrew run id
+  // Index of the epic row whose inline "send to DevCrew" input is open, or
+  // null if none is open. Only one row's form is open at a time.
+  openDevCrewFormFor: number | null = null;
+  devCrewRepoInput = '';
+  // "Test Connection" state, scoped to the single open form.
+  testingDevCrewRepo = false;
+  devCrewTestStatus: 'idle' | 'success' | 'failed' = 'idle';
+  devCrewTestedValue: string | null = null; // normalized value that passed
 
   readonly stepDefs = STEP_DEFS;
   readonly ragSections: { key: keyof RetrievedContext; label: string }[] = [
@@ -189,7 +200,7 @@ export class StatusComponent implements OnInit, OnDestroy {
       },
       error: (err) => {
         this.retrying = false;
-        this.retryError = err?.error?.detail || 'Retry failed. Submit a new assessment instead.';
+        this.retryError = extractErrorMessage(err, 'Retry failed. Submit a new assessment instead.');
       },
     });
   }
@@ -222,7 +233,7 @@ export class StatusComponent implements OnInit, OnDestroy {
       },
       error: (err) => {
         this.recreating = false;
-        this.recreateError = err?.error?.detail || 'Re-create failed.';
+        this.recreateError = extractErrorMessage(err, 'Re-create failed.');
       },
     });
   }
@@ -254,7 +265,7 @@ export class StatusComponent implements OnInit, OnDestroy {
       },
       error: (err) => {
         this.updating = false;
-        this.updateError = err?.error?.detail || 'Update failed.';
+        this.updateError = extractErrorMessage(err, 'Update failed.');
       },
     });
   }
@@ -286,30 +297,84 @@ export class StatusComponent implements OnInit, OnDestroy {
       },
       error: (err) => {
         this.cancelling = false;
-        this.cancelError = err?.error?.detail || 'Cancel failed.';
+        this.cancelError = extractErrorMessage(err, 'Cancel failed.');
       },
     });
   }
 
-  sendToDevCrew(epicIndex: number): void {
-    if (!this.jobId || this.sendingToDevCrew !== null) return;
-    const repoTarget = prompt(
-      'GitHub repo to send this epic to (owner/repo) -- DevCrew\'s Developer agents will work ' +
-        'against this repo and open a PR there:'
+  get devCrewCanSend(): boolean {
+    return (
+      this.devCrewTestStatus === 'success' &&
+      normalizeRepoTarget(this.devCrewRepoInput) === this.devCrewTestedValue
     );
-    if (!repoTarget || !repoTarget.trim()) return;
+  }
 
+  openDevCrewForm(epicIndex: number): void {
+    if (this.sendingToDevCrew !== null) return;
+    this.openDevCrewFormFor = epicIndex;
+    this.devCrewRepoInput = '';
+    this.devCrewError = '';
+    this.testingDevCrewRepo = false;
+    this.devCrewTestStatus = 'idle';
+    this.devCrewTestedValue = null;
+  }
+
+  cancelDevCrewForm(): void {
+    this.openDevCrewFormFor = null;
+    this.devCrewRepoInput = '';
+    this.devCrewError = '';
+    this.testingDevCrewRepo = false;
+    this.devCrewTestStatus = 'idle';
+    this.devCrewTestedValue = null;
+  }
+
+  testDevCrewConnection(): void {
+    const normalized = normalizeRepoTarget(this.devCrewRepoInput);
+    if (!normalized || !isValidRepoTarget(normalized)) {
+      this.devCrewError = 'Enter a GitHub repo as owner/repo (a pasted GitHub URL is fine too).';
+      return;
+    }
+    this.testingDevCrewRepo = true;
+    this.devCrewError = '';
+    this.storyForgeService.checkDevCrewRepo(normalized).subscribe({
+      next: () => {
+        this.testingDevCrewRepo = false;
+        this.devCrewTestStatus = 'success';
+        this.devCrewTestedValue = normalized;
+      },
+      error: (err) => {
+        this.testingDevCrewRepo = false;
+        this.devCrewTestStatus = 'failed';
+        this.devCrewError = extractErrorMessage(err, 'Could not verify this repo.');
+      },
+    });
+  }
+
+  submitDevCrewForm(epicIndex: number): void {
+    if (!this.jobId || this.sendingToDevCrew !== null) return;
+
+    const normalized = normalizeRepoTarget(this.devCrewRepoInput);
+    if (!normalized || !isValidRepoTarget(normalized)) {
+      this.devCrewError = 'Enter a GitHub repo as owner/repo (a pasted GitHub URL is fine too).';
+      return;
+    }
+    if (!this.devCrewCanSend) {
+      this.devCrewError = 'Test the connection to this repo before sending.';
+      return;
+    }
+
+    this.openDevCrewFormFor = null;
     this.sendingToDevCrew = epicIndex;
     this.devCrewError = '';
 
-    this.storyForgeService.sendEpicToDevCrew(this.jobId, epicIndex, repoTarget.trim()).subscribe({
+    this.storyForgeService.sendEpicToDevCrew(this.jobId, epicIndex, normalized).subscribe({
       next: (run) => {
         this.sendingToDevCrew = null;
         this.devCrewDispatches[epicIndex] = run.id;
       },
       error: (err) => {
         this.sendingToDevCrew = null;
-        this.devCrewError = err?.error?.detail || 'Failed to send this epic to DevCrew.';
+        this.devCrewError = extractErrorMessage(err, 'Failed to send this epic to DevCrew.');
       },
     });
   }

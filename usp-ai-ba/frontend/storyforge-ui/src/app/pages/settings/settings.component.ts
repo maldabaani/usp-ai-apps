@@ -2,6 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
+import { extractErrorMessage } from '../../services/http-error.util';
 import { AskPrompts, PromptsService } from '../../services/prompts.service';
 import { AppSettings, AppSettingsUpdate, SettingsService } from '../../services/settings.service';
 
@@ -125,7 +126,7 @@ export class SettingsComponent implements OnInit {
         }
       },
       error: (err) => {
-        const message = err?.error?.detail || 'Failed to save prompt.';
+        const message = extractErrorMessage(err, 'Failed to save prompt.');
         if (kind === 'technical') {
           this.technicalPromptSaving = false;
           this.technicalPromptError = message;
@@ -159,7 +160,7 @@ export class SettingsComponent implements OnInit {
         }
       },
       error: (err) => {
-        const message = err?.error?.detail || 'Failed to reset prompt.';
+        const message = extractErrorMessage(err, 'Failed to reset prompt.');
         if (kind === 'technical') {
           this.technicalPromptSaving = false;
           this.technicalPromptError = message;
@@ -253,7 +254,7 @@ export class SettingsComponent implements OnInit {
       },
       error: (err) => {
         this.saving = false;
-        this.saveError = err?.error?.detail || 'Failed to save settings.';
+        this.saveError = extractErrorMessage(err, 'Failed to save settings.');
       },
     });
   }

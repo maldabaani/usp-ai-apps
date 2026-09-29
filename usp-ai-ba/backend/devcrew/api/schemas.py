@@ -67,6 +67,16 @@ class SendToDevCrewRequest(BaseModel):
     repo_target: str = Field(pattern=REPO_RE, description="owner/repo on GitHub to work against")
 
 
+class CheckRepoResponse(BaseModel):
+    """"Test Connection" on the Send-to-DevCrew form: confirms a repo exists
+    and our GitHub token can read it, before a real run is dispatched
+    against it."""
+
+    exists: bool
+    default_branch: str
+    private: bool
+
+
 class ResumeRequest(BaseModel):
     action: ResumeAction
     feedback: str | None = None

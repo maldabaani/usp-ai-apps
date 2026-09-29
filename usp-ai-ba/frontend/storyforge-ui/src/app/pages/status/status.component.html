@@ -218,13 +218,44 @@
         <tr *ngFor="let epic of state?.approved_stories; let i = index">
           <td>{{ epic.epic_title }}</td>
           <td>
-            <button
-              class="sf-btn sf-btn-secondary"
-              (click)="sendToDevCrew(i)"
-              [disabled]="sendingToDevCrew !== null || !!devCrewDispatches[i]"
-            >
-              {{ devCrewDispatches[i] ? 'Sent (run ' + devCrewDispatches[i] + ')' : (sendingToDevCrew === i ? 'Sending…' : 'Send to DevCrew') }}
-            </button>
+            <ng-container *ngIf="openDevCrewFormFor === i; else devCrewActionCell">
+              <div class="sf-devcrew-form">
+                <input
+                  class="sf-input"
+                  type="text"
+                  placeholder="owner/repo or a GitHub URL"
+                  [(ngModel)]="devCrewRepoInput"
+                  name="devCrewRepoInput"
+                  (keyup.escape)="cancelDevCrewForm()"
+                  autofocus
+                />
+                <button
+                  class="sf-btn sf-btn-secondary"
+                  (click)="testDevCrewConnection()"
+                  [disabled]="testingDevCrewRepo"
+                >
+                  {{ testingDevCrewRepo ? 'Testing…' : 'Test Connection' }}
+                </button>
+                <span class="sf-devcrew-test-ok" *ngIf="devCrewCanSend">✓ Verified</span>
+                <button
+                  class="sf-btn sf-btn-secondary"
+                  (click)="submitDevCrewForm(i)"
+                  [disabled]="!devCrewCanSend"
+                >
+                  Send
+                </button>
+                <button class="sf-btn sf-btn-secondary" (click)="cancelDevCrewForm()">Cancel</button>
+              </div>
+            </ng-container>
+            <ng-template #devCrewActionCell>
+              <button
+                class="sf-btn sf-btn-secondary"
+                (click)="openDevCrewForm(i)"
+                [disabled]="sendingToDevCrew !== null || !!devCrewDispatches[i]"
+              >
+                {{ devCrewDispatches[i] ? 'Sent (run ' + devCrewDispatches[i] + ')' : (sendingToDevCrew === i ? 'Sending…' : 'Send to DevCrew') }}
+              </button>
+            </ng-template>
           </td>
         </tr>
       </tbody>

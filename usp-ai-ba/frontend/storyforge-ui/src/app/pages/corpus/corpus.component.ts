@@ -3,6 +3,7 @@ import { Component, OnInit } from '@angular/core';
 import { RouterLink } from '@angular/router';
 
 import { CorpusService, CorpusSource } from '../../services/corpus.service';
+import { extractErrorMessage } from '../../services/http-error.util';
 
 @Component({
   selector: 'app-corpus',
@@ -59,7 +60,7 @@ export class CorpusComponent implements OnInit {
       },
       error: (err) => {
         this.deletingSource = null;
-        this.deleteSourceError = err?.error?.detail || 'Failed to delete source.';
+        this.deleteSourceError = extractErrorMessage(err, 'Failed to delete source.');
       },
     });
   }

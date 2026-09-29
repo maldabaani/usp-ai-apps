@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { forkJoin } from 'rxjs';
 
+import { extractErrorMessage } from '../../services/http-error.util';
 import { JobSummary, StoryForgeService } from '../../services/storyforge.service';
 
 @Component({
@@ -111,7 +112,7 @@ export class DashboardComponent implements OnInit {
       },
       error: (err) => {
         this.deleting = false;
-        this.deleteError = err?.error?.detail || 'Delete failed. Some assessments may not have been removed.';
+        this.deleteError = extractErrorMessage(err, 'Delete failed. Some assessments may not have been removed.');
         // Reload regardless -- forkJoin aborts on the first error, so some
         // deletes in the batch may have already succeeded server-side.
         this.loadJobs();

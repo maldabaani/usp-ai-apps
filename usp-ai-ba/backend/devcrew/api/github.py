@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from api.deps import require_admin, require_auth
 from devcrew.api.deps import ContainerDep
-from devcrew.api.schemas import REPO_RE, RunSummary
+from devcrew.api.schemas import REPO_RE, CheckRepoResponse, RunSummary
 from devcrew.db.models import IssueRun, WatchedRepo
 from devcrew.github.client import GitHubError
 
@@ -186,3 +186,29 @@ async def import_issue(body: ImportIssueRequest, container: ContainerDep) -> Run
     except ValueError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from None
     return RunSummary.of(run, busy=True)
+
+
+@router.get("/check-repo/{owner}/{repo}", response_model=CheckRepoResponse)
+async def check_repo(owner: str, repo: str, container: ContainerDep) -> CheckRepoResponse:
+    """Verify a repo exists and our GitHub token can read it, before a real
+    DevCrew run is dispatched against it (the Status page's "Test
+    Connection" button, ahead of "Send to DevCrew")."""
+    _needs_github(container)
+    client = container.deps.github.client()
+    try:
+        repo_data = await client.get_repo(owner, repo)
+    except GitHubError as exc:
+        code = status.HTTP_404_NOT_FOUND if exc.status == 404 else status.HTTP_502_BAD_GATEWAY
+        raise HTTPException(code, str(exc)) from None
+    finally:
+        await client.aclose()
+    if repo_data is None:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            f"repository {owner}/{repo} does not exist or the token cannot read it",
+        )
+    return CheckRepoResponse(
+        exists=True,
+        default_branch=str(repo_data.get("default_branch") or ""),
+        private=bool(repo_data.get("private", False)),
+    )

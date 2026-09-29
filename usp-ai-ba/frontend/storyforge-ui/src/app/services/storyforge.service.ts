@@ -297,6 +297,15 @@ export class StoryForgeService {
     );
   }
 
+  checkDevCrewRepo(
+    repoTarget: string
+  ): Observable<{ exists: boolean; default_branch: string; private: boolean }> {
+    const [owner, repo] = repoTarget.split('/');
+    return this.http.get<{ exists: boolean; default_branch: string; private: boolean }>(
+      `${API_BASE_URL}/devcrew/check-repo/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`
+    );
+  }
+
   deleteAssessment(jobId: string): Observable<void> {
     return this.http.delete<void>(`${API_BASE_URL}/assess/${jobId}`);
   }

@@ -3,6 +3,7 @@ import { Component, OnDestroy, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 
+import { extractErrorMessage } from '../../services/http-error.util';
 import {
   IngestFileRecord,
   IngestHistoryEntry,
@@ -154,7 +155,7 @@ export class IngestionComponent implements OnInit, OnDestroy {
         },
         error: (err) => {
           this.startingCode = false;
-          this.codeError = err?.error?.detail || 'Failed to start code ingestion.';
+          this.codeError = extractErrorMessage(err, 'Failed to start code ingestion.');
         },
       });
   }
@@ -177,7 +178,7 @@ export class IngestionComponent implements OnInit, OnDestroy {
         },
         error: (err) => {
           this.startingDocuments = false;
-          this.documentsError = err?.error?.detail || 'Failed to start document ingestion.';
+          this.documentsError = extractErrorMessage(err, 'Failed to start document ingestion.');
         },
       });
   }
@@ -223,7 +224,7 @@ export class IngestionComponent implements OnInit, OnDestroy {
       },
       error: (err) => {
         this.cancelling = false;
-        this.cancelError = err?.error?.detail || 'Cancel failed.';
+        this.cancelError = extractErrorMessage(err, 'Cancel failed.');
       },
     });
   }
@@ -290,7 +291,7 @@ export class IngestionComponent implements OnInit, OnDestroy {
       },
       error: (err) => {
         this.clearingHistory = false;
-        this.clearHistoryError = err?.error?.detail || 'Failed to clear history.';
+        this.clearHistoryError = extractErrorMessage(err, 'Failed to clear history.');
       },
     });
   }

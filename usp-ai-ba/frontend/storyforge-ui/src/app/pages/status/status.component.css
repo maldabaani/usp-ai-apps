@@ -408,3 +408,21 @@
   font-size: 13px;
   margin: 0 0 12px;
 }
+
+.sf-devcrew-form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.sf-devcrew-form .sf-input {
+  flex: 1;
+  min-width: 220px;
+}
+
+.sf-devcrew-test-ok {
+  color: var(--sf-success);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
