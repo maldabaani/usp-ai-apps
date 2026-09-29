@@ -100,6 +100,18 @@ class GitHubDelivery:
         await self._git(repo, "fetch", "--no-tags", self.remote_url(owner, name), f"+{base}:{ref}")
         return ref
 
+    async def sync_base(self, repo: GitRepo, owner: str, name: str, base: str) -> None:
+        """Fast-forward an existing local workspace to the remote's current
+        `base` tip. `clone()` only ever runs once per workspace -- prepare_repo
+        reuses that same clone on every retry (e.g. after an escalation),
+        and a bare `checkout` there just re-selects the same stale local
+        branch tip. Without this, pushing a fix to the remote (a missing
+        pom.xml, a .devcrew.yaml, ...) and retrying would silently keep
+        re-scanning the exact same snapshot from the first clone forever,
+        no matter what actually changed upstream."""
+        await self._git(repo, "fetch", "--no-tags", self.remote_url(owner, name), base)
+        await self._git(repo, "checkout", "-q", "-B", base, "FETCH_HEAD")
+
     async def default_branch(self, owner: str, name: str) -> str:
         client = self.client()
         try:

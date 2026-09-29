@@ -266,6 +266,36 @@ async def test_retry_after_fixing_the_repository(tmp_path: Path) -> None:
     assert outcome.status is RunStatus.AWAITING_PLAN_APPROVAL
 
 
+async def test_prepare_repo_retry_picks_up_new_remote_commits(tmp_path: Path) -> None:
+    """Regression test: unlike test_retry_after_fixing_the_repository above
+    (where the clone itself fails, so a retry re-clones from scratch), this
+    covers the clone-succeeds-but-no-project-found case, where prepare_repo
+    is left with an already-cloned local workspace. Before the fix,
+    `checkout()` alone (no fetch) meant a retry silently kept re-scanning
+    that exact same stale clone forever, no matter what got pushed to the
+    remote afterward -- directly contradicting this node's own "push a fix
+    and retry" escalation guidance."""
+    gh = FakeGitHub(tmp_path / "remotes")
+    seeded_repo(gh, "acme", "empty", {"README.md": "nothing here yet"})
+    h = make_harness(tmp_path, github=gh.delivery())
+    outcome = await h.driver.start(RUN, "Change things", "acme/empty", target="existing")
+    assert outcome.status is RunStatus.NEEDS_HUMAN
+    assert "no supported project" in outcome.interrupts[0].value["data"]["reason"]
+
+    # The human pushes a fix to the SAME remote repo prepare_repo already
+    # cloned once -- not a fresh one, unlike the test above.
+    bare = gh.bare("acme", "empty")
+    work = tmp_path / "push-fix"
+    subprocess.run(["git", "clone", "-q", str(bare), str(work)], check=True)
+    write(work, PY_REPO)
+    subprocess.run(["git", *GIT, "-C", str(work), "add", "-A"], check=True)
+    subprocess.run(["git", *GIT, "-C", str(work), "commit", "-q", "-m", "add project"], check=True)
+    subprocess.run(["git", "-C", str(work), "push", "-q", "origin", "master"], check=True)
+
+    outcome = await h.driver.resume(RUN, ResumePayload(action="approve"))
+    assert outcome.status is RunStatus.AWAITING_PLAN_APPROVAL
+
+
 # ------------------------------------------------------------------------------ API
 async def test_api_existing_target(tmp_path: Path) -> None:
     body = {

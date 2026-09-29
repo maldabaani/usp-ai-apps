@@ -102,7 +102,25 @@ def make_prepare_repo(deps: GraphDeps) -> NodeFn:
                     args={"target": f"{owner}/{name}@{base}"},
                 )
                 await deps.github.clone(owner, name, base, root)
-            await repo.checkout(base)
+                await repo.checkout(base)
+            else:
+                # A workspace from an earlier attempt at this same run
+                # already exists -- this is a retry (e.g. the human resumed
+                # a "prepare_repo could not finish" escalation, per this
+                # node's own guidance to push a fix and retry). A bare
+                # checkout here would just re-select the same stale local
+                # branch tip, silently ignoring anything pushed to the
+                # remote since the first clone -- fetch+reset to the
+                # remote's current base tip instead, so the retry actually
+                # sees new commits.
+                await deps.emit(
+                    run_id,
+                    EventType.TOOL_CALL,
+                    node=NODE,
+                    tool="sync",
+                    args={"target": f"{owner}/{name}@{base}"},
+                )
+                await deps.github.sync_base(repo, owner, name, base)
         except (DeliveryError, GitError) as exc:
             return await _fail(deps, run_id, f"cannot clone {owner}/{name}: {exc}")
 
