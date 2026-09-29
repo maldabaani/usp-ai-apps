@@ -54,15 +54,26 @@ async def check_database(engine: AsyncEngine) -> str:
     return "connected"
 
 
-async def check_chroma(settings: Settings) -> str:
-    import chromadb  # local import: the client pulls in heavy deps
+async def check_chroma() -> str:
+    """The merged app's real RAG store is StoryForge's own embedded, on-disk
+    chromadb.PersistentClient (ingestion/chroma_client.py's
+    get_chroma_client(), shared into DevCrew via rag/service.py's
+    chroma_embedded_client()) -- not a remote Chroma HTTP server. This used
+    to ping chromadb.HttpClient(host=settings.chroma_host, port=...)
+    instead: a critical=True startup check against a service the merged app
+    never actually talks to (see rag/service.py's chroma_http_client, which
+    documents itself as kept only for the standalone-DevCrew entry point
+    outside this merge) -- able to fail the whole startup health check over
+    an unrelated/unused service, or falsely pass one that happened to also
+    be running without saying anything about the store DevCrew really reads
+    from."""
+    from ingestion.chroma_client import get_chroma_client  # local import: heavy deps
 
     def _heartbeat() -> int:
-        client = chromadb.HttpClient(host=settings.chroma_host, port=settings.chroma_port)
-        return int(client.heartbeat())
+        return int(get_chroma_client().heartbeat())
 
     await asyncio.to_thread(_heartbeat)
-    return f"reachable at {settings.chroma_host}:{settings.chroma_port}"
+    return "embedded ChromaDB store reachable"
 
 
 async def fetch_ollama_models(http: httpx.AsyncClient, base_url: str) -> set[str]:
@@ -161,8 +172,8 @@ async def run_health_checks(
             _run(
                 "chroma",
                 True,
-                lambda: check_chroma(settings),
-                "Start ChromaDB (docker compose up chromadb) and check CHROMA_HOST/CHROMA_PORT.",
+                check_chroma,
+                "Check CHROMA_PERSIST_PATH is writable and the chromadb package is installed.",
             ),
             _run(
                 "ollama",
