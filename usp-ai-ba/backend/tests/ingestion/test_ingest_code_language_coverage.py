@@ -129,6 +129,40 @@ def test_excluded_dir_names_widened_to_match_codemind(tmp_path):
     assert ingest_code.SKIP_DIR_NAMES == expected
 
 
+def test_oversized_file_is_skipped(tmp_path):
+    """Regression test: a multi-MB generated/bundled JS file sitting outside
+    dist/build/out (so SKIP_DIR_NAMES doesn't catch it) caused a real
+    ~32h-ETA ingestion "hang" this session -- one huge file chunked into
+    thousands of pieces, each embedding fine on its own."""
+    _write(tmp_path, "small.js", "function ok() { return 1; }\n")
+    _write(tmp_path, "full-code.js", "x" * (ingest_code.MAX_SOURCE_FILE_BYTES + 1))
+
+    found = {p.name for p in ingest_code.iter_source_files(tmp_path)}
+
+    assert "small.js" in found
+    assert "full-code.js" not in found
+
+
+def test_file_right_at_the_size_ceiling_is_not_skipped(tmp_path):
+    _write(tmp_path, "at_limit.js", "x" * ingest_code.MAX_SOURCE_FILE_BYTES)
+
+    found = {p.name for p in ingest_code.iter_source_files(tmp_path)}
+
+    assert "at_limit.js" in found
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["vendor.min.js", "app.bundle.js", "polyfills.chunk.js", "lib.min.ts"],
+)
+def test_generated_filename_suffixes_are_skipped_regardless_of_size(tmp_path, name):
+    _write(tmp_path, name, "tiny")
+
+    found = {p.name for p in ingest_code.iter_source_files(tmp_path)}
+
+    assert name not in found
+
+
 def test_ingest_code_indexes_a_python_file_end_to_end(tmp_path, fake_stores):
     _write(tmp_path, "app.py", "def handler():\n    return True\n")
 

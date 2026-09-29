@@ -74,6 +74,21 @@ SKIP_DIR_NAMES = {
 }
 JAVA_EXCLUDE_SUFFIXES = ("Test.java", "IT.java")
 TS_EXCLUDE_SUFFIXES = (".spec.ts",)
+# A generated/bundled/minified file with an ordinary source extension isn't
+# caught by SKIP_DIR_NAMES/JAVA_EXCLUDE_SUFFIXES/TS_EXCLUDE_SUFFIXES above if
+# it sits outside dist/build/out -- a multi-MB "full-code.js" doing exactly
+# this caused a real ~32h-ETA ingestion "hang" (each chunk embeds fine on its
+# own; there were just thousands of them). Two independent guards: a byte-size
+# ceiling (catches any such file regardless of name) and a filename heuristic
+# for the most common generated/minified naming conventions (catches a small
+# bundle that happens to be under the size ceiling).
+MAX_SOURCE_FILE_BYTES = 512_000  # hand-written source is essentially always
+# far smaller than this; generated/bundled/minified output routinely exceeds
+# it by 10-100x.
+GENERATED_FILE_SUFFIXES = (
+    ".min.js", ".min.ts", ".min.cjs", ".min.mjs",
+    ".bundle.js", ".bundle.ts", ".chunk.js",
+)
 # Matches codemind/orchestrator.py's INCLUDED_EXTENSIONS -- widened here (from
 # just {.java, .ts, .js}) to fold in CodeMind's broader per-file LLM
 # extraction language coverage, per the "fully unify ingestion" decision (see
@@ -110,6 +125,8 @@ def _is_skipped_path(path: Path) -> bool:
         return True
     if path.suffix == ".html":
         return True
+    if name.endswith(GENERATED_FILE_SUFFIXES):
+        return True
     return False
 
 
@@ -120,6 +137,14 @@ def iter_source_files(repo_path: Path):
         if path.suffix not in SOURCE_EXTENSIONS:
             continue
         if _is_skipped_path(path):
+            continue
+        size = path.stat().st_size
+        if size > MAX_SOURCE_FILE_BYTES:
+            logger.info(
+                "Skipping %s: %d bytes exceeds the %d-byte source-file ceiling "
+                "(likely a generated/bundled/minified file)",
+                path, size, MAX_SOURCE_FILE_BYTES,
+            )
             continue
         yield path
 
