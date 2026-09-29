@@ -112,32 +112,45 @@
 
         <!-- Task node -->
         <div *ngSwitchCase="'task'">
-          <h2 class="dc-section-title">{{ selectedNode?.label }}</h2>
-          <ng-container *ngIf="selectedTask as task">
-            <span class="dc-status-badge" [ngClass]="statusClass(task.status)">
-              {{ humanizeStatus(task.status) }}
-            </span>
-            <dl class="dc-detail-list">
-              <ng-container *ngIf="task.branch">
-                <dt>Branch</dt>
-                <dd>{{ task.branch }}</dd>
-              </ng-container>
-              <ng-container *ngIf="task.commit">
-                <dt>Commit</dt>
-                <dd>{{ task.commit }}</dd>
-              </ng-container>
-              <dt>Iterations</dt>
-              <dd>{{ task.iterations }}</dd>
-              <ng-container *ngIf="task.wave !== null">
-                <dt>Wave / lane</dt>
-                <dd>{{ task.wave }} / {{ task.lane }}</dd>
-              </ng-container>
-              <ng-container *ngIf="task.feedback">
-                <dt>Feedback</dt>
-                <dd>{{ task.feedback }}</dd>
-              </ng-container>
-            </dl>
-            <p class="sf-error-text" *ngIf="task.error">{{ task.error }}</p>
+          <ng-container *ngIf="selectedNode as node">
+            <h2 class="dc-section-title">{{ node.label }}</h2>
+            <ng-container *ngIf="selectedTask as task">
+              <span class="dc-status-badge" [ngClass]="statusClass(task.status)">
+                {{ humanizeStatus(task.status) }}
+              </span>
+              <dl class="dc-detail-list">
+                <ng-container *ngIf="task.branch">
+                  <dt>Branch</dt>
+                  <dd>{{ task.branch }}</dd>
+                </ng-container>
+                <ng-container *ngIf="task.commit">
+                  <dt>Commit</dt>
+                  <dd>{{ task.commit }}</dd>
+                </ng-container>
+                <dt>Iterations</dt>
+                <dd>{{ task.iterations }}</dd>
+                <ng-container *ngIf="task.wave !== null">
+                  <dt>Wave / lane</dt>
+                  <dd>{{ task.wave }} / {{ task.lane }}</dd>
+                </ng-container>
+                <ng-container *ngIf="task.feedback">
+                  <dt>Feedback</dt>
+                  <dd>{{ task.feedback }}</dd>
+                </ng-container>
+              </dl>
+              <p class="sf-error-text" *ngIf="task.error">{{ task.error }}</p>
+            </ng-container>
+            <ng-container *ngIf="node.activity.length">
+              <h3 class="dc-subheading">Log</h3>
+              <ul class="dc-activity-feed">
+                <li *ngFor="let a of node.activity">
+                  <span class="dc-activity-ok" *ngIf="a.ok === true">✓</span>
+                  <span class="dc-activity-fail" *ngIf="a.ok === false">✗</span>
+                  <span class="dc-activity-time" *ngIf="a.at">{{ a.at.slice(11, 19) }}</span>
+                  {{ a.text }}
+                </li>
+              </ul>
+            </ng-container>
           </ng-container>
         </div>
 
@@ -155,9 +168,17 @@
                 <dd>{{ c.value }}</dd>
               </ng-container>
             </dl>
-            <ul class="dc-activity-feed" *ngIf="node.activity.length">
-              <li *ngFor="let a of node.activity">{{ a.text }}</li>
-            </ul>
+            <ng-container *ngIf="node.activity.length">
+              <h3 class="dc-subheading">Log</h3>
+              <ul class="dc-activity-feed">
+                <li *ngFor="let a of node.activity">
+                  <span class="dc-activity-ok" *ngIf="a.ok === true">✓</span>
+                  <span class="dc-activity-fail" *ngIf="a.ok === false">✗</span>
+                  <span class="dc-activity-time" *ngIf="a.at">{{ a.at.slice(11, 19) }}</span>
+                  {{ a.text }}
+                </li>
+              </ul>
+            </ng-container>
           </ng-container>
         </div>
       </div>

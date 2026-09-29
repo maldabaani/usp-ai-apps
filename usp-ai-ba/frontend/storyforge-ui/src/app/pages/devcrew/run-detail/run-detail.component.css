@@ -89,11 +89,39 @@
   word-break: break-word;
 }
 
+.dc-subheading {
+  margin: 14px 0 6px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .dc-activity-feed {
-  margin: 10px 0 0;
+  margin: 0;
   padding-left: 16px;
   font-size: 12px;
   color: var(--sf-muted);
+}
+
+.dc-activity-feed li {
+  margin-bottom: 4px;
+}
+
+.dc-activity-ok {
+  color: var(--sf-success);
+  font-weight: 700;
+  margin-right: 4px;
+}
+
+.dc-activity-fail {
+  color: var(--sf-error);
+  font-weight: 700;
+  margin-right: 4px;
+}
+
+.dc-activity-time {
+  color: var(--sf-muted);
+  font-family: monospace;
+  margin-right: 6px;
 }
 
 @media (max-width: 900px) {
