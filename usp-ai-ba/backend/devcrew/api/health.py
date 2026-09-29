@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Response, status
+from fastapi import APIRouter, Depends, Response, status
 from pydantic import BaseModel
 
+from api.deps import require_auth
 from devcrew.api.deps import ContainerDep
 from devcrew.health import HealthReport, run_health_checks
 from devcrew.llm.models_config import Role
 
-router = APIRouter(tags=["health"])
+router = APIRouter(tags=["health"], dependencies=[Depends(require_auth)])
 
 
 @router.get("/health", response_model=HealthReport)

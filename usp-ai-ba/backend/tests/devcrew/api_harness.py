@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -10,13 +11,26 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import jwt
 from fastapi import FastAPI
 
+from config import settings as storyforge_settings
 from devcrew.config import Settings
 from devcrew.container import Container
 from devcrew.db.repository import InMemoryRunStore
 from devcrew.main import create_app
 from tests.devcrew.graph_harness import Harness, make_harness
+
+
+def _test_jwt(username: str = "devcrew_test_user", role: str = "admin") -> str:
+    """DevCrew's routes are gated by StoryForge's require_auth/require_admin
+    since the merge (Phase 3) -- every test client needs a valid JWT, same
+    minting pattern as StoryForge's own tests (see tests/test_ask_router.py's
+    _token()). Defaults to "admin" so DevCrew's own tests (which aren't
+    testing StoryForge's user/admin distinction, just DevCrew's own graph/
+    API logic) aren't newly blocked by the admin-only watched-repos routes."""
+    payload = {"sub": username, "role": role, "exp": time.time() + 3600}
+    return jwt.encode(payload, storyforge_settings.JWT_SECRET, algorithm=storyforge_settings.JWT_ALGORITHM)
 
 
 @dataclass
@@ -65,7 +79,10 @@ async def api(
     app = create_app(h.deps.settings, factory)
     async with app.router.lifespan_context(app):
         transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        headers = {"Authorization": f"Bearer {_test_jwt()}"}
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test", headers=headers
+        ) as client:
             yield Api(app, client, container, h)
 
 

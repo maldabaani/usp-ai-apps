@@ -5,9 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 
+from api.deps import require_auth
 from devcrew.api.deps import ContainerDep
 from devcrew.db.models import RunStatus
 from devcrew.graph.layout import LayoutEntry, resolve_layout, sandbox_target
@@ -15,7 +16,9 @@ from devcrew.graph.state import get_design
 from devcrew.sandbox.preview import PREVIEW_TASK, PreviewError, PreviewState, preview_options
 from devcrew.services.run_manager import RunNotFoundError
 
-router = APIRouter(prefix="/runs/{run_id}/preview", tags=["preview"])
+router = APIRouter(
+    prefix="/runs/{run_id}/preview", tags=["preview"], dependencies=[Depends(require_auth)]
+)
 
 
 class PreviewStart(BaseModel):

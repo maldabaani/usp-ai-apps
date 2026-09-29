@@ -6,15 +6,20 @@ import re
 from datetime import datetime
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field, field_validator
 
+from api.deps import require_admin, require_auth
 from devcrew.api.deps import ContainerDep
 from devcrew.api.schemas import REPO_RE, RunSummary
 from devcrew.db.models import IssueRun, WatchedRepo
 from devcrew.github.client import GitHubError
 
-router = APIRouter(tags=["github"])
+# Base gate: any authenticated user. Watched-repo mutations (they change
+# which repos auto-trigger runs for everyone) are additionally gated by
+# require_admin on those specific routes below -- same admin-only-writes
+# convention as StoryForge's own ingestion watch-targets router.
+router = APIRouter(tags=["github"], dependencies=[Depends(require_auth)])
 
 USER_RE = r"^[A-Za-z0-9][A-Za-z0-9-]{0,38}$"
 MIN_POLL_S = 60
@@ -104,7 +109,12 @@ async def list_watched(container: ContainerDep) -> list[WatchedRepoOut]:
     return [WatchedRepoOut.of(r) for r in await container.watch.list_repos()]
 
 
-@router.post("/watched-repos", response_model=WatchedRepoOut, status_code=201)
+@router.post(
+    "/watched-repos",
+    response_model=WatchedRepoOut,
+    status_code=201,
+    dependencies=[Depends(require_admin)],
+)
 async def add_watched(body: WatchedRepoCreate, container: ContainerDep) -> WatchedRepoOut:
     if any(r.repo.lower() == body.repo.lower() for r in await container.watch.list_repos()):
         raise HTTPException(status.HTTP_409_CONFLICT, f"{body.repo} is already watched")
@@ -116,7 +126,11 @@ async def add_watched(body: WatchedRepoCreate, container: ContainerDep) -> Watch
     return WatchedRepoOut.of(row)
 
 
-@router.patch("/watched-repos/{repo_id}", response_model=WatchedRepoOut)
+@router.patch(
+    "/watched-repos/{repo_id}",
+    response_model=WatchedRepoOut,
+    dependencies=[Depends(require_admin)],
+)
 async def update_watched(
     repo_id: int, body: WatchedRepoUpdate, container: ContainerDep
 ) -> WatchedRepoOut:
@@ -131,7 +145,7 @@ async def update_watched(
     return WatchedRepoOut.of(row)
 
 
-@router.delete("/watched-repos/{repo_id}", status_code=204)
+@router.delete("/watched-repos/{repo_id}", status_code=204, dependencies=[Depends(require_admin)])
 async def delete_watched(repo_id: int, container: ContainerDep) -> Response:
     if not await container.watch.delete_repo(repo_id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"watched repository {repo_id} not found")

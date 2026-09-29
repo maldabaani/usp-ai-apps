@@ -14,7 +14,7 @@ from devcrew.db.repository import InMemoryRunStore
 from devcrew.events.bus import EventBus
 from devcrew.events.store import InMemoryEventStore
 from devcrew.events.types import EventType
-from tests.devcrew.api_harness import Api, api, in_memory_container, wait_for_status
+from tests.devcrew.api_harness import Api, _test_jwt, api, in_memory_container, wait_for_status
 from tests.devcrew.fakes import FakeChroma, FakeRunner, final, tool_call, tool_results
 from tests.devcrew.graph_harness import PLAN, make_harness
 
@@ -339,7 +339,8 @@ async def test_sse_live_over_real_server_with_reconnect(tmp_path: Path) -> None:
                 await asyncio.sleep(0.01)
         base = f"http://127.0.0.1:{server.servers[0].sockets[0].getsockname()[1]}"
         try:
-            async with httpx.AsyncClient(base_url=base, timeout=10) as http:
+            headers = {"Authorization": f"Bearer {_test_jwt()}"}
+            async with httpx.AsyncClient(base_url=base, timeout=10, headers=headers) as http:
                 run_id = (await http.post("/runs", json=REQUEST)).json()["id"]
 
                 async def read_until(

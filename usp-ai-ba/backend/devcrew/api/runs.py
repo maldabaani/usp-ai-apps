@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from fastapi.responses import PlainTextResponse, StreamingResponse
 
+from api.deps import require_auth
 from devcrew.api.deps import ContainerDep
 from devcrew.api.schemas import (
     CreateRunRequest,
@@ -37,7 +38,7 @@ from devcrew.services.run_manager import (
 from devcrew.services.usage import RunUsage, summarize
 from devcrew.services.workflow import Workflow, build_workflow
 
-router = APIRouter(prefix="/runs", tags=["runs"])
+router = APIRouter(prefix="/runs", tags=["runs"], dependencies=[Depends(require_auth)])
 
 STATE_FIELDS = (
     "plan",

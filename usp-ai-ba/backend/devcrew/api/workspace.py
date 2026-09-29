@@ -5,14 +5,17 @@ from __future__ import annotations
 from pathlib import Path, PurePosixPath
 from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from api.deps import require_auth
 from devcrew.api.deps import ContainerDep
 from devcrew.api.schemas import DiffResponse, FileContent, FileEntry, FileList
 from devcrew.services.run_manager import RunNotFoundError
 from devcrew.tools.git import GitError, GitRepo
 
-router = APIRouter(prefix="/runs/{run_id}", tags=["workspace"])
+router = APIRouter(
+    prefix="/runs/{run_id}", tags=["workspace"], dependencies=[Depends(require_auth)]
+)
 
 MAX_FILE_BYTES = 500_000
 MAX_DIFF_CHARS = 400_000
