@@ -51,6 +51,11 @@ async def test_strict_startup_fails_fast_before_touching_the_db(
     settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _patch(monkeypatch, ok=False)
+    # Default flipped False (was True) when DevCrew was merged into
+    # StoryForge's backend -- see devcrew/config.py's startup_health_strict
+    # comment -- so this test, which specifically exercises the strict path,
+    # now opts in explicitly instead of relying on the default.
+    settings.startup_health_strict = True
 
     def must_not_open(*_: Any) -> Any:
         raise AssertionError("container must not be opened when health fails")

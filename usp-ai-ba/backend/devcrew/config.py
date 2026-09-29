@@ -124,8 +124,16 @@ class Settings(BaseSettings):
     # --- Server -----------------------------------------------------------------------------
     cors_origins: list[str] = ["http://localhost:4400"]
     log_level: str = "INFO"
+    # Default flipped True -> False when DevCrew was merged into StoryForge's
+    # backend: in standalone DevCrew this correctly aborted its ONLY app when
+    # a critical dependency (DB, Ollama, models, Docker) was down. Merged, an
+    # abort here would also take down StoryForge's own unrelated, otherwise-
+    # working features -- so the default is now to log and continue (the
+    # merged lifespan still surfaces the failure loudly, not silently, just
+    # without crashing the whole process). Set true explicitly for a fully-
+    # provisioned deployment that wants the old strict behavior.
     startup_health_strict: bool = Field(
-        default=True,
+        default=False,
         description="Abort startup when a critical dependency (DB, Ollama, models, Docker) fails.",
     )
 
