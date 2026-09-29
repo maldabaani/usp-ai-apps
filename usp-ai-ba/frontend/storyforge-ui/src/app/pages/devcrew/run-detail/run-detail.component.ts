@@ -11,6 +11,7 @@ import {
   RunUsage,
   Workflow,
 } from '../../../services/devcrew.service';
+import { extractErrorMessage } from '../../../services/http-error.util';
 
 const POLL_MS = 3000;
 
@@ -37,6 +38,9 @@ export class RunDetailComponent implements OnInit, OnDestroy {
   gateBusy = false;
   gateFeedback = '';
   gateError = '';
+
+  retryBusy = false;
+  retryError = '';
 
   private pollHandle: ReturnType<typeof setInterval> | null = null;
 
@@ -134,6 +138,24 @@ export class RunDetailComponent implements OnInit, OnDestroy {
           this.gateError = 'Could not resolve this gate. Try again.';
         },
       });
+  }
+
+  retry(): void {
+    if (!this.run || this.run.status !== 'failed') {
+      return;
+    }
+    this.retryBusy = true;
+    this.retryError = '';
+    this.devCrewService.retryRun(this.runId).subscribe({
+      next: () => {
+        this.retryBusy = false;
+        this.load();
+      },
+      error: (err) => {
+        this.retryBusy = false;
+        this.retryError = extractErrorMessage(err, 'Could not retry this run. Try again.');
+      },
+    });
   }
 
   sendMessage(): void {

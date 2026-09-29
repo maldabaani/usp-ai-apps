@@ -15,9 +15,18 @@
       <a *ngIf="run.pr_url" class="sf-btn sf-btn-secondary" [href]="run.pr_url" target="_blank">
         Open PR ↗
       </a>
+      <button
+        *ngIf="run.status === 'failed'"
+        class="sf-btn sf-btn-secondary"
+        [disabled]="retryBusy"
+        (click)="retry()"
+      >
+        {{ retryBusy ? 'Retrying…' : 'Retry' }}
+      </button>
     </div>
 
     <p class="sf-error-text" *ngIf="run.error">{{ run.error }}</p>
+    <p class="sf-error-text" *ngIf="retryError">{{ retryError }}</p>
 
     <!-- Workflow -->
     <div class="sf-card dc-section" *ngIf="workflow">
