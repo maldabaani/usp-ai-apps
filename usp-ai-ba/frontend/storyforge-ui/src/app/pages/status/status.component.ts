@@ -7,6 +7,7 @@ import { AuthService } from '../../services/auth.service';
 import { extractErrorMessage } from '../../services/http-error.util';
 import { isValidRepoTarget, normalizeRepoTarget } from '../../services/repo-target.util';
 import {
+  DevCrewDispatch,
   DevTask,
   GeneratedStory,
   RagChunk,
@@ -106,6 +107,27 @@ export class StatusComponent implements OnInit, OnDestroy {
     this.jobId = this.route.snapshot.paramMap.get('jobId') ?? '';
     this.poll();
     this.pollHandle = setInterval(() => this.poll(), POLL_INTERVAL_MS);
+    this.loadDevCrewDispatches();
+  }
+
+  // Reflects what's already been dispatched, per the server's own dispatch
+  // registry -- devCrewDispatches previously only ever got populated by a
+  // successful dispatch made in the current browser session, so reloading
+  // this page reset it to empty and silently allowed re-dispatching the
+  // same epic to a brand-new DevCrew run with no warning.
+  private loadDevCrewDispatches(): void {
+    if (!this.jobId) return;
+    this.storyForgeService.getDevCrewDispatches(this.jobId).subscribe({
+      next: (dispatches: DevCrewDispatch[]) => {
+        // Newest first (per the backend); keep only each epic's latest.
+        for (const d of dispatches) {
+          if (!(d.epic_index in this.devCrewDispatches)) {
+            this.devCrewDispatches[d.epic_index] = d.run_id;
+          }
+        }
+      },
+      error: () => {}, // non-critical: the send form still works, just without the reload-safe guard
+    });
   }
 
   ngOnDestroy(): void {

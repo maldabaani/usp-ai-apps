@@ -248,13 +248,22 @@
               </div>
             </ng-container>
             <ng-template #devCrewActionCell>
-              <button
+              <a
+                *ngIf="devCrewDispatches[i] as runId; else devCrewSendButton"
                 class="sf-btn sf-btn-secondary"
-                (click)="openDevCrewForm(i)"
-                [disabled]="sendingToDevCrew !== null || !!devCrewDispatches[i]"
+                [routerLink]="['/devcrew/runs', runId]"
               >
-                {{ devCrewDispatches[i] ? 'Sent (run ' + devCrewDispatches[i] + ')' : (sendingToDevCrew === i ? 'Sending…' : 'Send to DevCrew') }}
-              </button>
+                Already sent — view run ↗
+              </a>
+              <ng-template #devCrewSendButton>
+                <button
+                  class="sf-btn sf-btn-secondary"
+                  (click)="openDevCrewForm(i)"
+                  [disabled]="sendingToDevCrew !== null"
+                >
+                  {{ sendingToDevCrew === i ? 'Sending…' : 'Send to DevCrew' }}
+                </button>
+              </ng-template>
             </ng-template>
           </td>
         </tr>

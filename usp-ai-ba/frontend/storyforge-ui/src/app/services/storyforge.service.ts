@@ -86,6 +86,14 @@ export interface NotionResult {
   page_url: string;
 }
 
+export interface DevCrewDispatch {
+  epic_index: number;
+  epic_title: string;
+  run_id: string;
+  run_status: string | null;
+  created_at: number;
+}
+
 export interface RagChunk {
   content: string;
   metadata: {
@@ -303,6 +311,12 @@ export class StoryForgeService {
     const [owner, repo] = repoTarget.split('/');
     return this.http.get<{ exists: boolean; default_branch: string; private: boolean }>(
       `${API_BASE_URL}/devcrew/check-repo/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`
+    );
+  }
+
+  getDevCrewDispatches(jobId: string): Observable<DevCrewDispatch[]> {
+    return this.http.get<DevCrewDispatch[]>(
+      `${API_BASE_URL}/devcrew/dispatches/${encodeURIComponent(jobId)}`
     );
   }
 

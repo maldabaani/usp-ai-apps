@@ -186,3 +186,43 @@ def test_requires_auth(client: TestClient):
         json={"job_id": "job-1", "epic_index": 0, "repo_target": "acme/shop"},
     )
     assert resp.status_code == 401
+
+
+def test_list_dispatches_for_job(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    """GET /devcrew/dispatches/{job_id} -- the read side the Status page uses to
+    check what's already been sent to DevCrew before allowing another dispatch,
+    since its own in-memory devCrewDispatches state resets on every reload."""
+    import api.devcrew_dispatch_registry as registry
+    import pipeline.runner as runner
+
+    monkeypatch.setattr(runner, "get_job_state", _fake_job_state([APPROVED_STORY]))
+    registry._dispatches = None  # fresh load under this test's JOBS_DIR
+
+    create = client.post(
+        "/api/devcrew/runs/from-storyforge-epic",
+        json={"job_id": "job-1", "epic_index": 0, "repo_target": "acme/shop"},
+        headers=_auth_headers(),
+    )
+    assert create.status_code == 201, create.text
+    run_id = create.json()["id"]
+
+    resp = client.get("/api/devcrew/dispatches/job-1", headers=_auth_headers())
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert len(body) == 1
+    assert body[0]["run_id"] == run_id
+    assert body[0]["epic_index"] == 0
+    assert body[0]["epic_title"] == "Add a discount field"
+    assert body[0]["run_status"] is not None  # the just-created run really exists
+
+
+def test_list_dispatches_for_unknown_job_is_empty(client: TestClient):
+    resp = client.get("/api/devcrew/dispatches/no-such-job", headers=_auth_headers())
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+def test_list_dispatches_requires_auth(client: TestClient):
+    resp = client.get("/api/devcrew/dispatches/job-1")
+    assert resp.status_code == 401

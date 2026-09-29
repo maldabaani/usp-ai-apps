@@ -95,6 +95,14 @@ class ImportIssueRequest(BaseModel):
     mode: Literal["full", "quick"] = "full"
 
 
+class DispatchOut(BaseModel):
+    epic_index: int
+    epic_title: str
+    run_id: str
+    run_status: str | None
+    created_at: float
+
+
 def _needs_github(container: ContainerDep) -> None:
     if container.deps.github is None:
         raise HTTPException(
@@ -212,3 +220,26 @@ async def check_repo(owner: str, repo: str, container: ContainerDep) -> CheckRep
         default_branch=str(repo_data.get("default_branch") or ""),
         private=bool(repo_data.get("private", False)),
     )
+
+
+@router.get("/dispatches/{job_id}", response_model=list[DispatchOut])
+async def list_dispatches(job_id: str, container: ContainerDep) -> list[DispatchOut]:
+    """Which DevCrew run(s), if any, each of this StoryForge job's epics was
+    already sent to -- newest first. Lets the Status page warn before a
+    duplicate dispatch even after a reload, instead of relying only on its
+    own in-memory devCrewDispatches state (which resets on every reload)."""
+    from api.devcrew_dispatch_registry import list_dispatches_for_job
+
+    out = []
+    for d in list_dispatches_for_job(job_id):
+        run = await container.manager.runs.get(d["run_id"])
+        out.append(
+            DispatchOut(
+                epic_index=d["epic_index"],
+                epic_title=d["epic_title"],
+                run_id=d["run_id"],
+                run_status=run.status if run else None,
+                created_at=d["created_at"],
+            )
+        )
+    return out
