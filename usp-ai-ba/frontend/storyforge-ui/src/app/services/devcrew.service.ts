@@ -136,6 +136,11 @@ export interface Workflow {
   attention: string[];
 }
 
+export interface PauseState {
+  status: string;
+  pause_requested: boolean;
+}
+
 export interface MessageOut {
   id: number;
   task_id: string | null;
@@ -202,6 +207,10 @@ export class DevCrewService {
 
   cancelRun(runId: string): Observable<RunSummary> {
     return this.http.post<RunSummary>(`${API_BASE_URL}/runs/${runId}/cancel`, {});
+  }
+
+  pauseRun(runId: string, paused: boolean): Observable<PauseState> {
+    return this.http.post<PauseState>(`${API_BASE_URL}/runs/${runId}/pause`, { paused });
   }
 
   listMessages(runId: string): Observable<MessageOut[]> {

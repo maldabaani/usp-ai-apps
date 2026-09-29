@@ -18,6 +18,7 @@ import { extractErrorMessage } from '../../../services/http-error.util';
 import { WorkflowCanvasComponent } from './workflow-canvas/workflow-canvas.component';
 
 const POLL_MS = 3000;
+const TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
 
 @Component({
   selector: 'app-devcrew-run-detail',
@@ -48,6 +49,9 @@ export class RunDetailComponent implements OnInit, OnDestroy {
 
   retryBusy = false;
   retryError = '';
+
+  pauseBusy = false;
+  pauseError = '';
 
   private pollHandle: ReturnType<typeof setInterval> | null = null;
 
@@ -186,6 +190,28 @@ export class RunDetailComponent implements OnInit, OnDestroy {
       error: (err) => {
         this.retryBusy = false;
         this.retryError = extractErrorMessage(err, 'Could not retry this run. Try again.');
+      },
+    });
+  }
+
+  get runIsTerminal(): boolean {
+    return !!this.run && TERMINAL_STATUSES.has(this.run.status);
+  }
+
+  togglePause(): void {
+    if (!this.run || this.runIsTerminal) {
+      return;
+    }
+    this.pauseBusy = true;
+    this.pauseError = '';
+    this.devCrewService.pauseRun(this.runId, !this.run.pause_requested).subscribe({
+      next: () => {
+        this.pauseBusy = false;
+        this.load();
+      },
+      error: (err) => {
+        this.pauseBusy = false;
+        this.pauseError = extractErrorMessage(err, 'Could not change the pause state. Try again.');
       },
     });
   }

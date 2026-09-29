@@ -23,10 +23,22 @@
       >
         {{ retryBusy ? 'Retrying…' : 'Retry' }}
       </button>
+      <button
+        *ngIf="!runIsTerminal"
+        class="sf-btn sf-btn-secondary"
+        [disabled]="pauseBusy"
+        (click)="togglePause()"
+      >
+        {{ pauseBusy ? 'Working…' : (run.pause_requested ? 'Resume' : 'Pause') }}
+      </button>
     </div>
 
     <p class="sf-error-text" *ngIf="run.error">{{ run.error }}</p>
     <p class="sf-error-text" *ngIf="retryError">{{ retryError }}</p>
+    <p class="sf-error-text" *ngIf="pauseError">{{ pauseError }}</p>
+    <p class="dc-panel-meta" *ngIf="run.pause_requested && run.status !== 'paused' && !runIsTerminal">
+      Pause requested — will stop before the next wave starts.
+    </p>
 
     <!-- Workflow canvas + node detail panel -->
     <div class="dc-canvas-row" *ngIf="workflow; else workflowLoading">
