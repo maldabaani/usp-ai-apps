@@ -1,0 +1,94 @@
+# Python / FastAPI benchmark tasks, from a single CRUD resource to a multi-module service.
+# Each request pins the HTTP contract precisely, because the hidden acceptance tests in
+# benchmarks/hidden_tests/<id>/ check it black-box (FastAPI TestClient on `app.main:app`).
+stack: python
+tasks:
+  - id: py-todo-crud
+    difficulty: 1
+    title: TODO CRUD API
+    request: |
+      Build a FastAPI TODO API with CRUD and pytest tests.
+
+      Contract (the FastAPI instance must stay importable as `app` from `app/main.py`; keep
+      the existing GET /health endpoint; store data in memory, no database):
+      - POST /todos with JSON {"title": str, "done": bool (optional, default false)} creates a
+        todo and returns 201 with {"id": int, "title": str, "done": bool}. The title must be
+        1-200 characters, otherwise 422.
+      - GET /todos returns 200 with the list of all todos.
+      - GET /todos/{id} returns 200 with the todo, or 404 if it does not exist.
+      - PUT /todos/{id} with {"title": str, "done": bool} replaces the todo and returns 200 with
+        it, or 404 if it does not exist (422 on an invalid title).
+      - DELETE /todos/{id} returns 204 with an empty body, or 404 if it does not exist.
+      - Ids are unique positive integers and are never reused.
+
+  - id: py-notes-tags
+    difficulty: 2
+    title: Notes with tags, search and partial updates
+    request: |
+      Build a FastAPI notes API with tags, filtering and full-text search, with pytest tests.
+
+      Contract (the FastAPI instance must stay importable as `app` from `app/main.py`; keep
+      the existing GET /health endpoint; store data in memory, no database):
+      - POST /notes with {"title": str (1-120 chars), "body": str (may be empty, default ""),
+        "tags": list[str] (optional, default [])} returns 201 with
+        {"id": int, "title": str, "body": str, "tags": list[str]}. Invalid input returns 422.
+      - Tags are normalized on every write: trimmed, lower-cased, empty tags dropped,
+        duplicates removed and the list sorted alphabetically.
+      - GET /notes returns 200 with all notes. Optional query parameters, combinable:
+        `tag` (only notes having that tag, matched case-insensitively) and `q` (case-insensitive
+        substring match on title OR body).
+      - GET /notes/{id} returns the note or 404.
+      - PATCH /notes/{id} accepts any subset of title, body and tags, updates only the given
+        fields and returns 200 with the full note (404 if missing, 422 if invalid).
+      - DELETE /notes/{id} returns 204, or 404 if missing.
+      - GET /tags returns 200 with [{"tag": str, "count": int}] for every tag used by at least
+        one note, sorted by tag; count is the number of notes carrying the tag.
+
+  - id: py-library-loans
+    difficulty: 3
+    title: Library with authors, books and loans
+    request: |
+      Build a FastAPI library-management API (authors, books, loans) with pytest tests. Use
+      separate routers, schemas and services per resource.
+
+      Contract (the FastAPI instance must stay importable as `app` from `app/main.py`; keep
+      the existing GET /health endpoint; store data in memory, no database):
+      - POST /authors {"name": str (1-100 chars)} -> 201 {"id": int, "name": str};
+        GET /authors/{id} -> 200 or 404.
+      - POST /books {"title": str (1-200 chars), "author_id": int, "copies": int >= 1} -> 201
+        {"id", "title", "author_id", "copies", "available"} where available is the number of
+        copies not currently on loan. Unknown author_id -> 404; invalid fields -> 422.
+      - GET /books/{id} -> 200 (with the current "available") or 404.
+      - GET /authors/{id}/books -> 200 with the author's books, 404 if the author is unknown.
+      - POST /loans {"book_id": int, "borrower": str (1-100 chars)} -> 201
+        {"id", "book_id", "borrower", "returned": false}. Unknown book -> 404; no copy
+        available -> 409.
+      - POST /loans/{id}/return -> 200 with the loan and "returned": true; unknown loan -> 404;
+        a loan that was already returned -> 409. Returning makes the copy available again.
+      - GET /loans?active=true lists only loans that are not returned (without the parameter:
+        all loans).
+
+  - id: py-shop-orders
+    difficulty: 4
+    title: Shop with products, inventory and orders
+    request: |
+      Build a multi-module FastAPI shop backend (products, inventory, orders) with pytest
+      tests. Keep business rules in a service layer separate from the routers.
+
+      Contract (the FastAPI instance must stay importable as `app` from `app/main.py`; keep
+      the existing GET /health endpoint; store data in memory, no database):
+      - POST /products {"sku": str (1-40 chars), "name": str (1-200 chars), "price": number > 0,
+        "stock": int >= 0} -> 201 with the same fields. A duplicate sku -> 409; invalid -> 422.
+      - GET /products -> 200 list; with ?in_stock=true only products with stock > 0.
+      - GET /products/{sku} -> 200 or 404.
+      - PATCH /products/{sku}/stock {"delta": int} adjusts the stock and returns the product;
+        a result below zero -> 409 and nothing changes; unknown sku -> 404.
+      - POST /orders {"items": [{"sku": str, "quantity": int >= 1}, ...]} (at least one item)
+        -> 201 {"id": int, "status": "placed", "items": [{"sku", "quantity", "unit_price",
+        "line_total"}], "total": number}. line_total = unit_price * quantity and total is the
+        sum of the line totals, both rounded to 2 decimals. Placing an order decrements stock.
+        Unknown sku -> 404; not enough stock for any line -> 409; in both cases NO stock is
+        changed (all-or-nothing). Empty items -> 422.
+      - GET /orders/{id} -> 200 or 404.
+      - POST /orders/{id}/cancel -> 200 with "status": "cancelled" and the stock of every line
+        restored; cancelling an already cancelled order -> 409; unknown order -> 404.

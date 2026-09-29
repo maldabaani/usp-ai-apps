@@ -11,12 +11,45 @@ services:
       # single-container deployment where nothing else needs to verify
       # tokens it issues.
       JWT_SECRET: ${JWT_SECRET}
+      # --- DevCrew (merged sibling package, see usp-ai-ba/backend/devcrew/) ---
+      # DEVCREW_-prefixed so these never collide with StoryForge's own
+      # same-named-but-differently-typed settings (see devcrew/config.py).
+      DEVCREW_DATABASE_URL: postgresql+asyncpg://devcrew:${DEVCREW_DB_PASSWORD:-devcrew}@devcrew-postgres:5432/devcrew
+      DEVCREW_GITHUB_TOKEN: ${DEVCREW_GITHUB_TOKEN}
+      DEVCREW_OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      DEVCREW_WORKSPACES_DIR: /devcrew-workspaces
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       - storyforge-data:/data
+      - devcrew-workspaces:/devcrew-workspaces
+      # DevCrew's Developer agents run each task in its own Docker-sandboxed
+      # container (git worktree + `docker exec`, network_mode=none) -- the
+      # backend container needs the host's Docker socket to spawn them.
+      # This is Docker-out-of-Docker: it widens this container's trust
+      # boundary (it can start sibling containers on the host), a
+      # deliberate, explicitly-flagged tradeoff, not incidental.
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - devcrew-postgres
     expose:
       - "8000"
+
+  # New infra this merge requires (previously SQLite-only): DevCrew's own
+  # LangGraph checkpointer and run-tracking tables are Postgres-backed
+  # (kept as its own separate checkpointer/DB from StoryForge's SQLite
+  # one -- see the merge plan's decision C). Real operational surface
+  # (backups, Alembic migrations) added by this merge, not cosmetic.
+  devcrew-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: devcrew
+      POSTGRES_PASSWORD: ${DEVCREW_DB_PASSWORD:-devcrew}
+      POSTGRES_DB: devcrew
+    volumes:
+      - devcrew-pgdata:/var/lib/postgresql/data
+    expose:
+      - "5432"
 
   gateway:
     build:
@@ -29,3 +62,5 @@ services:
 
 volumes:
   storyforge-data:
+  devcrew-pgdata:
+  devcrew-workspaces:

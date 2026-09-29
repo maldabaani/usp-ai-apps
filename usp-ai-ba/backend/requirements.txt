@@ -22,3 +22,13 @@ python-dotenv
 pyjwt
 bcrypt
 pytest
+pytest-asyncio
+# --- DevCrew (merged sibling package, see usp-ai-ba/backend/devcrew/) ---
+pydantic-settings
+sqlalchemy[asyncio]
+asyncpg
+alembic
+psycopg[binary,pool]
+langgraph-checkpoint-postgres
+docker
+pyyaml
