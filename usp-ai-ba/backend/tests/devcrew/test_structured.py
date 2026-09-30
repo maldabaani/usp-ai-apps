@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -68,6 +69,14 @@ async def test_fallback_extracts_json_from_prose() -> None:
     result = await generate_structured(gateway(brain), Role.PLANNER, MESSAGES, Item)
     assert result.value == Item(name="c", qty=4)
     assert result.used_fallback and result.attempts == 3
+
+
+async def test_invalid_response_logs_raw_text(caplog: pytest.LogCaptureFixture) -> None:
+    brain, _ = scripted("", '{"name": "a", "qty": 1}')
+    with caplog.at_level(logging.INFO, logger="devcrew.llm.structured"):
+        await generate_structured(gateway(brain), Role.PLANNER, MESSAGES, Item)
+    assert "Expecting value" in caplog.text
+    assert "raw=''" in caplog.text
 
 
 async def test_gives_up_after_retries() -> None:

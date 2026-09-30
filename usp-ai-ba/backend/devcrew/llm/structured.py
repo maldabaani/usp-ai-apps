@@ -187,7 +187,14 @@ async def generate_structured[T: BaseModel](
         except (json.JSONDecodeError, ValidationError) as exc:
             error = format_validation_error(exc)
             errors.append(error)
-            logger.info("%s: invalid %s (attempt %d): %s", role, schema.__name__, attempt, error)
+            logger.info(
+                "%s: invalid %s (attempt %d): %s [raw=%r]",
+                role,
+                schema.__name__,
+                attempt,
+                error,
+                text[:200],
+            )
             history += [AIMessage(content=text), _correction(error, schema)]
 
     for text in reversed(raw):
