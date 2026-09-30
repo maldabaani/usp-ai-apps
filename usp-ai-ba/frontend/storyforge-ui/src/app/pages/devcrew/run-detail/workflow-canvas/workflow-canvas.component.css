@@ -46,7 +46,8 @@
   overflow: auto;
   border-radius: 10px;
   background: #12131a;
-  height: 480px;
+  height: calc(100vh - 260px);
+  min-height: 480px;
 }
 
 .dc-canvas-inner {
@@ -93,12 +94,17 @@
   background: #1c1e29;
   border: 1px solid #2c2f3d;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
-  cursor: pointer;
+  cursor: grab;
   overflow: hidden;
+  touch-action: none;
 }
 
 .dc-node-card:hover {
   border-color: #4b4f66;
+}
+
+.dc-node-card:active {
+  cursor: grabbing;
 }
 
 .dc-node-selected {

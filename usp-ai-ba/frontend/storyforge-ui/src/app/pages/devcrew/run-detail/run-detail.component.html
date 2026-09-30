@@ -1,4 +1,4 @@
-<div class="sf-page">
+<div class="sf-page dc-run-page">
   <a routerLink="/devcrew/runs" class="sf-back-link">← Back to DevCrew runs</a>
 
   <p class="sf-error-text" *ngIf="loadError">{{ loadError }}</p>
@@ -15,42 +15,44 @@
           </span>
         </p>
       </div>
-      <button
-        type="button"
-        class="sf-btn sf-btn-secondary"
-        [class.sf-btn-active]="notifyEnabled"
-        (click)="toggleNotify()"
-      >
-        {{ notifyEnabled ? 'Notifying ✓' : 'Notify me' }}
-      </button>
-      <a class="sf-btn sf-btn-secondary" [href]="reportDownloadUrl" target="_blank">Report ↓</a>
-      <a *ngIf="run.pr_url" class="sf-btn sf-btn-secondary" [href]="run.pr_url" target="_blank">
-        Open PR ↗
-      </a>
-      <button
-        *ngIf="run.status === 'failed'"
-        class="sf-btn sf-btn-secondary"
-        [disabled]="retryBusy"
-        (click)="retry()"
-      >
-        {{ retryBusy ? 'Retrying…' : 'Retry' }}
-      </button>
-      <button
-        *ngIf="!runIsTerminal"
-        class="sf-btn sf-btn-secondary"
-        [disabled]="pauseBusy"
-        (click)="togglePause()"
-      >
-        {{ pauseBusy ? 'Working…' : (run.pause_requested ? 'Resume' : 'Pause') }}
-      </button>
-      <button
-        *ngIf="!runIsTerminal"
-        class="sf-btn sf-btn-danger"
-        [disabled]="cancelBusy"
-        (click)="cancel()"
-      >
-        {{ cancelBusy ? 'Cancelling…' : 'Cancel' }}
-      </button>
+      <div class="dc-header-actions">
+        <button
+          type="button"
+          class="sf-btn sf-btn-secondary"
+          [class.sf-btn-active]="notifyEnabled"
+          (click)="toggleNotify()"
+        >
+          {{ notifyEnabled ? 'Notifying ✓' : 'Notify me' }}
+        </button>
+        <a class="sf-btn sf-btn-secondary" [href]="reportDownloadUrl" target="_blank">Report ↓</a>
+        <a *ngIf="run.pr_url" class="sf-btn sf-btn-secondary" [href]="run.pr_url" target="_blank">
+          Open PR ↗
+        </a>
+        <button
+          *ngIf="run.status === 'failed'"
+          class="sf-btn sf-btn-secondary"
+          [disabled]="retryBusy"
+          (click)="retry()"
+        >
+          {{ retryBusy ? 'Retrying…' : 'Retry' }}
+        </button>
+        <button
+          *ngIf="!runIsTerminal"
+          class="sf-btn sf-btn-secondary"
+          [disabled]="pauseBusy"
+          (click)="togglePause()"
+        >
+          {{ pauseBusy ? 'Working…' : (run.pause_requested ? 'Resume' : 'Pause') }}
+        </button>
+        <button
+          *ngIf="!runIsTerminal"
+          class="sf-btn sf-btn-danger"
+          [disabled]="cancelBusy"
+          (click)="cancel()"
+        >
+          {{ cancelBusy ? 'Cancelling…' : 'Cancel' }}
+        </button>
+      </div>
     </div>
 
     <p class="sf-error-text" *ngIf="run.error">{{ run.error }}</p>
@@ -64,6 +66,7 @@
     <!-- Workflow canvas + node detail panel -->
     <div class="dc-canvas-row" *ngIf="workflow; else workflowLoading">
       <app-workflow-canvas
+        [runId]="runId"
         [nodes]="workflow.nodes"
         [edges]="workflow.edges"
         [attention]="workflow.attention"

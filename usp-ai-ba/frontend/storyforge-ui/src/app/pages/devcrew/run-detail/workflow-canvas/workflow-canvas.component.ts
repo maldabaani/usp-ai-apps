@@ -66,6 +66,15 @@ interface ViewportRect {
   h: number;
 }
 
+interface DragState {
+  id: string;
+  pointerId: number;
+  startClientX: number;
+  startClientY: number;
+  originX: number;
+  originY: number;
+}
+
 @Component({
   selector: 'app-workflow-canvas',
   standalone: true,
@@ -74,6 +83,7 @@ interface ViewportRect {
   styleUrl: './workflow-canvas.component.css',
 })
 export class WorkflowCanvasComponent implements OnChanges, AfterViewInit {
+  @Input() runId = '';
   @Input() nodes: WorkflowNode[] = [];
   @Input() edges: WorkflowEdge[] = [];
   @Input() attention: string[] = [];
@@ -93,6 +103,16 @@ export class WorkflowCanvasComponent implements OnChanges, AfterViewInit {
   readonly humanizeStatus = humanizeStatus;
   readonly modes: CanvasViewMode[] = ['follow', 'overview', 'compact'];
 
+  // Positions the user has dragged a node to, keyed by node id, for the
+  // *current* runId + viewMode. Follow/Compact use different LayoutDims
+  // (different node size/column gaps), so a raw pixel position saved in one
+  // mode is meaningless in another -- each mode gets its own saved set (see
+  // storageKey()) to avoid a node jumping to a nonsensical spot when the
+  // view-mode changes.
+  private dragOverrides = new Map<string, { x: number; y: number }>();
+  private dragState: DragState | null = null;
+  private dragMoved = false;
+
   get dims(): LayoutDims {
     return this.viewMode === 'compact' ? COMPACT_DIMS : DEFAULT_DIMS;
   }
@@ -100,7 +120,11 @@ export class WorkflowCanvasComponent implements OnChanges, AfterViewInit {
   get render(): CanvasRender {
     const dims = this.dims;
     const layout = layoutWorkflow(this.nodes, this.edges, dims);
-    const byId = new Map(layout.positioned.map((p) => [p.node.id, p]));
+    const positioned: PositionedNode[] = layout.positioned.map((p) => {
+      const override = this.dragOverrides.get(p.node.id);
+      return override ? { ...p, x: override.x, y: override.y } : p;
+    });
+    const byId = new Map(positioned.map((p) => [p.node.id, p]));
 
     const flowPaths: FlowEdgePath[] = [];
     const loopPaths: LoopEdgePath[] = [];
@@ -117,10 +141,19 @@ export class WorkflowCanvasComponent implements OnChanges, AfterViewInit {
       }
     }
 
+    // A dragged node can sit past the auto-computed layout's edge -- grow
+    // the canvas bounds to keep it reachable by scroll instead of clipped.
+    let maxX = layout.width;
+    let maxY = layout.height;
+    for (const p of positioned) {
+      maxX = Math.max(maxX, p.x + dims.nodeWidth);
+      maxY = Math.max(maxY, p.y + dims.nodeHeight);
+    }
+
     return {
-      positioned: layout.positioned,
-      width: layout.width + CANVAS_PADDING * 2,
-      height: layout.height + CANVAS_PADDING * 2,
+      positioned,
+      width: maxX + CANVAS_PADDING * 2,
+      height: maxY + CANVAS_PADDING * 2,
       flowPaths,
       loopPaths,
     };
@@ -174,6 +207,9 @@ export class WorkflowCanvasComponent implements OnChanges, AfterViewInit {
   }
 
   ngOnChanges(changes: SimpleChanges): void {
+    if (changes['runId']) {
+      this.loadOverrides();
+    }
     if ((changes['selectedId'] || changes['viewMode']) && this.viewMode === 'follow') {
       this.scrollToSelected();
     }
@@ -249,11 +285,122 @@ export class WorkflowCanvasComponent implements OnChanges, AfterViewInit {
       return;
     }
     this.viewMode = mode;
+    this.loadOverrides();
     this.viewModeChange.emit(mode);
     if (mode === 'follow') {
       // Deferred: the (possibly compact-dims) layout needs one change
       // detection cycle to settle before positions used for scrolling are current.
       setTimeout(() => this.scrollToSelected());
+    }
+  }
+
+  get hasDragOverrides(): boolean {
+    return this.dragOverrides.size > 0;
+  }
+
+  resetLayout(): void {
+    this.dragOverrides = new Map();
+    if (this.runId && typeof localStorage !== 'undefined') {
+      localStorage.removeItem(this.storageKey());
+    }
+  }
+
+  private storageKey(): string {
+    return `dc-node-pos:${this.runId}:${this.viewMode}`;
+  }
+
+  private loadOverrides(): void {
+    this.dragOverrides = new Map();
+    if (!this.runId || typeof localStorage === 'undefined') {
+      return;
+    }
+    try {
+      const raw = localStorage.getItem(this.storageKey());
+      if (!raw) {
+        return;
+      }
+      const parsed = JSON.parse(raw) as Record<string, { x: number; y: number }>;
+      for (const [id, pos] of Object.entries(parsed)) {
+        this.dragOverrides.set(id, pos);
+      }
+    } catch {
+      // Corrupted localStorage entry -- fall back to the auto-computed layout.
+    }
+  }
+
+  private saveOverrides(): void {
+    if (!this.runId || typeof localStorage === 'undefined') {
+      return;
+    }
+    if (!this.dragOverrides.size) {
+      localStorage.removeItem(this.storageKey());
+      return;
+    }
+    const obj: Record<string, { x: number; y: number }> = {};
+    for (const [id, pos] of this.dragOverrides) {
+      obj[id] = pos;
+    }
+    localStorage.setItem(this.storageKey(), JSON.stringify(obj));
+  }
+
+  onNodePointerDown(event: PointerEvent, p: PositionedNode): void {
+    if (event.button !== 0) {
+      return;
+    }
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    this.dragMoved = false;
+    this.dragState = {
+      id: p.node.id,
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      originX: p.x,
+      originY: p.y,
+    };
+  }
+
+  onNodePointerMove(event: PointerEvent): void {
+    const state = this.dragState;
+    if (!state || event.pointerId !== state.pointerId) {
+      return;
+    }
+    const dxScreen = event.clientX - state.startClientX;
+    const dyScreen = event.clientY - state.startClientY;
+    if (!this.dragMoved && Math.hypot(dxScreen, dyScreen) > 4) {
+      this.dragMoved = true;
+    }
+    // .dc-canvas-inner is CSS-scaled in Overview mode, so screen-pixel
+    // pointer deltas need to be converted back to logical (pre-scale)
+    // coordinates -- otherwise dragging feels far too fast/slow depending
+    // on zoom level. Compact mode has no transform (it only shrinks
+    // `dims`), so no correction is needed there.
+    const scale = this.viewMode === 'overview' ? this.fitScale || 1 : 1;
+    const nextX = Math.max(0, state.originX + dxScreen / scale);
+    const nextY = Math.max(0, state.originY + dyScreen / scale);
+    this.dragOverrides.set(state.id, { x: nextX, y: nextY });
+  }
+
+  onNodePointerUp(event: PointerEvent, nodeId: string): void {
+    const state = this.dragState;
+    if (!state || event.pointerId !== state.pointerId) {
+      return;
+    }
+    this.dragState = null;
+    if (this.dragMoved) {
+      this.saveOverrides();
+    } else {
+      this.onSelect(nodeId);
+    }
+  }
+
+  onNodePointerCancel(event: PointerEvent): void {
+    const state = this.dragState;
+    if (!state || event.pointerId !== state.pointerId) {
+      return;
+    }
+    this.dragState = null;
+    if (this.dragMoved) {
+      this.saveOverrides();
     }
   }
 

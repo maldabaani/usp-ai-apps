@@ -18,6 +18,14 @@
   >
     Map
   </button>
+  <button
+    *ngIf="hasDragOverrides"
+    type="button"
+    class="dc-toolbar-btn"
+    (click)="resetLayout()"
+  >
+    Reset layout
+  </button>
 </div>
 
 <div class="dc-canvas-widget">
@@ -62,7 +70,10 @@
       [class.dc-node-compact]="viewMode === 'compact'"
       [class.dc-node-selected]="p.node.id === selectedId"
       [class.dc-node-attention]="attention.includes(p.node.id)"
-      (click)="onSelect(p.node.id)"
+      (pointerdown)="onNodePointerDown($event, p)"
+      (pointermove)="onNodePointerMove($event)"
+      (pointerup)="onNodePointerUp($event, p.node.id)"
+      (pointercancel)="onNodePointerCancel($event)"
     >
       <div class="dc-node-bar"></div>
       <div class="dc-node-body">

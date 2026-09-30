@@ -55,6 +55,28 @@
   color: #fff;
 }
 
+/* ── Page width + header (this page only breaks out of .sf-page's 960px cap,
+   since the canvas benefits from all the width it can get) ─────────────── */
+.dc-run-page {
+  max-width: none;
+}
+
+.sf-status-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.dc-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 /* ── Workflow canvas + node detail panel ─────────────────────────────────── */
 .dc-canvas-row {
   display: flex;
@@ -69,8 +91,8 @@
 }
 
 .dc-node-panel {
-  flex: 0 0 360px;
-  max-height: 480px;
+  flex: 0 0 380px;
+  max-height: calc(100vh - 260px);
   overflow-y: auto;
 }
 
