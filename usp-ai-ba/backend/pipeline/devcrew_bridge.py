@@ -200,17 +200,23 @@ def build_design(repo_info: dict[str, Any], story: dict[str, Any], plan: Plan) -
     design_doc_sections = [f"# {story.get('epic_title', '')}\n\n{story.get('user_story', '')}"]
     design_doc_sections.extend(f"## {task.title}\n\n{task.description}" for task in plan.tasks)
 
-    return Design(
-        stack=base.stack,
-        template_id=base.template_id,
-        components=base.components,
-        project_structure=base.project_structure,
-        modules=modules,
-        key_decisions=[
-            "Design authored by StoryForge's own assessment pipeline, not DevCrew's Architect -- "
-            "see the epic's acceptance criteria and each task's technical approach above."
-        ],
-        design_doc="\n\n".join(design_doc_sections),
-        plan_assessment=None,
-        existing_projects=base.existing_projects,
+    # base is already validated against plan's task stacks (quick_design); re-validated here too
+    # since this Design's existing_projects/stack are what actually gets returned to the caller.
+    return Design.model_validate(
+        {
+            "stack": base.stack,
+            "template_id": base.template_id,
+            "components": base.components,
+            "project_structure": base.project_structure,
+            "modules": modules,
+            "key_decisions": [
+                "Design authored by StoryForge's own assessment pipeline, not DevCrew's "
+                "Architect -- see the epic's acceptance criteria and each task's technical "
+                "approach above."
+            ],
+            "design_doc": "\n\n".join(design_doc_sections),
+            "plan_assessment": None,
+            "existing_projects": base.existing_projects,
+        },
+        context={"task_stacks": {t.stack for t in plan.tasks}},
     )

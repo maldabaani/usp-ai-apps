@@ -88,6 +88,19 @@ async def test_failing_tests_loop_back_with_qa_diagnosis(tmp_path: Path) -> None
     assert "exit code 1" in retry.text()
 
 
+async def test_developer_retry_lists_files_already_written(tmp_path: Path) -> None:
+    # Each retry's tool-calling conversation starts empty (task_scratch is cleared) -- the
+    # touched-files summary is the only thing telling attempt 2 what attempt 1 already wrote.
+    runner = FakeRunner()
+    runner.script(PYTEST, (1, "FAILED tests/test_t1.py::test_x - assert 1 == 2\n1 failed"))
+    h = make_harness(tmp_path, runner=runner)
+    h.brain.responders["qa_report"] = lambda c: final({"failed": [], "summary": "x"})
+    await run_to_final(h)
+    retry = [c for c in h.brain.calls_for("developer") if c.fresh][1]
+    assert "Files you already wrote for this task" in retry.text()
+    assert "app/schemas/todo.py" in retry.text()  # what default_developer wrote T1 on attempt 1
+
+
 async def test_exit_code_decides_pass_not_the_model(tmp_path: Path) -> None:
     runner = FakeRunner()
     runner.script(PYTEST, (2, "ERROR collecting tests"), (2, "ERROR"), (2, "ERROR"))

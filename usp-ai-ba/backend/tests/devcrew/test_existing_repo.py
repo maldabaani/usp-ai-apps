@@ -8,9 +8,12 @@ from typing import Any
 
 import pytest
 from langchain_core.messages import AIMessage
+from pydantic import ValidationError
 
 from devcrew.db.models import RunStatus
 from devcrew.graph.interrupts import ResumePayload
+from devcrew.graph.nodes.repository import quick_design
+from devcrew.graph.state import Plan
 from devcrew.repo.detect import CONFIG_FILE, DetectionError, detect_projects, repository_map
 from devcrew.services.workflow import build_workflow
 from devcrew.tools.git import GitRepo
@@ -228,6 +231,34 @@ async def test_plan_must_use_the_repository_stacks(tmp_path: Path) -> None:
     # the plan never validates, so the planner escalates to the human
     assert outcome.status is RunStatus.NEEDS_HUMAN
     assert "only has ['python'] projects" in outcome.interrupts[0].value["data"]["reason"]
+
+
+def test_quick_design_rejects_a_plan_the_repository_cant_run() -> None:
+    # Reaching quick_design with a plan the repository doesn't match can't happen through the
+    # planner (Plan itself is validated against repo_info's stacks at approve_plan -- see
+    # test_plan_must_use_the_repository_stacks above, same guard for quick and full mode). But
+    # quick_design is also called directly by the StoryForge bridge (pipeline/devcrew_bridge.py),
+    # which builds its Plan from an epic with no such check -- this is quick_design's own,
+    # independent safety net for that caller, so it must not depend on the planner having
+    # already run. Fails loudly here rather than TaskCtx.project silently falling back to an
+    # arbitrary other stack's template (task_common.py).
+    state = {
+        "repo_info": {
+            "projects": [
+                {
+                    "stack": "python",
+                    "path": ".",
+                    "install_cmd": "pip install -e .",
+                    "build_cmd": "",
+                    "test_cmd": "pytest -q",
+                }
+            ]
+        }
+    }
+    plan = Plan.model_validate({**PLAN, "tasks": [{**t, "stack": "angular"} for t in PLAN["tasks"]]})
+
+    with pytest.raises(ValidationError, match=r"\['angular'\].*only contains \['python'\]"):
+        quick_design(state, plan)
 
 
 # ------------------------------------------------------------------------------ failures

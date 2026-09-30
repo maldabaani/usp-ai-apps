@@ -44,16 +44,23 @@ def repo_stack(projects: list[ExistingProject]) -> Stack:
 
 
 def quick_design(state: dict[str, Any], plan: Plan) -> Design:
-    """Quick-fix runs skip the Architect: a minimal design that carries the detected layout."""
+    """Quick-fix runs skip the Architect: a minimal design that carries the detected layout.
+
+    Validated against the plan's own task stacks (Design._layout_is_valid's existing_projects
+    branch) so a task whose stack the repository has no detected project for fails loudly here,
+    instead of TaskCtx.project silently handing it an arbitrary other stack's template later."""
     projects = repo_projects(state)
-    return Design(
-        stack=repo_stack(projects),
-        template_id="existing",
-        project_structure=sorted({f for t in plan.tasks for f in t.target_files}),
-        modules=[_module(p) for p in projects],
-        key_decisions=["Quick fix: keep the existing structure and conventions."],
-        design_doc=QUICK_DESIGN_DOC,
-        existing_projects=projects,
+    return Design.model_validate(
+        {
+            "stack": repo_stack(projects),
+            "template_id": "existing",
+            "project_structure": sorted({f for t in plan.tasks for f in t.target_files}),
+            "modules": [_module(p) for p in projects],
+            "key_decisions": ["Quick fix: keep the existing structure and conventions."],
+            "design_doc": QUICK_DESIGN_DOC,
+            "existing_projects": projects,
+        },
+        context={"task_stacks": {t.stack for t in plan.tasks}},
     )
 
 

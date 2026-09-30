@@ -88,6 +88,10 @@ def make_developer(deps: GraphDeps) -> NodeFn:
                 rules = ""
             related = await retrieve(deps, ctx.run_id, task_query(ctx.task))
             notes = await task_notes(deps, state, ctx.task.id, deliver=True)
+            # Empty on a first attempt (nothing committed yet); on a retry this is the real diff
+            # against the integration branch, so it reflects every file written across every
+            # earlier attempt on this branch -- not a hand-tracked list that could drift from it.
+            touched = await ctx.repo.changed_files(ctx.integration_branch, ctx.branch)
             return developer_context(
                 ctx.task,
                 ctx.plan,
@@ -99,6 +103,7 @@ def make_developer(deps: GraphDeps) -> NodeFn:
                 qa=qa_entries(qa_log, task_id=ctx.task.id),
                 related_code=related,
                 notes=notes,
+                touched_files=touched,
             )
 
         outcome = await agent_turn(

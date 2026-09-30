@@ -19,11 +19,30 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from devcrew.graph.state import Plan, dump
 from devcrew.services.workflow import build_workflow
 from pipeline.devcrew_bridge import UnsupportedStackError, build_design, build_plan
-from tests.devcrew.test_existing_repo import RUN, existing_harness
+from tests.devcrew.fake_github import FakeGitHub
+from tests.devcrew.graph_harness import Harness, make_harness
+from tests.devcrew.test_existing_repo import RUN, seeded_repo
+
+JAVA_REPO = {
+    "pom.xml": "<project/>",
+    "src/main/java/com/acme/shop/App.java": "package com.acme.shop;\n\npublic class App {}\n",
+    "README.md": "# Shop\n\nA small shop backend.\n",
+}
+
+
+def java_harness(tmp_path: Path) -> tuple[Harness, FakeGitHub, str]:
+    """Like existing_harness (test_existing_repo.py), but a java repo: STORY's dev_task touches
+    "backend", which build_plan always derives as stack "java" (_derive_stack) -- the bridged
+    integration tests below need a repository that stack can actually run in, now that
+    build_design validates the Design against the plan's own task stacks (quick_design)."""
+    gh = FakeGitHub(tmp_path / "remotes")
+    sha = seeded_repo(gh, "acme", "shop", JAVA_REPO)
+    return make_harness(tmp_path, github=gh.delivery()), gh, sha
 
 STORY = {
     "epic_title": "Add a discount field",
@@ -110,7 +129,61 @@ def test_build_plan_java_wins_even_with_a_legacy_frontend_mention():
 
 
 def test_build_design_derives_modules_from_affected_components():
+    # STORY's dev_task touches "backend" -> build_plan derives stack "java" (see
+    # test_build_plan_skips_architect_shaped_fields_but_keeps_them_as_context above), so the
+    # fixture repo must be java too: build_design now validates the Design against the plan's
+    # own task stacks (quick_design), and a mismatch would raise here otherwise.
     plan = build_plan(STORY)
+    repo_info = {
+        "base_branch": "main",
+        "projects": [
+            {
+                "stack": "java",
+                "path": ".",
+                "install_cmd": "mvn -q -DskipTests install",
+                "build_cmd": "mvn -q compile",
+                "test_cmd": "mvn -q test",
+                "coverage_cmd": None,
+                "preview_cmd": None,
+                "preview_port": None,
+            }
+        ],
+        "source": "detected",
+        "notes": [],
+        "file_count": 5,
+        "tree": "",
+        "readme": "",
+        "commit": "abc",
+    }
+
+    design = build_design(repo_info, STORY, plan)
+
+    assert design.stack.value == "java"
+    assert len(design.modules) == 2  # backend + database, both non-N/A
+    assert "Add a discount field" in design.design_doc
+    assert design.existing_projects[0].stack == "java"
+
+
+def test_build_design_raises_when_a_task_stack_has_no_matching_project():
+    # The repository StoryForge's epic targets is python-only; a task the bridge derives as
+    # angular has nowhere to run. This must fail loudly here, not hand TaskCtx.project an
+    # arbitrary other stack's template later (see task_common.py's TaskCtx.project fallback).
+    story = {
+        **STORY,
+        "dev_tasks": [
+            {
+                **STORY["dev_tasks"][0],
+                "affected_components": {
+                    "frontend": "an Angular component showing the discount",
+                    "backend": "N/A",
+                    "middleware": "N/A",
+                    "database": "N/A",
+                },
+            }
+        ],
+    }
+    plan = build_plan(story)
+    assert plan.tasks[0].stack == "angular"
     repo_info = {
         "base_branch": "main",
         "projects": [
@@ -133,12 +206,8 @@ def test_build_design_derives_modules_from_affected_components():
         "commit": "abc",
     }
 
-    design = build_design(repo_info, STORY, plan)
-
-    assert design.stack.value == "python"
-    assert len(design.modules) == 2  # backend + database, both non-N/A
-    assert "Add a discount field" in design.design_doc
-    assert design.existing_projects[0].stack == "python"
+    with pytest.raises(ValidationError, match=r"\['angular'\].*only contains \['python'\]"):
+        build_design(repo_info, story, plan)
 
 
 # --------------------------------------------------------------------------------- integration
@@ -147,7 +216,7 @@ def test_build_design_derives_modules_from_affected_components():
 async def test_bridged_run_reaches_scaffold_without_calling_planner_or_architect(
     tmp_path: Path,
 ) -> None:
-    h, gh, sha = existing_harness(tmp_path)
+    h, gh, sha = java_harness(tmp_path)
 
     def _must_not_be_called(role: str):
         def responder(call):
@@ -181,7 +250,7 @@ async def test_bridged_run_reaches_scaffold_without_calling_planner_or_architect
 
 
 async def test_bridged_run_design_reflects_storyforges_own_content(tmp_path: Path) -> None:
-    h, gh, sha = existing_harness(tmp_path)
+    h, gh, sha = java_harness(tmp_path)
     h.brain.responders["planner"] = lambda call: (_ for _ in ()).throw(
         AssertionError("planner must not be called")
     )
@@ -214,7 +283,7 @@ async def test_bridged_run_workflow_detail_is_not_mislabeled_quick_fix(tmp_path:
     above) -- both cases set target="existing", mode="quick", and only
     storyforge_epic tells them apart. The workflow UI should say so, not imply
     there's no design at all."""
-    h, gh, sha = existing_harness(tmp_path)
+    h, gh, sha = java_harness(tmp_path)
     h.brain.responders["planner"] = lambda call: (_ for _ in ()).throw(
         AssertionError("planner must not be called")
     )

@@ -263,6 +263,9 @@ def architect_context(
     return fit_sections(sections, budget)
 
 
+MAX_TOUCHED_FILES_SHOWN = 40
+
+
 def developer_context(
     task: PlanTask,
     plan: Plan,
@@ -275,6 +278,7 @@ def developer_context(
     qa: Sequence[QAEntry] = (),
     related_code: str = "",
     notes: Sequence[str] = (),
+    touched_files: Sequence[str] = (),
 ) -> str:
     sections = [
         Section("Your task", render_task(task), priority=0, required=True),
@@ -307,6 +311,24 @@ def developer_context(
                 task_state.feedback,
                 priority=0,
                 required=True,
+            ),
+        )
+    if touched_files:
+        # A retry's own tool-calling conversation starts empty (see developer.py) -- this is the
+        # only thing that tells it what an earlier attempt already wrote, so it re-reads instead
+        # of re-discovering the same files or assuming they don't exist yet. Bounded on purpose:
+        # a list of paths, not a transcript of what was tried on each.
+        shown = list(touched_files)[:MAX_TOUCHED_FILES_SHOWN]
+        extra = len(touched_files) - len(shown)
+        body = "\n".join(f"- {f}" for f in shown)
+        if extra > 0:
+            body += f"\n- (+{extra} more)"
+        sections.insert(
+            2 if task_state.feedback else 1,
+            Section(
+                "Files you already wrote for this task (re-read before rewriting)",
+                body,
+                priority=1,
             ),
         )
     if qa:

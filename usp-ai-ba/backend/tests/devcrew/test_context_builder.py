@@ -48,6 +48,59 @@ def test_developer_context_scoped_to_task() -> None:
     assert "GET/POST /todos" in out
 
 
+def test_developer_context_lists_files_already_touched() -> None:
+    # A retry's own tool-calling conversation starts empty (see developer.py); this bounded list
+    # is the only thing telling it what an earlier attempt already wrote.
+    plan = Plan.model_validate(PLAN)
+    task = plan.task("T2")
+    ts = TaskState(id="T2", iterations=1, feedback="Fix the 404 handling")
+    out = developer_context(
+        task,
+        plan,
+        Design.model_validate(DESIGN),
+        ts,
+        "rules",
+        "app/main.py",
+        budget=4000,
+        touched_files=["app/routers/todos.py", "app/schemas/todo.py"],
+    )
+    assert "Files you already wrote for this task" in out
+    assert "app/routers/todos.py" in out and "app/schemas/todo.py" in out
+
+
+def test_developer_context_bounds_a_long_touched_files_list() -> None:
+    plan = Plan.model_validate(PLAN)
+    task = plan.task("T2")
+    files = [f"app/f{i}.py" for i in range(50)]
+    out = developer_context(
+        task,
+        plan,
+        Design.model_validate(DESIGN),
+        TaskState(id="T2", iterations=1),
+        "rules",
+        "app/main.py",
+        budget=4000,
+        touched_files=files,
+    )
+    assert "app/f0.py" in out and "app/f39.py" in out
+    assert "app/f40.py" not in out
+    assert "+10 more" in out
+
+
+def test_developer_context_omits_touched_files_section_on_a_first_attempt() -> None:
+    plan = Plan.model_validate(PLAN)
+    out = developer_context(
+        plan.task("T1"),
+        plan,
+        Design.model_validate(DESIGN),
+        TaskState(id="T1"),
+        "rules",
+        "app/main.py",
+        budget=4000,
+    )
+    assert "Files you already wrote for this task" not in out
+
+
 def test_developer_context_respects_small_budget() -> None:
     plan = Plan.model_validate(PLAN)
     out = developer_context(
