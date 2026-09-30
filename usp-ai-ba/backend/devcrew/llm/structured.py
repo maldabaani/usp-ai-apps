@@ -31,10 +31,16 @@ _TRAILING_COMMA_RE = re.compile(r",\s*([}\]])")
 
 
 class StructuredOutputError(RuntimeError):
-    def __init__(self, schema: str, errors: list[str], raw: list[str]) -> None:
+    def __init__(
+        self, schema: str, errors: list[str], raw: list[str], truncated: list[bool] | None = None
+    ) -> None:
         self.schema = schema
         self.errors = errors
         self.raw = raw
+        # Parallel to `raw`: True where that attempt's reply was cut off by the model's own
+        # output-token cap (see _is_truncated) rather than genuinely invalid. Defaults to all
+        # False so existing callers that don't pass it (or old pickled state, if any) still work.
+        self.truncated = truncated if truncated is not None else [False] * len(raw)
         last = errors[-1] if errors else "no output"
         super().__init__(f"Could not obtain valid {schema} after {len(raw)} attempts: {last[:500]}")
 
@@ -136,6 +142,19 @@ def schema_prompt(schema: type[BaseModel]) -> str:
     return json.dumps(schema.model_json_schema(), separators=(",", ":"))
 
 
+def _is_truncated(response: AIMessage) -> bool:
+    """True when the model's own completion signal says the reply was cut off by the output-
+    token cap (Ollama: response_metadata["done_reason"] == "length") rather than genuinely
+    invalid -- same check and same reasoning as pipeline/nodes/llm_retry.py's _is_truncated,
+    duck-typed on response_metadata so it stays provider-agnostic. Distinguishing this from a
+    generic JSON parse failure matters here: the log line for a plain parse failure truncates
+    the raw text to 200 chars for readability, which on its own is visually indistinguishable
+    from a genuinely truncated response -- only this metadata flag tells them apart for certain.
+    """
+    metadata = response.response_metadata or {}
+    return metadata.get("done_reason") == "length" or metadata.get("stop_reason") == "max_tokens"
+
+
 def _correction(error: str, schema: type[BaseModel]) -> HumanMessage:
     return HumanMessage(
         content=(
@@ -143,6 +162,19 @@ def _correction(error: str, schema: type[BaseModel]) -> HumanMessage:
             f"Errors:\n{error}\n\n"
             "Reply again with ONLY the corrected JSON object (no prose, no code fences). "
             "Keep everything that was correct."
+        )
+    )
+
+
+def _truncation_correction(schema: type[BaseModel]) -> HumanMessage:
+    return HumanMessage(
+        content=(
+            f"Your previous answer was cut off before it finished -- it exceeded the output "
+            f"length limit, so it is not a complete {schema.__name__}.\n"
+            "Reply again with ONLY the corrected JSON object (no prose, no code fences), but "
+            "keep every text field (reason, guidance, description, etc.) short -- one or two "
+            "sentences each. A complete, concise answer is required; a longer but truncated one "
+            "is useless."
         )
     )
 
@@ -172,16 +204,38 @@ async def generate_structured[T: BaseModel](
     """
     history: list[BaseMessage] = list(messages)
     raw: list[str] = []
+    truncated: list[bool] = []
     errors: list[str] = []
     output_format = _output_format(gateway, role, schema)
 
     for attempt in range(1, max_retries + 2):
+        # first_response (a tool-calling agent's final answer) carries no response_metadata,
+        # so truncation can't be checked for it -- treated as not truncated (no signal either way).
+        cut_off = False
         if attempt == 1 and first_response is not None:
             text = first_response
         else:
             reply = await gateway.ainvoke(role, history, output_format=output_format)
             text = reply.text
+            cut_off = _is_truncated(reply)
         raw.append(text)
+        truncated.append(cut_off)
+        if cut_off:
+            error = (
+                "Response was truncated by the output token limit before it finished "
+                "(done_reason=length) -- this is a genuinely incomplete answer, not a parse "
+                "failure to paper over."
+            )
+            errors.append(error)
+            logger.info(
+                "%s: %s truncated by output token limit (attempt %d) [raw=%r]",
+                role,
+                schema.__name__,
+                attempt,
+                text[:200],
+            )
+            history += [AIMessage(content=text), _truncation_correction(schema)]
+            continue
         try:
             return StructuredResult(parse_strict(text, schema, context), attempt, False)
         except (json.JSONDecodeError, ValidationError) as exc:
@@ -201,4 +255,4 @@ async def generate_structured[T: BaseModel](
         value = extract_json(text, schema, context)
         if value is not None:
             return StructuredResult(value, len(raw), True)
-    raise StructuredOutputError(schema.__name__, errors, raw)
+    raise StructuredOutputError(schema.__name__, errors, raw, truncated)

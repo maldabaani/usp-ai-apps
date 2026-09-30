@@ -15,7 +15,7 @@ from devcrew.llm.structured import (
     generate_structured,
     strip_code_fences,
 )
-from tests.devcrew.fakes import Brain, Call, final, gateway
+from tests.devcrew.fakes import Brain, Call, final, gateway, truncated
 
 MESSAGES = [SystemMessage(content="# Role: Planner\nx"), HumanMessage(content="go")]
 
@@ -28,6 +28,12 @@ class Item(BaseModel):
 def scripted(*replies: str) -> tuple[Brain, list[Call]]:
     queue = list(replies)
     brain = Brain(responders={"planner": lambda c: final(queue.pop(0))})
+    return brain, brain.calls
+
+
+def scripted_replies(*replies: AIMessage) -> tuple[Brain, list[Call]]:
+    queue = list(replies)
+    brain = Brain(responders={"planner": lambda c: queue.pop(0)})
     return brain, brain.calls
 
 
@@ -77,6 +83,30 @@ async def test_invalid_response_logs_raw_text(caplog: pytest.LogCaptureFixture) 
         await generate_structured(gateway(brain), Role.PLANNER, MESSAGES, Item)
     assert "Expecting value" in caplog.text
     assert "raw=''" in caplog.text
+
+
+async def test_truncated_response_is_not_accepted_as_valid(caplog: pytest.LogCaptureFixture) -> None:
+    # A truncated reply that happens to look like a parseable fragment must still be rejected --
+    # the whole point is that a genuinely incomplete answer never passes as valid.
+    brain, calls = scripted_replies(
+        truncated('{"name": "a", "qty": 1'), final('{"name": "a", "qty": 2}')
+    )
+    with caplog.at_level(logging.INFO, logger="devcrew.llm.structured"):
+        result = await generate_structured(gateway(brain), Role.PLANNER, MESSAGES, Item)
+    assert result.value == Item(name="a", qty=2) and result.attempts == 2
+    assert "truncated by output token limit" in caplog.text
+    # The retry asks for brevity, not the generic "your previous answer was not valid" feedback.
+    feedback = str(calls[1].messages[-1].content)
+    assert "cut off before it finished" in feedback and "short" in feedback
+
+
+async def test_gives_up_after_retries_when_every_attempt_is_truncated() -> None:
+    brain, _ = scripted_replies(
+        truncated('{"a'), truncated('{"name'), truncated('{"name": "x"')
+    )
+    with pytest.raises(StructuredOutputError) as info:
+        await generate_structured(gateway(brain), Role.PLANNER, MESSAGES, Item, max_retries=2)
+    assert info.value.truncated == [True, True, True]
 
 
 async def test_gives_up_after_retries() -> None:

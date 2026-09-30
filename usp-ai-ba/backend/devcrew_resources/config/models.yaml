@@ -28,6 +28,13 @@ roles:
     temperature: 0.1
   qa:
     temperature: 0.1
-  # The Coordinator is not a persona; it only handles exceptions.
+  # The Coordinator is not a persona; it only handles exceptions. Its own prompt context
+  # (_task_context) is small next to a Developer/Reviewer's, so trading some prompt budget for
+  # a bigger answer cap is cheap here -- a "replan" decision's reason + guidance +
+  # revised_task.description is the largest-footprint reply the Coordinator can produce, and
+  # could plausibly hit the 4096-token default mid-JSON. generate_structured now detects that
+  # case for certain (Ollama's own done_reason=="length") instead of guessing from a truncated
+  # log line; this headroom bump reduces how often it needs to.
   coordinator:
     temperature: 0.1
+    num_predict: 6144

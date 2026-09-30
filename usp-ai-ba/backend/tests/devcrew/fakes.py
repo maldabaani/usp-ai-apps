@@ -32,6 +32,16 @@ def final(content: str | dict[str, Any]) -> AIMessage:
     )
 
 
+def truncated(content: str) -> AIMessage:
+    """A reply cut off by the model's own output-token cap (Ollama: done_reason == "length") --
+    same shape as `final()` but flagged the way structured.py's `_is_truncated` detects it."""
+    return AIMessage(
+        content=content,
+        usage_metadata={"input_tokens": 100, "output_tokens": 20, "total_tokens": 120},
+        response_metadata={"done_reason": "length"},
+    )
+
+
 def role_of(messages: Sequence[BaseMessage]) -> str:
     first = messages[0]
     assert isinstance(first, SystemMessage), "first message must be the role's system prompt"
