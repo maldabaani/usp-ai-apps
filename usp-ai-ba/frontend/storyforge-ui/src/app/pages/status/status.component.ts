@@ -127,11 +127,17 @@ export class StatusComponent implements OnInit, OnDestroy {
     if (!this.jobId) return;
     this.storyForgeService.getDevCrewDispatches(this.jobId).subscribe({
       next: (dispatches: DevCrewDispatch[]) => {
-        // Newest first (per the backend); keep only each epic's latest.
+        // Newest first (per the backend); only the latest dispatch per epic
+        // decides whether the button stays locked -- a cancelled or failed
+        // run is dead and will never resume, so don't permanently block
+        // re-sending that epic just because an earlier attempt didn't work
+        // out (older dispatches for the same epic are otherwise ignored).
+        const seen = new Set<number>();
         for (const d of dispatches) {
-          if (!(d.epic_index in this.devCrewDispatches)) {
-            this.devCrewDispatches[d.epic_index] = d.run_id;
-          }
+          if (seen.has(d.epic_index)) continue;
+          seen.add(d.epic_index);
+          if (d.run_status === 'cancelled' || d.run_status === 'failed') continue;
+          this.devCrewDispatches[d.epic_index] = d.run_id;
         }
       },
       error: () => {}, // non-critical: the send form still works, just without the reload-safe guard
