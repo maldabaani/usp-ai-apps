@@ -131,7 +131,22 @@ export class RunDetailComponent implements OnInit, OnDestroy {
   }
 
   get pendingGate(): PendingInput | null {
-    return this.run?.pending?.[0] ?? null;
+    const pending = this.run?.pending ?? [];
+    // Match the interrupt to the *selected* node instead of always taking
+    // pending[0] -- more than one gate (e.g. a task escalation and the
+    // final approval) can be open at once, and each node should show its
+    // own.
+    const ids = this.selectedNode?.pending_interrupt_ids ?? [];
+    return pending.find((p) => ids.includes(p.interrupt_id)) ?? pending[0] ?? null;
+  }
+
+  gateOptionText(gate: PendingInput, action: string): string | null {
+    const options = gate.data?.['options'];
+    if (!options || typeof options !== 'object') {
+      return null;
+    }
+    const text = (options as Record<string, unknown>)[action];
+    return typeof text === 'string' ? text : null;
   }
 
   get selectedNode(): WorkflowNode | null {
@@ -251,29 +266,30 @@ export class RunDetailComponent implements OnInit, OnDestroy {
     this.selectedNodeId = attention ?? running ?? last ?? null;
   }
 
-  resolveGate(action: 'approve' | 'reject'): void {
+  resolveGate(action: 'approve' | 'answer' | 'reject'): void {
     const gate = this.pendingGate;
     if (!gate) {
       return;
     }
     this.gateBusy = true;
     this.gateError = '';
-    this.devCrewService
-      .resumeRun(this.runId, action, {
-        feedback: this.gateFeedback || null,
-        interrupt_id: gate.interrupt_id,
-      })
-      .subscribe({
-        next: () => {
-          this.gateBusy = false;
-          this.gateFeedback = '';
-          this.load();
-        },
-        error: () => {
-          this.gateBusy = false;
-          this.gateError = 'Could not resolve this gate. Try again.';
-        },
-      });
+    const extra: Record<string, unknown> = { interrupt_id: gate.interrupt_id };
+    if (action === 'answer') {
+      extra['answer'] = this.gateFeedback;
+    } else {
+      extra['feedback'] = this.gateFeedback || null;
+    }
+    this.devCrewService.resumeRun(this.runId, action, extra).subscribe({
+      next: () => {
+        this.gateBusy = false;
+        this.gateFeedback = '';
+        this.load();
+      },
+      error: () => {
+        this.gateBusy = false;
+        this.gateError = 'Could not resolve this gate. Try again.';
+      },
+    });
   }
 
   retry(): void {

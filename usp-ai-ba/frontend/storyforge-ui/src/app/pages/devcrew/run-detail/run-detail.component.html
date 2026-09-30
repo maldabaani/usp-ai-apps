@@ -106,38 +106,8 @@
 
         <!-- Approval node: gate form when pending, otherwise resolved detail -->
         <div *ngSwitchCase="'approval'">
-          <ng-container *ngIf="selectedNodeNeedsGate">
-            <ng-container *ngIf="pendingGate as gate">
-              <h2 class="dc-section-title">Action needed: {{ gate.title }}</h2>
-              <p class="dc-gate-kind">{{ gate.kind }}</p>
-              <pre class="dc-gate-data" *ngIf="gate.data && (gate.data | json) !== '{}'">{{ gate.data | json }}</pre>
-              <textarea
-                class="sf-textarea"
-                rows="3"
-                placeholder="Optional feedback for this gate"
-                [(ngModel)]="gateFeedback"
-                name="gateFeedback"
-              ></textarea>
-              <p class="sf-error-text" *ngIf="gateError">{{ gateError }}</p>
-              <div class="dc-gate-actions">
-                <button
-                  class="sf-btn"
-                  [disabled]="gateBusy || !gate.allowed_actions.includes('approve')"
-                  (click)="resolveGate('approve')"
-                >
-                  Approve
-                </button>
-                <button
-                  class="sf-btn sf-btn-danger"
-                  [disabled]="gateBusy || !gate.allowed_actions.includes('reject')"
-                  (click)="resolveGate('reject')"
-                >
-                  Reject
-                </button>
-              </div>
-            </ng-container>
-          </ng-container>
-          <ng-container *ngIf="!selectedNodeNeedsGate">
+          <ng-container *ngIf="selectedNodeNeedsGate; else resolvedApproval" [ngTemplateOutlet]="gateForm"></ng-container>
+          <ng-template #resolvedApproval>
             <ng-container *ngIf="selectedNode as node">
               <h2 class="dc-section-title">{{ node.label }}</h2>
               <span class="dc-status-badge" [ngClass]="statusClass(node.status)">
@@ -145,13 +115,62 @@
               </span>
               <p class="dc-panel-meta" *ngIf="node.detail">{{ node.detail }}</p>
             </ng-container>
-          </ng-container>
+          </ng-template>
         </div>
+
+        <!-- Reusable gate-resolve form: plan/design/final approvals AND task escalations
+             both suspend the graph the same way (same interrupt_id/pending mechanism), so
+             they share this one form instead of two copies. -->
+        <ng-template #gateForm>
+          <ng-container *ngIf="pendingGate as gate">
+            <h2 class="dc-section-title">Action needed: {{ gate.title }}</h2>
+            <p class="dc-gate-kind">{{ gate.kind }}</p>
+            <pre class="dc-gate-data" *ngIf="gate.data && (gate.data | json) !== '{}'">{{ gate.data | json }}</pre>
+            <textarea
+              class="sf-textarea"
+              rows="3"
+              placeholder="Optional feedback or guidance for this gate"
+              [(ngModel)]="gateFeedback"
+              name="gateFeedback"
+            ></textarea>
+            <p class="sf-error-text" *ngIf="gateError">{{ gateError }}</p>
+            <div class="dc-gate-actions">
+              <button
+                *ngIf="gate.allowed_actions.includes('approve')"
+                class="sf-btn"
+                [disabled]="gateBusy"
+                [title]="gateOptionText(gate, 'approve')"
+                (click)="resolveGate('approve')"
+              >
+                Approve
+              </button>
+              <button
+                *ngIf="gate.allowed_actions.includes('answer')"
+                class="sf-btn sf-btn-secondary"
+                [disabled]="gateBusy || !gateFeedback.trim()"
+                [title]="gateOptionText(gate, 'answer')"
+                (click)="resolveGate('answer')"
+              >
+                Answer
+              </button>
+              <button
+                *ngIf="gate.allowed_actions.includes('reject')"
+                class="sf-btn sf-btn-danger"
+                [disabled]="gateBusy"
+                [title]="gateOptionText(gate, 'reject')"
+                (click)="resolveGate('reject')"
+              >
+                Reject
+              </button>
+            </div>
+          </ng-container>
+        </ng-template>
 
         <!-- Task node -->
         <div *ngSwitchCase="'task'">
           <ng-container *ngIf="selectedNode as node">
             <h2 class="dc-section-title">{{ node.label }}</h2>
+            <ng-container *ngIf="selectedNodeNeedsGate" [ngTemplateOutlet]="gateForm"></ng-container>
             <ng-container *ngIf="selectedTask as task">
               <span class="dc-status-badge" [ngClass]="statusClass(task.status)">
                 {{ humanizeStatus(task.status) }}
@@ -191,6 +210,9 @@
             </ng-container>
 
             <h3 class="dc-subheading">Messages to this task</h3>
+            <p class="dc-panel-meta" *ngIf="selectedNodeNeedsGate">
+              Won't be delivered until the decision above is resolved — use that form instead.
+            </p>
             <div class="dc-messages" *ngIf="selectedTaskMessages.length; else noTaskMessages">
               <div class="dc-message" *ngFor="let msg of selectedTaskMessages">
                 <p class="dc-message-text">{{ msg.text }}</p>
