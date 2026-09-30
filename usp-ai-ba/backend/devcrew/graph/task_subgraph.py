@@ -1,11 +1,16 @@
-"""Per-task subgraph: developer -> reviewer -> qa -> merge, with feedback loops.
+"""Per-task subgraph: developer -> build_check -> reviewer -> qa -> merge, with feedback loops.
 
-    prepare -> developer -> reviewer --approve--> qa --pass--> merge -> END
-                  ^  |          |                  |              |
-                  |  |          +--changes---------+--fail--> developer
-                  |  +--> ask_human --> developer                 |
+    prepare -> developer -> build_check --ok--> reviewer --approve--> qa --pass--> merge -> END
+                  ^  |            |                  |                  |              |
+                  |  |         fails build        +--changes------------+--fail--> developer
+                  |  |            |                |
+                  |  +------------+--> ask_human --+
                   +--- coordinator <-- iteration limit / agent errors / merge conflict
                         (retry | replan | split | escalate | resolve conflict)
+
+    build_check is a deterministic compile/build step (no LLM): a build failure is unambiguous
+    and routes straight back to developer with the raw compiler output, skipping the Reviewer's
+    LLM call and the QA LLM calls that would otherwise be spent rediscovering the same thing.
 
 The backbone scheduler dispatches up to MAX_PARALLEL_DEVS of these at once with the Send API.
 Each runs in its own git worktree and branch; merges into the integration branch are
@@ -24,6 +29,7 @@ from langgraph.types import Command
 from devcrew.events.types import EventType
 from devcrew.graph.coordinator import make_task_coordinator, make_task_escalate
 from devcrew.graph.interrupts import InterruptKind, InterruptRequest, ResumeAction, request_input
+from devcrew.graph.nodes.build_check import make_build_check
 from devcrew.graph.nodes.developer import make_developer
 from devcrew.graph.nodes.human import make_ask_human
 from devcrew.graph.nodes.qa import make_qa
@@ -127,7 +133,12 @@ def make_merge(deps: GraphDeps) -> NodeFn:
     return merge
 
 
-HOLD_STEPS = {"developer": "developer turn", "reviewer": "review", "qa": "QA run"}
+HOLD_STEPS = {
+    "developer": "developer turn",
+    "build_check": "build check",
+    "reviewer": "review",
+    "qa": "QA run",
+}
 
 
 def make_hold(deps: GraphDeps) -> NodeFn:
@@ -153,8 +164,9 @@ def build_task_subgraph(deps: GraphDeps) -> CompiledStateGraph[Any, Any, Any, An
     g = StateGraph(TaskWorkerState, output_schema=TaskWorkerOutput)
     nodes: dict[str, tuple[NodeFn, tuple[str, ...]]] = {
         "prepare": (make_prepare(deps), ()),
-        "developer": (make_developer(deps), ("reviewer", "ask_human", "coordinator", "hold")),
-        "hold": (make_hold(deps), ("developer", "reviewer", "qa")),
+        "developer": (make_developer(deps), ("build_check", "ask_human", "coordinator", "hold")),
+        "build_check": (make_build_check(deps), ("developer", "reviewer", "hold")),
+        "hold": (make_hold(deps), ("developer", "build_check", "reviewer", "qa")),
         "ask_human": (
             make_ask_human(deps, scratch_key="task_scratch", pending_key="task_pending_question"),
             ("developer",),

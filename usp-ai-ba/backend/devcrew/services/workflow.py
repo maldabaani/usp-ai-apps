@@ -88,6 +88,7 @@ TASK_STATUS: dict[str, NodeStatus] = {
 TASK_STEPS = {
     "prepare": "preparing worktree",
     "developer": "developer",
+    "build_check": "build check",
     "ask_human": "waiting for your answer",
     "reviewer": "reviewer",
     "qa": "QA tests",

@@ -90,6 +90,16 @@ class Settings(BaseSettings):
     max_coordinator_actions: int = Field(
         default=2, ge=0, description="Automatic retry/replan/split decisions per task/node."
     )
+    # A transient Ollama hiccup (model reload, momentary overload) can make the Coordinator's own
+    # decision call return empty on every attempt of a single conversation; generate_structured's
+    # own retries stay within that same conversation and won't survive it. These start a fresh
+    # conversation instead, with a short delay, before giving up and escalating to a human.
+    coordinator_decision_retries: int = Field(
+        default=2, ge=1, description="Outer attempts for the Coordinator's own LLM decision."
+    )
+    coordinator_decision_retry_delay_s: float = Field(
+        default=5.0, ge=0, description="Delay between coordinator decision attempts."
+    )
 
     # --- Agents -----------------------------------------------------------------------------
     prompts_dir: Path = DEVCREW_DIR / "prompts"

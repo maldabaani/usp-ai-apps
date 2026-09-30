@@ -33,8 +33,10 @@ async def test_install_then_offline_tests_then_cleanup(tmp_path: Path) -> None:
     # One network install at scaffold; manifests never changed, so no reinstall.
     assert runner.commands(network=True) == [(None, "pip install -e .", ".")]
     assert runner.commands(network=False) == [
+        ("T1", "b", "."),  # build_check, before the review
         ("T1", PYTEST, "."),
         (None, PYTEST, "."),  # the integration branch after wave 1 (T2 builds on it)
+        ("T2", "b", "."),
         ("T2", PYTEST, "."),
         (None, PYTEST, "."),
     ]
@@ -44,6 +46,28 @@ async def test_install_then_offline_tests_then_cleanup(tmp_path: Path) -> None:
     outcome = await h.approve_until_done(await h.driver.resume(RUN, APPROVE), RUN)
     assert outcome.status is RunStatus.COMPLETED
     assert runner.cleaned == [RUN]
+
+
+async def test_build_failure_skips_reviewer_and_sends_back_to_developer(tmp_path: Path) -> None:
+    runner = FakeRunner()
+    runner.script("b", (1, "Order.java:[35,6] cannot find symbol: class Enumerated"))
+    h = make_harness(tmp_path, runner=runner)
+    outcome = await run_to_final(h)
+    assert outcome.status is RunStatus.AWAITING_FINAL_APPROVAL
+
+    # The first build_check call failed, the second (after the developer's next attempt)
+    # succeeded -- exactly two build_check calls for T1, one failing then one passing.
+    t1_builds = [c for c in runner.commands(network=False) if c[:2] == ("T1", "b")]
+    assert len(t1_builds) == 2
+
+    # The Reviewer's LLM was never asked to look at code that doesn't even compile: the
+    # developer's retry already shows the raw compiler output, not a Reviewer verdict.
+    retry = [c for c in h.brain.calls_for("developer") if c.fresh][1]
+    assert "does not build" in retry.text() and "cannot find symbol" in retry.text()
+    assert h.brain.calls_for("reviewer")  # it *does* get reviewed once the build passes
+
+    state = await h.driver.state(RUN)
+    assert state["tasks"]["T1"]["iterations"] == 2
 
 
 async def test_failing_tests_loop_back_with_qa_diagnosis(tmp_path: Path) -> None:

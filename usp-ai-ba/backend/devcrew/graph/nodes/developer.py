@@ -148,7 +148,7 @@ def make_developer(deps: GraphDeps) -> NodeFn:
         ctx.ts.status = TaskStatus.IN_REVIEW
         ctx.ts.feedback = None
         return Command(
-            goto="reviewer", update=ctx.update(task_scratch={NODE: None}, qa_log=asked_agents)
+            goto="build_check", update=ctx.update(task_scratch={NODE: None}, qa_log=asked_agents)
         )
 
     return developer

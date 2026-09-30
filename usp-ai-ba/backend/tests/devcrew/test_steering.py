@@ -377,8 +377,8 @@ async def test_pause_before_a_tasks_review(tmp_path: Path) -> None:
         detail = await a.approve(run_id)
         assert detail["status"] == "paused"
         [pending] = detail["pending"]
-        assert pending["data"] == {"task_id": "T1", "node": "reviewer"}
-        assert "next review" in pending["title"]
+        assert pending["data"] == {"task_id": "T1", "node": "build_check"}
+        assert "next build check" in pending["title"]
         assert not a.harness.brain.calls_for("reviewer")  # it stopped before the review
         await a.client.post(f"/runs/{run_id}/pause", json={"paused": False})
         detail = await a.settle(run_id)

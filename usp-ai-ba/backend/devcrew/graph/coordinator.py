@@ -20,6 +20,7 @@ the LLM output cannot be validated, the Coordinator escalates to the human.
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from collections.abc import Sequence
 from typing import Any
@@ -79,24 +80,47 @@ async def decide(
     allowed: list[str],
     validation: dict[str, Any] | None = None,
 ) -> CoordinatorDecision | None:
-    """Ask the Coordinator LLM for a decision; None if no valid decision could be obtained."""
+    """Ask the Coordinator LLM for a decision; None if no valid decision could be obtained.
+
+    A few outer attempts, each a fresh conversation with a short delay between them -- but only
+    when every reply in the failed conversation came back empty, the signature of a transient
+    Ollama outage (model reload, momentary overload); a real run saw that exact pattern, the same
+    empty response on every attempt, for several minutes straight. generate_structured()'s own
+    retries repeat within the SAME conversation and won't survive that. A model that responds but
+    keeps proposing something genuinely invalid (e.g. a decision that fails validation) won't be
+    fixed by asking again from scratch, so that case still gives up after one conversation, same
+    as before.
+    """
     system = deps.prompts.get("coordinator", CoordinatorDecision)
     request = f"{context}\n## Allowed actions\n{', '.join(allowed)}"
-    try:
-        result = await generate_structured(
-            deps.llm,
-            Role.COORDINATOR,
-            [SystemMessage(content=system), HumanMessage(content=request)],
-            CoordinatorDecision,
-            context={"allowed_actions": allowed, **(validation or {})},
-        )
-    except StructuredOutputError as exc:
+    retries = deps.settings.coordinator_decision_retries
+    result = None
+    last_error = ""
+    attempt = 0
+    for attempt in range(1, retries + 1):
+        try:
+            result = await generate_structured(
+                deps.llm,
+                Role.COORDINATOR,
+                [SystemMessage(content=system), HumanMessage(content=request)],
+                CoordinatorDecision,
+                context={"allowed_actions": allowed, **(validation or {})},
+            )
+            break
+        except StructuredOutputError as exc:
+            last_error = str(exc)
+            all_empty = bool(exc.raw) and all(not r.strip() for r in exc.raw)
+            if attempt < retries and all_empty:
+                await asyncio.sleep(deps.settings.coordinator_decision_retry_delay_s)
+                continue
+            break
+    if result is None:
         await deps.emit(
             run_id,
             EventType.ERROR,
             node="coordinator",
             task_id=task_id,
-            message=f"coordinator decision invalid: {exc}",
+            message=f"coordinator decision invalid after {attempt} attempt(s): {last_error}",
         )
         return None
     decision = result.value
@@ -260,7 +284,11 @@ def make_task_coordinator(deps: GraphDeps) -> NodeFn:
             validation={"existing_ids": existing, "task_depends_on": ctx.task.depends_on},
         )
         if decision is None:
-            return escalate(f"Task {ctx.task.id} needs a decision: {reason}")
+            return escalate(
+                f"Task {ctx.task.id} needs a decision: {reason} (the automatic recovery step "
+                "could not get a valid response from the model -- check that Ollama is running "
+                "and responsive)"
+            )
         ts.coordinator_actions += 1
 
         if decision.action == "retry":
@@ -401,6 +429,12 @@ def make_run_coordinator(deps: GraphDeps) -> NodeFn:
                 )
             if decision is not None:
                 escalation = {**escalation, "question": decision.question_for_human}
+            else:
+                escalation = {
+                    **escalation,
+                    "question": f"{reason} (the automatic recovery step could not get a valid "
+                    "response from the model -- check that Ollama is running and responsive)",
+                }
         return Command(goto="escalate", update={"escalation": escalation})
 
     return coordinator
