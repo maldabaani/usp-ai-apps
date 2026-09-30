@@ -171,6 +171,9 @@
           <ng-container *ngIf="selectedNode as node">
             <h2 class="dc-section-title">{{ node.label }}</h2>
             <ng-container *ngIf="selectedNodeNeedsGate" [ngTemplateOutlet]="gateForm"></ng-container>
+            <p class="dc-panel-meta" *ngIf="runIsTerminal && workflow?.attention?.includes(node.id)">
+              This run is {{ run.status }} — no further action is possible.
+            </p>
             <ng-container *ngIf="selectedTask as task">
               <span class="dc-status-badge" [ngClass]="statusClass(task.status)">
                 {{ humanizeStatus(task.status) }}

@@ -155,6 +155,12 @@ export class RunDetailComponent implements OnInit, OnDestroy {
 
   selectNode(id: string): void {
     this.selectedNodeId = id;
+    // The gate form's textarea/error are a single shared property (one
+    // #gateForm template reused for whichever node is selected) -- without
+    // this, switching nodes would leave a draft typed for one task's gate
+    // still sitting in the next task's gate form.
+    this.gateFeedback = '';
+    this.gateError = '';
   }
 
   get panelKind(): 'empty' | 'requirements' | 'plan' | 'design' | 'approval' | 'task' | 'generic' {
@@ -178,7 +184,12 @@ export class RunDetailComponent implements OnInit, OnDestroy {
 
   get selectedNodeNeedsGate(): boolean {
     const node = this.selectedNode;
-    return !!node && !!this.workflow?.attention.includes(node.id) && !!this.pendingGate;
+    return (
+      !!node &&
+      !this.runIsTerminal &&
+      !!this.workflow?.attention.includes(node.id) &&
+      !!this.pendingGate
+    );
   }
 
   get selectedTaskMessages(): MessageOut[] {
@@ -264,6 +275,8 @@ export class RunDetailComponent implements OnInit, OnDestroy {
     const running = workflow.nodes.find((n) => n.status === 'running')?.id;
     const last = workflow.nodes[workflow.nodes.length - 1]?.id;
     this.selectedNodeId = attention ?? running ?? last ?? null;
+    this.gateFeedback = '';
+    this.gateError = '';
   }
 
   resolveGate(action: 'approve' | 'answer' | 'reject'): void {
