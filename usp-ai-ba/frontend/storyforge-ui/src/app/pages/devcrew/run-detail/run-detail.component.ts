@@ -3,6 +3,8 @@ import { Component, OnDestroy, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 
+import { environment } from '../../../../environments/environment';
+import { AuthService } from '../../../services/auth.service';
 import {
   DevCrewService,
   MessageOut,
@@ -15,10 +17,17 @@ import {
 } from '../../../services/devcrew.service';
 import { humanizeStatus } from '../../../services/format-status.util';
 import { extractErrorMessage } from '../../../services/http-error.util';
-import { WorkflowCanvasComponent } from './workflow-canvas/workflow-canvas.component';
+import { CanvasViewMode, WorkflowCanvasComponent } from './workflow-canvas/workflow-canvas.component';
 
 const POLL_MS = 3000;
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
+
+function formatDuration(seconds: number): string {
+  const total = Math.round(seconds);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
 
 @Component({
   selector: 'app-devcrew-run-detail',
@@ -56,15 +65,28 @@ export class RunDetailComponent implements OnInit, OnDestroy {
   cancelBusy = false;
   cancelError = '';
 
+  canvasViewMode: CanvasViewMode = 'follow';
+  canvasShowMinimap = false;
+
+  notifyEnabled = false;
+  private lastNotifiedAttentionKey = '';
+
+  taskMessageDraft = '';
+  sendingTaskMessage = false;
+
+  readonly formatDuration = formatDuration;
+
   private pollHandle: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     private route: ActivatedRoute,
-    private devCrewService: DevCrewService
+    private devCrewService: DevCrewService,
+    private authService: AuthService
   ) {}
 
   ngOnInit(): void {
     this.runId = this.route.snapshot.paramMap.get('runId') ?? '';
+    this.notifyEnabled = typeof localStorage !== 'undefined' && localStorage.getItem(this.notifyStorageKey) === '1';
     this.load();
     this.pollHandle = setInterval(() => this.load(), POLL_MS);
   }
@@ -94,6 +116,7 @@ export class RunDetailComponent implements OnInit, OnDestroy {
       next: (workflow) => {
         this.workflow = workflow;
         this.autoSelectNode(workflow);
+        this.maybeNotifyAttention(workflow);
       },
       error: () => {},
     });
@@ -141,6 +164,80 @@ export class RunDetailComponent implements OnInit, OnDestroy {
   get selectedNodeNeedsGate(): boolean {
     const node = this.selectedNode;
     return !!node && !!this.workflow?.attention.includes(node.id) && !!this.pendingGate;
+  }
+
+  get selectedTaskMessages(): MessageOut[] {
+    const taskId = this.selectedNode?.task_id;
+    return taskId ? this.messages.filter((m) => m.task_id === taskId) : [];
+  }
+
+  sendTaskMessage(): void {
+    const taskId = this.selectedNode?.task_id;
+    const text = this.taskMessageDraft.trim();
+    if (!taskId || !text) {
+      return;
+    }
+    this.sendingTaskMessage = true;
+    this.devCrewService.postMessage(this.runId, text, taskId).subscribe({
+      next: (msg) => {
+        this.messages = [...this.messages, msg];
+        this.taskMessageDraft = '';
+        this.sendingTaskMessage = false;
+      },
+      error: () => {
+        this.sendingTaskMessage = false;
+      },
+    });
+  }
+
+  get reportDownloadUrl(): string {
+    // A plain <a href> download isn't routed through HttpClient, so the
+    // auth interceptor never sees it -- the token has to ride along as a
+    // query param instead.
+    const token = this.authService.getToken();
+    const url = `${environment.apiBaseUrl}/devcrew/runs/${this.runId}/report.md`;
+    return token ? `${url}?token=${encodeURIComponent(token)}` : url;
+  }
+
+  private get notifyStorageKey(): string {
+    return `dc-notify-${this.runId}`;
+  }
+
+  toggleNotify(): void {
+    if (this.notifyEnabled) {
+      this.notifyEnabled = false;
+      localStorage.removeItem(this.notifyStorageKey);
+      return;
+    }
+    if (typeof Notification === 'undefined') {
+      return;
+    }
+    if (Notification.permission === 'granted') {
+      this.notifyEnabled = true;
+      localStorage.setItem(this.notifyStorageKey, '1');
+      return;
+    }
+    Notification.requestPermission().then((permission) => {
+      if (permission === 'granted') {
+        this.notifyEnabled = true;
+        localStorage.setItem(this.notifyStorageKey, '1');
+      }
+    });
+  }
+
+  private maybeNotifyAttention(workflow: Workflow): void {
+    if (!this.notifyEnabled || typeof Notification === 'undefined' || !workflow.attention.length) {
+      return;
+    }
+    const key = workflow.attention.join(',');
+    if (key === this.lastNotifiedAttentionKey) {
+      return;
+    }
+    this.lastNotifiedAttentionKey = key;
+    new Notification('DevCrew needs your input', {
+      body: this.run?.request ?? 'A run is waiting for you.',
+      tag: this.runId,
+    });
   }
 
   private autoSelectNode(workflow: Workflow): void {

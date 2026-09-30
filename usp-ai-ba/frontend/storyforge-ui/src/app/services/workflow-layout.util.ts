@@ -13,6 +13,29 @@ export const NODE_HEIGHT = 72;
 export const COL_GAP = 96;
 export const ROW_GAP = 20;
 
+export interface LayoutDims {
+  nodeWidth: number;
+  nodeHeight: number;
+  colGap: number;
+  rowGap: number;
+}
+
+export const DEFAULT_DIMS: LayoutDims = {
+  nodeWidth: NODE_WIDTH,
+  nodeHeight: NODE_HEIGHT,
+  colGap: COL_GAP,
+  rowGap: ROW_GAP,
+};
+
+// Compact view mode: smaller cards, tighter gaps -- lets a wide run fit in
+// less horizontal scroll without changing the layout algorithm itself.
+export const COMPACT_DIMS: LayoutDims = {
+  nodeWidth: 120,
+  nodeHeight: 44,
+  colGap: 56,
+  rowGap: 12,
+};
+
 export interface PositionedNode {
   node: WorkflowNode;
   x: number;
@@ -25,7 +48,12 @@ export interface WorkflowLayout {
   height: number;
 }
 
-export function layoutWorkflow(nodes: WorkflowNode[], edges: WorkflowEdge[]): WorkflowLayout {
+export function layoutWorkflow(
+  nodes: WorkflowNode[],
+  edges: WorkflowEdge[],
+  dims: LayoutDims = DEFAULT_DIMS
+): WorkflowLayout {
+  const { nodeWidth, nodeHeight, colGap, rowGap } = dims;
   const flowEdges = edges.filter((e) => e.kind !== 'loop');
   const predecessors = new Map<string, string[]>();
   nodes.forEach((n) => predecessors.set(n.id, []));
@@ -65,7 +93,7 @@ export function layoutWorkflow(nodes: WorkflowNode[], edges: WorkflowEdge[]): Wo
   }
 
   const maxRows = Math.max(1, ...Array.from(byColumn.values()).map((col) => col.length));
-  const columnHeight = (count: number) => count * NODE_HEIGHT + (count - 1) * ROW_GAP;
+  const columnHeight = (count: number) => count * nodeHeight + (count - 1) * rowGap;
   const canvasHeight = columnHeight(maxRows);
 
   const positioned: PositionedNode[] = [];
@@ -75,15 +103,15 @@ export function layoutWorkflow(nodes: WorkflowNode[], edges: WorkflowEdge[]): Wo
     colNodes.forEach((node, row) => {
       positioned.push({
         node,
-        x: c * (NODE_WIDTH + COL_GAP),
-        y: offsetY + row * (NODE_HEIGHT + ROW_GAP),
+        x: c * (nodeWidth + colGap),
+        y: offsetY + row * (nodeHeight + rowGap),
       });
     });
   }
 
   return {
     positioned,
-    width: (maxColumn + 1) * NODE_WIDTH + maxColumn * COL_GAP,
+    width: (maxColumn + 1) * nodeWidth + maxColumn * colGap,
     height: canvasHeight,
   };
 }

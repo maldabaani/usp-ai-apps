@@ -1,6 +1,47 @@
 /* Self-contained dark canvas theme -- local values only, nothing here
    touches the app's global --sf-* tokens. */
 
+.dc-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.dc-toolbar-group {
+  display: flex;
+  gap: 2px;
+  background: #1c1e29;
+  border: 1px solid #2c2f3d;
+  border-radius: 8px;
+  padding: 2px;
+}
+
+.dc-toolbar-btn {
+  border: none;
+  background: transparent;
+  color: #8b8fa3;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.dc-toolbar-btn:hover {
+  color: #e4e6ef;
+}
+
+.dc-toolbar-btn-active {
+  background: #2c2f3d;
+  color: #60a5fa;
+}
+
+.dc-canvas-widget {
+  position: relative;
+}
+
 .dc-canvas-scroll {
   overflow: auto;
   border-radius: 10px;
@@ -12,6 +53,7 @@
   position: relative;
   min-width: 100%;
   min-height: 100%;
+  transform-origin: 0 0;
 }
 
 .dc-canvas-svg {
@@ -155,4 +197,62 @@
 
 .dc-node-attention {
   animation: dc-attention-pulse 1.8s ease-in-out infinite;
+}
+
+.dc-node-compact .dc-node-body {
+  padding: 4px 6px;
+  gap: 0;
+  justify-content: center;
+}
+
+.dc-node-compact .dc-node-label {
+  font-size: 11px;
+}
+
+.dc-minimap {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  border-radius: 6px;
+  background: rgba(18, 19, 26, 0.9);
+  border: 1px solid #2c2f3d;
+  cursor: pointer;
+}
+
+.dc-minimap-bg {
+  fill: #12131a;
+}
+
+.dc-minimap-node {
+  fill: #4b5563;
+}
+
+.dc-minimap-node.status-pending {
+  fill: #4b5563;
+}
+
+.dc-minimap-node.status-running {
+  fill: #3b82f6;
+}
+
+.dc-minimap-node.status-waiting {
+  fill: #eab308;
+}
+
+.dc-minimap-node.status-done {
+  fill: #22c55e;
+}
+
+.dc-minimap-node.status-failed {
+  fill: #ef4444;
+}
+
+.dc-minimap-node.status-skipped {
+  fill: #374151;
+}
+
+.dc-minimap-viewport {
+  fill: rgba(96, 165, 250, 0.18);
+  stroke: #60a5fa;
+  stroke-width: 1;
 }

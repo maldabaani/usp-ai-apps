@@ -10,8 +10,20 @@
         <p class="sf-status-meta">
           {{ run.repo_target }}
           <span class="dc-status-badge" [ngClass]="statusClass(run.status)">{{ humanizeStatus(run.status) }}</span>
+          <span class="dc-header-usage" *ngIf="usage">
+            · {{ usage.total_tokens | number }} tokens · {{ formatDuration(usage.active_s) }}
+          </span>
         </p>
       </div>
+      <button
+        type="button"
+        class="sf-btn sf-btn-secondary"
+        [class.sf-btn-active]="notifyEnabled"
+        (click)="toggleNotify()"
+      >
+        {{ notifyEnabled ? 'Notifying ✓' : 'Notify me' }}
+      </button>
+      <a class="sf-btn sf-btn-secondary" [href]="reportDownloadUrl" target="_blank">Report ↓</a>
       <a *ngIf="run.pr_url" class="sf-btn sf-btn-secondary" [href]="run.pr_url" target="_blank">
         Open PR ↗
       </a>
@@ -56,6 +68,8 @@
         [edges]="workflow.edges"
         [attention]="workflow.attention"
         [selectedId]="selectedNodeId"
+        [(viewMode)]="canvasViewMode"
+        [(showMinimap)]="canvasShowMinimap"
         (select)="selectNode($event)"
       ></app-workflow-canvas>
 
@@ -172,6 +186,35 @@
                 </li>
               </ul>
             </ng-container>
+
+            <h3 class="dc-subheading">Messages to this task</h3>
+            <div class="dc-messages" *ngIf="selectedTaskMessages.length; else noTaskMessages">
+              <div class="dc-message" *ngFor="let msg of selectedTaskMessages">
+                <p class="dc-message-text">{{ msg.text }}</p>
+                <p class="dc-message-reply" *ngIf="msg.reply">{{ msg.reply }}</p>
+                <span class="dc-message-status">{{ msg.status }}</span>
+              </div>
+            </div>
+            <ng-template #noTaskMessages>
+              <p class="dc-empty">No messages for this task yet.</p>
+            </ng-template>
+            <div class="dc-message-form">
+              <input
+                class="sf-input"
+                type="text"
+                placeholder="Send a note to this task"
+                [(ngModel)]="taskMessageDraft"
+                name="taskMessageDraft"
+                (keyup.enter)="sendTaskMessage()"
+              />
+              <button
+                class="sf-btn sf-btn-secondary"
+                [disabled]="sendingTaskMessage || !taskMessageDraft.trim()"
+                (click)="sendTaskMessage()"
+              >
+                Send
+              </button>
+            </div>
           </ng-container>
         </div>
 

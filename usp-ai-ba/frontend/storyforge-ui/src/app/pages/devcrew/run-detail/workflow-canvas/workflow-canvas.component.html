@@ -1,5 +1,33 @@
-<div class="dc-canvas-scroll">
-  <div class="dc-canvas-inner" [style.width.px]="render.width" [style.height.px]="render.height">
+<div class="dc-toolbar">
+  <div class="dc-toolbar-group">
+    <button
+      *ngFor="let mode of modes"
+      type="button"
+      class="dc-toolbar-btn"
+      [class.dc-toolbar-btn-active]="viewMode === mode"
+      (click)="setViewMode(mode)"
+    >
+      {{ mode | titlecase }}
+    </button>
+  </div>
+  <button
+    type="button"
+    class="dc-toolbar-btn"
+    [class.dc-toolbar-btn-active]="showMinimap"
+    (click)="toggleMinimap()"
+  >
+    Map
+  </button>
+</div>
+
+<div class="dc-canvas-widget">
+<div class="dc-canvas-scroll" #scrollEl (scroll)="onScroll()">
+  <div
+    class="dc-canvas-inner"
+    [style.width.px]="render.width"
+    [style.height.px]="render.height"
+    [style.transform]="viewMode === 'overview' ? 'scale(' + fitScale + ')' : null"
+  >
     <svg class="dc-canvas-svg" [attr.width]="render.width" [attr.height]="render.height">
       <defs>
         <pattern id="dc-grid-dots" width="18" height="18" patternUnits="userSpaceOnUse">
@@ -28,9 +56,10 @@
       *ngFor="let p of render.positioned"
       [style.left.px]="p.x + canvasPadding"
       [style.top.px]="p.y + canvasPadding"
-      [style.width.px]="nodeWidth"
-      [style.height.px]="nodeHeight"
+      [style.width.px]="dims.nodeWidth"
+      [style.height.px]="dims.nodeHeight"
       [class]="'status-' + p.node.status"
+      [class.dc-node-compact]="viewMode === 'compact'"
       [class.dc-node-selected]="p.node.id === selectedId"
       [class.dc-node-attention]="attention.includes(p.node.id)"
       (click)="onSelect(p.node.id)"
@@ -39,11 +68,42 @@
       <div class="dc-node-body">
         <div class="dc-node-top">
           <span class="dc-node-label">{{ p.node.label }}</span>
-          <span class="dc-node-stack" *ngIf="p.node.stack">{{ p.node.stack }}</span>
+          <span class="dc-node-stack" *ngIf="p.node.stack && viewMode !== 'compact'">{{ p.node.stack }}</span>
         </div>
-        <span class="dc-node-status-badge">{{ humanizeStatus(p.node.status) }}</span>
-        <span class="dc-node-detail" *ngIf="p.node.detail" [title]="p.node.detail">{{ p.node.detail }}</span>
+        <span class="dc-node-status-badge" *ngIf="viewMode !== 'compact'">{{ humanizeStatus(p.node.status) }}</span>
+        <span
+          class="dc-node-detail"
+          *ngIf="p.node.detail && viewMode !== 'compact'"
+          [title]="p.node.detail"
+        >{{ p.node.detail }}</span>
       </div>
     </div>
   </div>
+</div>
+
+<svg
+  *ngIf="showMinimap"
+  class="dc-minimap"
+  [attr.width]="minimapWidth"
+  [attr.height]="minimapHeight"
+  (click)="onMinimapClick($event)"
+>
+  <rect class="dc-minimap-bg" width="100%" height="100%" />
+  <rect
+    *ngFor="let r of minimapRects"
+    [attr.x]="r.x"
+    [attr.y]="r.y"
+    [attr.width]="r.w"
+    [attr.height]="r.h"
+    [class]="'dc-minimap-node status-' + r.status"
+  />
+  <rect
+    *ngIf="minimapViewport as vp"
+    class="dc-minimap-viewport"
+    [attr.x]="vp.x"
+    [attr.y]="vp.y"
+    [attr.width]="vp.w"
+    [attr.height]="vp.h"
+  />
+</svg>
 </div>

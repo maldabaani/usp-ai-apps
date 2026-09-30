@@ -1,17 +1,32 @@
 import { CommonModule } from '@angular/common';
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import {
+  AfterViewInit,
+  Component,
+  ElementRef,
+  EventEmitter,
+  Input,
+  OnChanges,
+  Output,
+  SimpleChanges,
+  ViewChild,
+} from '@angular/core';
 
 import { WorkflowEdge, WorkflowNode } from '../../../../services/devcrew.service';
 import { humanizeStatus } from '../../../../services/format-status.util';
 import {
-  NODE_HEIGHT,
-  NODE_WIDTH,
+  COMPACT_DIMS,
+  DEFAULT_DIMS,
+  LayoutDims,
   PositionedNode,
   layoutWorkflow,
 } from '../../../../services/workflow-layout.util';
 
 const LOOP_DROP = 40;
 const CANVAS_PADDING = 24;
+const MINIMAP_WIDTH = 160;
+const MINIMAP_HEIGHT = 110;
+
+export type CanvasViewMode = 'follow' | 'overview' | 'compact';
 
 interface FlowEdgePath {
   id: string;
@@ -35,6 +50,22 @@ interface CanvasRender {
   loopPaths: LoopEdgePath[];
 }
 
+interface MinimapRect {
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  status: string;
+}
+
+interface ViewportRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 @Component({
   selector: 'app-workflow-canvas',
   standalone: true,
@@ -42,20 +73,33 @@ interface CanvasRender {
   templateUrl: './workflow-canvas.component.html',
   styleUrl: './workflow-canvas.component.css',
 })
-export class WorkflowCanvasComponent {
+export class WorkflowCanvasComponent implements OnChanges, AfterViewInit {
   @Input() nodes: WorkflowNode[] = [];
   @Input() edges: WorkflowEdge[] = [];
   @Input() attention: string[] = [];
   @Input() selectedId: string | null = null;
   @Output() select = new EventEmitter<string>();
 
-  readonly nodeWidth = NODE_WIDTH;
-  readonly nodeHeight = NODE_HEIGHT;
+  @Input() viewMode: CanvasViewMode = 'follow';
+  @Output() viewModeChange = new EventEmitter<CanvasViewMode>();
+  @Input() showMinimap = false;
+  @Output() showMinimapChange = new EventEmitter<boolean>();
+
+  @ViewChild('scrollEl') scrollElRef?: ElementRef<HTMLDivElement>;
+
   readonly canvasPadding = CANVAS_PADDING;
+  readonly minimapWidth = MINIMAP_WIDTH;
+  readonly minimapHeight = MINIMAP_HEIGHT;
   readonly humanizeStatus = humanizeStatus;
+  readonly modes: CanvasViewMode[] = ['follow', 'overview', 'compact'];
+
+  get dims(): LayoutDims {
+    return this.viewMode === 'compact' ? COMPACT_DIMS : DEFAULT_DIMS;
+  }
 
   get render(): CanvasRender {
-    const layout = layoutWorkflow(this.nodes, this.edges);
+    const dims = this.dims;
+    const layout = layoutWorkflow(this.nodes, this.edges, dims);
     const byId = new Map(layout.positioned.map((p) => [p.node.id, p]));
 
     const flowPaths: FlowEdgePath[] = [];
@@ -67,9 +111,9 @@ export class WorkflowCanvasComponent {
         continue;
       }
       if (edge.kind === 'loop') {
-        loopPaths.push(this.buildLoopPath(edge, from, to));
+        loopPaths.push(this.buildLoopPath(edge, from, to, dims));
       } else {
-        flowPaths.push(this.buildFlowPath(edge, from, to));
+        flowPaths.push(this.buildFlowPath(edge, from, to, dims));
       }
     }
 
@@ -82,11 +126,92 @@ export class WorkflowCanvasComponent {
     };
   }
 
-  private buildFlowPath(edge: WorkflowEdge, from: PositionedNode, to: PositionedNode): FlowEdgePath {
-    const sx = from.x + NODE_WIDTH + CANVAS_PADDING;
-    const sy = from.y + NODE_HEIGHT / 2 + CANVAS_PADDING;
+  get fitScale(): number {
+    const el = this.scrollElRef?.nativeElement;
+    if (!el || this.viewMode !== 'overview') {
+      return 1;
+    }
+    const { width, height } = this.render;
+    if (!width || !height) {
+      return 1;
+    }
+    return Math.min(1, el.clientWidth / width, el.clientHeight / height);
+  }
+
+  get miniScale(): number {
+    const { width, height } = this.render;
+    if (!width || !height) {
+      return 1;
+    }
+    return Math.min(this.minimapWidth / width, this.minimapHeight / height);
+  }
+
+  get minimapRects(): MinimapRect[] {
+    const scale = this.miniScale;
+    const dims = this.dims;
+    return this.render.positioned.map((p) => ({
+      id: p.node.id,
+      x: (p.x + this.canvasPadding) * scale,
+      y: (p.y + this.canvasPadding) * scale,
+      w: Math.max(2, dims.nodeWidth * scale),
+      h: Math.max(2, dims.nodeHeight * scale),
+      status: p.node.status,
+    }));
+  }
+
+  get minimapViewport(): ViewportRect | null {
+    const el = this.scrollElRef?.nativeElement;
+    if (!el) {
+      return null;
+    }
+    const scale = this.miniScale;
+    return {
+      x: el.scrollLeft * scale,
+      y: el.scrollTop * scale,
+      w: Math.min(this.minimapWidth, el.clientWidth * scale),
+      h: Math.min(this.minimapHeight, el.clientHeight * scale),
+    };
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if ((changes['selectedId'] || changes['viewMode']) && this.viewMode === 'follow') {
+      this.scrollToSelected();
+    }
+  }
+
+  ngAfterViewInit(): void {
+    if (this.viewMode === 'follow') {
+      this.scrollToSelected();
+    }
+  }
+
+  private scrollToSelected(): void {
+    const el = this.scrollElRef?.nativeElement;
+    const id = this.selectedId;
+    if (!el || !id) {
+      return;
+    }
+    const pos = this.render.positioned.find((p) => p.node.id === id);
+    if (!pos) {
+      return;
+    }
+    const dims = this.dims;
+    const targetLeft = pos.x + this.canvasPadding - (el.clientWidth - dims.nodeWidth) / 2;
+    const targetTop = pos.y + this.canvasPadding - (el.clientHeight - dims.nodeHeight) / 2;
+    el.scrollLeft = Math.max(0, Math.min(targetLeft, el.scrollWidth - el.clientWidth));
+    el.scrollTop = Math.max(0, Math.min(targetTop, el.scrollHeight - el.clientHeight));
+  }
+
+  private buildFlowPath(
+    edge: WorkflowEdge,
+    from: PositionedNode,
+    to: PositionedNode,
+    dims: LayoutDims
+  ): FlowEdgePath {
+    const sx = from.x + dims.nodeWidth + CANVAS_PADDING;
+    const sy = from.y + dims.nodeHeight / 2 + CANVAS_PADDING;
     const tx = to.x + CANVAS_PADDING;
-    const ty = to.y + NODE_HEIGHT / 2 + CANVAS_PADDING;
+    const ty = to.y + dims.nodeHeight / 2 + CANVAS_PADDING;
     const midX = (sx + tx) / 2;
     return {
       id: edge.id,
@@ -95,11 +220,16 @@ export class WorkflowCanvasComponent {
     };
   }
 
-  private buildLoopPath(edge: WorkflowEdge, from: PositionedNode, to: PositionedNode): LoopEdgePath {
-    const sx = from.x + NODE_WIDTH / 2 + CANVAS_PADDING;
-    const sy = from.y + NODE_HEIGHT + CANVAS_PADDING;
-    const tx = to.x + NODE_WIDTH / 2 + CANVAS_PADDING;
-    const ty = to.y + NODE_HEIGHT + CANVAS_PADDING;
+  private buildLoopPath(
+    edge: WorkflowEdge,
+    from: PositionedNode,
+    to: PositionedNode,
+    dims: LayoutDims
+  ): LoopEdgePath {
+    const sx = from.x + dims.nodeWidth / 2 + CANVAS_PADDING;
+    const sy = from.y + dims.nodeHeight + CANVAS_PADDING;
+    const tx = to.x + dims.nodeWidth / 2 + CANVAS_PADDING;
+    const ty = to.y + dims.nodeHeight + CANVAS_PADDING;
     const dropY = Math.max(sy, ty) + LOOP_DROP;
     return {
       id: edge.id,
@@ -112,5 +242,44 @@ export class WorkflowCanvasComponent {
 
   onSelect(id: string): void {
     this.select.emit(id);
+  }
+
+  setViewMode(mode: CanvasViewMode): void {
+    if (this.viewMode === mode) {
+      return;
+    }
+    this.viewMode = mode;
+    this.viewModeChange.emit(mode);
+    if (mode === 'follow') {
+      // Deferred: the (possibly compact-dims) layout needs one change
+      // detection cycle to settle before positions used for scrolling are current.
+      setTimeout(() => this.scrollToSelected());
+    }
+  }
+
+  toggleMinimap(): void {
+    this.showMinimap = !this.showMinimap;
+    this.showMinimapChange.emit(this.showMinimap);
+  }
+
+  onScroll(): void {
+    // Intentionally empty: a bound (scroll) listener guarantees change
+    // detection re-reads scrollLeft/scrollTop for the minimap viewport
+    // rect and (in overview mode) nothing else depends on scroll position,
+    // so there's nothing else to do here.
+  }
+
+  onMinimapClick(event: MouseEvent): void {
+    const el = this.scrollElRef?.nativeElement;
+    const svg = event.currentTarget as SVGSVGElement;
+    if (!el || !svg) {
+      return;
+    }
+    const rect = svg.getBoundingClientRect();
+    const scale = this.miniScale || 1;
+    const clickX = event.clientX - rect.left;
+    const clickY = event.clientY - rect.top;
+    el.scrollLeft = Math.max(0, clickX / scale - el.clientWidth / 2);
+    el.scrollTop = Math.max(0, clickY / scale - el.clientHeight / 2);
   }
 }
