@@ -20,13 +20,24 @@ prepare_repo node has detected the target repo's real project layout
 branch, which calls build_design via a deferred import to avoid a
 StoryForge<->DevCrew import cycle (pipeline/ imports devcrew/ here, so
 devcrew/ cannot import pipeline/ at module level in return).
+
+StoryForge's own SDD-generation prompt is written entirely in Spring
+Boot/Angular terms (see prompts/system_prompt.py), so a dev_task's
+`affected_components.backend` text never actually names a language -- the
+earlier build_plan() stamps every backend/middleware-affected task's stack
+as the literal string "java", which here really just means "some
+non-frontend backend change, language undetermined". build_design
+reconciles that placeholder against the target repo's own real, detected
+stack (see _reconcile_task_stacks below) once prepare_repo knows it --
+e.g. a Python-only repo -- so non-Java target repos are supported without
+StoryForge needing to know or guess the target repo's language up front.
 """
 from __future__ import annotations
 
 from typing import Any
 
 from devcrew.graph.nodes.repository import quick_design
-from devcrew.graph.state import Design, ModuleContract, Plan, PlanTask, UserStory
+from devcrew.graph.state import Design, ExistingProject, ModuleContract, Plan, PlanTask, UserStory
 
 _LEGACY_FRONTEND_MARKERS = (
     "jquery",
@@ -164,14 +175,54 @@ def build_plan(story: dict[str, Any]) -> Plan:
     )
 
 
-def build_design(repo_info: dict[str, Any], story: dict[str, Any], plan: Plan) -> Design:
+def _reconcile_task_stacks(plan: Plan, projects: list[ExistingProject]) -> Plan:
+    """build_plan() runs before the target repo is even known, so
+    _derive_stack's "java" is really just a placeholder meaning "some
+    non-frontend backend change" -- it has no way to tell which backend
+    language the repo actually uses. Now that prepare_repo has cloned the
+    repo and detected its real project(s), remap any "java"-stamped task to
+    the repo's own backend language when the repo makes that unambiguous
+    (exactly one python/java project) -- e.g. a Python-only repo like
+    DevCrew's own python test fixture. A task genuinely derived as "angular"
+    is a real frontend-framework signal from the SDD, not a placeholder, and
+    is never remapped here -- a true mismatch there still fails loudly in
+    Design validation below instead of being silently reassigned to backend
+    code (see test_build_design_raises_when_a_task_stack_has_no_matching_project).
+    Multiple backend-capable projects (a genuinely mixed-stack repo) are
+    left alone too -- there's no way to guess which one a task belongs to,
+    so the existing validation error is the right outcome there."""
+    backend_projects = [p for p in projects if p.stack in ("python", "java")]
+    if len(backend_projects) != 1:
+        return plan
+    backend_stack = backend_projects[0].stack
+    if backend_stack == "java" or not any(t.stack == "java" for t in plan.tasks):
+        return plan
+    return plan.model_copy(
+        update={
+            "tasks": [
+                t.model_copy(update={"stack": backend_stack}) if t.stack == "java" else t
+                for t in plan.tasks
+            ]
+        }
+    )
+
+
+def build_design(repo_info: dict[str, Any], story: dict[str, Any], plan: Plan) -> tuple[Plan, Design]:
     """Built once DevCrew's own prepare_repo node has detected the target
     repo's real project layout. Reuses quick_design()'s own detected-
     project scaffolding (existing_projects/stack -- no LLM call, matches
     what "quick fix on an existing repo" already does natively) but
     replaces its generic placeholder key_decisions/design_doc/modules with
     real content StoryForge's assessment already authored, instead of the
-    minimal filler quick_design() falls back to when nothing better exists."""
+    minimal filler quick_design() falls back to when nothing better exists.
+
+    Also reconciles the plan's own task stacks against the now-known repo
+    (see _reconcile_task_stacks) -- returns the (possibly corrected) Plan
+    alongside the Design so the caller can persist it back into run state;
+    otherwise a corrected Design would validate fine here while task
+    execution later still read the plan's original, wrong stack."""
+    projects = [ExistingProject.model_validate(p) for p in repo_info.get("projects") or []]
+    plan = _reconcile_task_stacks(plan, projects)
     base = quick_design({"repo_info": repo_info}, plan)
 
     modules: list[ModuleContract] = []
@@ -202,7 +253,7 @@ def build_design(repo_info: dict[str, Any], story: dict[str, Any], plan: Plan) -
 
     # base is already validated against plan's task stacks (quick_design); re-validated here too
     # since this Design's existing_projects/stack are what actually gets returned to the caller.
-    return Design.model_validate(
+    design = Design.model_validate(
         {
             "stack": base.stack,
             "template_id": base.template_id,
@@ -220,3 +271,4 @@ def build_design(repo_info: dict[str, Any], story: dict[str, Any], plan: Plan) -
         },
         context={"task_stacks": {t.stack for t in plan.tasks}},
     )
+    return plan, design

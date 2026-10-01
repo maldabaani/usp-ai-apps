@@ -26,7 +26,7 @@ from devcrew.services.workflow import build_workflow
 from pipeline.devcrew_bridge import UnsupportedStackError, build_design, build_plan
 from tests.devcrew.fake_github import FakeGitHub
 from tests.devcrew.graph_harness import Harness, make_harness
-from tests.devcrew.test_existing_repo import RUN, seeded_repo
+from tests.devcrew.test_existing_repo import PY_REPO, RUN, seeded_repo
 
 JAVA_REPO = {
     "pom.xml": "<project/>",
@@ -43,6 +43,15 @@ def java_harness(tmp_path: Path) -> tuple[Harness, FakeGitHub, str]:
     gh = FakeGitHub(tmp_path / "remotes")
     sha = seeded_repo(gh, "acme", "shop", JAVA_REPO)
     return make_harness(tmp_path, github=gh.delivery()), gh, sha
+
+def python_harness(tmp_path: Path) -> tuple[Harness, FakeGitHub, str]:
+    """Like java_harness, but a python-only repo -- exercises build_design's stack
+    reconciliation (_reconcile_task_stacks) end-to-end through the real graph, not just the
+    bridge module in isolation."""
+    gh = FakeGitHub(tmp_path / "remotes")
+    sha = seeded_repo(gh, "acme", "shop", PY_REPO)
+    return make_harness(tmp_path, github=gh.delivery()), gh, sha
+
 
 STORY = {
     "epic_title": "Add a discount field",
@@ -156,12 +165,93 @@ def test_build_design_derives_modules_from_affected_components():
         "commit": "abc",
     }
 
-    design = build_design(repo_info, STORY, plan)
+    reconciled_plan, design = build_design(repo_info, STORY, plan)
 
+    assert reconciled_plan.tasks[0].stack == "java"  # already matched the repo -- no remap needed
     assert design.stack.value == "java"
     assert len(design.modules) == 2  # backend + database, both non-N/A
     assert "Add a discount field" in design.design_doc
     assert design.existing_projects[0].stack == "java"
+
+
+def test_build_design_reconciles_a_placeholder_java_stack_to_a_python_only_repo():
+    # STORY's dev_task only touches "backend" -> build_plan derives stack "java" (_derive_stack's
+    # generic backend-change placeholder, not a real language choice -- see
+    # test_build_plan_skips_architect_shaped_fields_but_keeps_them_as_context). The target repo is
+    # actually python-only (DevCrew's own test fixture repo, "shop"): build_design must remap the
+    # task to "python" instead of raising, and return the corrected plan for the caller to persist.
+    plan = build_plan(STORY)
+    assert plan.tasks[0].stack == "java"
+    repo_info = {
+        "base_branch": "main",
+        "projects": [
+            {
+                "stack": "python",
+                "path": ".",
+                "install_cmd": "pip install -e .",
+                "build_cmd": "",
+                "test_cmd": "pytest -q",
+                "coverage_cmd": None,
+                "preview_cmd": None,
+                "preview_port": None,
+            }
+        ],
+        "source": "detected",
+        "notes": [],
+        "file_count": 5,
+        "tree": "",
+        "readme": "",
+        "commit": "abc",
+    }
+
+    reconciled_plan, design = build_design(repo_info, STORY, plan)
+
+    assert reconciled_plan.tasks[0].stack == "python"
+    assert design.stack.value == "python"
+    assert design.existing_projects[0].stack == "python"
+
+
+def test_build_design_does_not_guess_when_the_repo_has_two_backend_stacks():
+    # A genuinely mixed java+python repo: which language the task belongs to is a real ambiguity
+    # build_design can't resolve on its own, so it must leave the plan's "java" guess alone rather
+    # than picking one -- the existing Design validation (both stacks are present) still passes.
+    plan = build_plan(STORY)
+    repo_info = {
+        "base_branch": "main",
+        "projects": [
+            {
+                "stack": "python",
+                "path": "svc-a",
+                "install_cmd": "pip install -e .",
+                "build_cmd": "",
+                "test_cmd": "pytest -q",
+                "coverage_cmd": None,
+                "preview_cmd": None,
+                "preview_port": None,
+            },
+            {
+                "stack": "java",
+                "path": "svc-b",
+                "install_cmd": "mvn -q -DskipTests install",
+                "build_cmd": "mvn -q compile",
+                "test_cmd": "mvn -q test",
+                "coverage_cmd": None,
+                "preview_cmd": None,
+                "preview_port": None,
+            },
+        ],
+        "source": "detected",
+        "notes": [],
+        "file_count": 5,
+        "tree": "",
+        "readme": "",
+        "commit": "abc",
+    }
+
+    reconciled_plan, design = build_design(repo_info, STORY, plan)
+
+    assert reconciled_plan.tasks[0].stack == "java"  # left alone, genuinely ambiguous
+    assert design.stack.value == "mixed"
 
 
 def test_build_design_raises_when_a_task_stack_has_no_matching_project():
@@ -270,9 +360,47 @@ async def test_bridged_run_design_reflects_storyforges_own_content(tmp_path: Pat
     )
 
     state = await h.driver.state(RUN)
-    round_tripped_plan = Plan.model_validate(state["plan"])  # survives unchanged through the graph
+    # java_harness's repo is java, matching build_plan's "java" guess for this task, so
+    # build_design's stack reconciliation is a no-op here -- see
+    # test_build_design_reconciles_a_placeholder_java_stack_to_a_python_only_repo for the case
+    # where prepare_repo's state["plan"] update actually changes a task's stack.
+    round_tripped_plan = Plan.model_validate(state["plan"])
     assert round_tripped_plan.tasks[0].id == "T1"
+    assert round_tripped_plan.tasks[0].stack == "java"
     assert "discount" in (state["design"]["design_doc"] or "").lower()
+
+
+async def test_bridged_run_against_a_python_only_repo_reaches_scaffold(tmp_path: Path) -> None:
+    """End-to-end regression test for the stack-reconciliation fix: a repo with only a python
+    project used to fail Design validation outright (build_plan's "java" placeholder guess had
+    nowhere to run), stranding the run at prepare_repo. It must now reach scaffold with the
+    plan's task stack corrected to "python"."""
+    h, gh, sha = python_harness(tmp_path)
+    h.brain.responders["planner"] = lambda call: (_ for _ in ()).throw(
+        AssertionError("planner must not be called")
+    )
+    h.brain.responders["architect"] = lambda call: (_ for _ in ()).throw(
+        AssertionError("architect must not be called")
+    )
+    plan = build_plan(STORY)
+    assert plan.tasks[0].stack == "java"  # build_plan's pre-repo-knowledge placeholder guess
+
+    await h.driver.start(
+        RUN,
+        "Add a discount field to todos",
+        "acme/shop",
+        target="existing",
+        mode="quick",
+        plan=dump(plan),
+        storyforge_epic=STORY,
+    )
+
+    state = await h.driver.state(RUN)
+    assert state["status"] not in ("awaiting_plan_approval", "awaiting_design_approval")
+    assert state.get("escalation") is None  # would be set if prepare_repo had to bail out
+    round_tripped_plan = Plan.model_validate(state["plan"])
+    assert round_tripped_plan.tasks[0].stack == "python"  # reconciled against the real repo
+    assert state["design"]["stack"] == "python"
 
 
 async def test_bridged_run_workflow_detail_is_not_mislabeled_quick_fix(tmp_path: Path) -> None:

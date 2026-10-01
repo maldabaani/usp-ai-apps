@@ -175,13 +175,18 @@ def make_prepare_repo(deps: GraphDeps) -> NodeFn:
             from pipeline.devcrew_bridge import build_design  # deferred: avoid an import cycle
 
             plan = Plan.model_validate(state["plan"])
-            design = build_design(info, state["storyforge_epic"], plan)
+            # build_design may reconcile a task's placeholder "java" stack
+            # against this repo's actual detected language (e.g. python) --
+            # persist that corrected plan too, so task execution later reads
+            # the right stack instead of the pre-clone guess.
+            plan, design = build_design(info, state["storyforge_epic"], plan)
             return Command(
                 goto="scaffold",
                 update={
                     "workspace": str(root),
                     "base_branch": base,
                     "repo_info": info,
+                    "plan": dump(plan),
                     "design": dump(design),
                     "status": RunStatus.SCAFFOLDING.value,
                 },
