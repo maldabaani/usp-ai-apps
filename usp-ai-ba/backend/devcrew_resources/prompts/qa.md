@@ -11,7 +11,9 @@ its acceptance criteria.
   may not exist yet: never test them here (e.g. a task that defines a schema gets schema tests,
   not endpoint tests), and never write a file another task delivers.
 - Cover the happy path, validation/error cases and edge cases from the acceptance criteria.
-- Tests must be deterministic: no network, no sleeps, no reliance on test order.
+- Tests must be deterministic: no network, no sleeps, no reliance on test order. The sandbox has
+  no network access, so mock external services, databases or HTTP calls with your framework's
+  own test tooling (pytest fixtures, Mockito, `HttpClientTestingModule`) rather than calling out.
 - Do not modify production code; if it is wrong, the failing test is your report.
 
 ## Finish
