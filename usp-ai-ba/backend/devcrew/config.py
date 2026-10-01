@@ -42,6 +42,20 @@ class Settings(BaseSettings):
     models_config_path: Path = DEVCREW_DIR / "config" / "models.yaml"
     llm_request_timeout_s: float = 600.0
 
+    # --- Claude Cloud (optional second engine) -----------------------------------------------
+    # Opt-in, per-run alternative to local Ollama for every agent role (a run picks "ollama" or
+    # "anthropic" at dispatch time -- see devcrew/llm/client.py's LLMGateway.cloud_spec). Unset
+    # key = the option is unavailable; dispatching with engine="anthropic" is then refused.
+    # Deliberately separate from StoryForge's own top-level ANTHROPIC_API_KEY/CLAUDE_MODEL (see
+    # this file's own env_prefix docstring on why DEVCREW_-prefixed settings never share a name
+    # with StoryForge's).
+    anthropic_api_key: SecretStr | None = Field(
+        default=None, description="Enables the Claude Cloud engine option for DevCrew runs."
+    )
+    anthropic_model: str = Field(
+        default="claude-sonnet-5", description="Model used when a run's engine is \"anthropic\"."
+    )
+
     # --- ChromaDB ---------------------------------------------------------------------------
     chroma_host: str = "localhost"
     chroma_port: int = 8000
@@ -157,7 +171,7 @@ class Settings(BaseSettings):
     def _strip_trailing_slash(cls, v: str) -> str:
         return v.rstrip("/")
 
-    @field_validator("github_token", mode="before")
+    @field_validator("github_token", "anthropic_api_key", mode="before")
     @classmethod
     def _empty_token_is_none(cls, v: object) -> object:
         return None if v in ("", None) else v

@@ -61,6 +61,7 @@ STATE_FIELDS = (
     "human_notes",
     "request_digest",
     "models",
+    "engine",
 )
 
 
@@ -82,6 +83,19 @@ async def _checked_models(container: Any, chosen: dict[Any, str] | None) -> dict
             f"not installed in Ollama: {', '.join(missing)} (ollama pull <model>)",
         )
     return models
+
+
+def _checked_engine(container: Any, engine: str) -> str:
+    """Refuse dispatching to Claude Cloud when this server has no key configured, instead of
+    silently falling back to Ollama (LLMGateway.spec()'s own fallback is a defensive last
+    resort for a run already in flight when a key is removed, not something a new dispatch
+    should rely on)."""
+    if engine == "anthropic" and not container.settings.anthropic_api_key:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "Claude Cloud needs DEVCREW_ANTHROPIC_API_KEY set on the server",
+        )
+    return engine
 
 
 async def _run_or_404(manager: RunManager, run_id: str) -> Any:
@@ -133,6 +147,7 @@ async def create_run(body: CreateRunRequest, container: ContainerDep) -> RunSumm
         mode=body.mode,
         budget=body.budget(),
         models=await _checked_models(container, body.models),
+        engine=_checked_engine(container, body.engine),
     )
     return RunSummary.of(run, busy=True)
 
@@ -157,6 +172,7 @@ async def create_run_from_storyforge_epic(
             "working on an existing repository needs GitHub access: set GITHUB_TOKEN and "
             "GITHUB_DELIVERY_ENABLED=true",
         )
+    engine = _checked_engine(container, body.engine)
 
     state = await get_job_state(body.job_id)
     if state is None:
@@ -187,6 +203,7 @@ async def create_run_from_storyforge_epic(
         mode="quick",
         plan=dump(plan),
         storyforge_epic=story,
+        engine=engine,
     )
     record_dispatch(body.job_id, body.epic_index, story.get("epic_title", ""), run.id)
     return RunSummary.of(run, busy=True)

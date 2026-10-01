@@ -157,6 +157,7 @@ def make_schedule(deps: GraphDeps) -> NodeFn:
                         "tasks": {tid: dump(ts)},
                         "human_notes": state.get("human_notes") or [],
                         "models": state.get("models") or {},
+                        "engine": state.get("engine") or "ollama",
                     },
                 )
             )
@@ -244,6 +245,7 @@ def initial_state(
     issue: dict[str, Any] | None = None,
     budget: dict[str, int] | None = None,
     models: dict[str, str] | None = None,
+    engine: str | None = None,
     plan: dict[str, Any] | None = None,
     storyforge_epic: dict[str, Any] | None = None,
 ) -> RunState:
@@ -285,6 +287,7 @@ def initial_state(
         budget=budget,
         budget_limit=None,
         models=models or {},
+        engine=engine or "ollama",
     )
     if not existing:
         state["base_branch"] = "main"

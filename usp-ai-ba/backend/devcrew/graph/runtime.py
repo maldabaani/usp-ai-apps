@@ -198,7 +198,14 @@ def instrument(deps: GraphDeps, name: str, fn: NodeFn) -> NodeFn:
             ts = (state.get("tasks") or {}).get(task_id) or {}
             iteration = int(ts.get("iterations") or 0) + 1
         scope = llm_scope.set(
-            CallScope(run_id=run_id, node=name, task_id=task_id, models=models, iteration=iteration)
+            CallScope(
+                run_id=run_id,
+                node=name,
+                task_id=task_id,
+                models=models,
+                iteration=iteration,
+                engine=state.get("engine"),
+            )
         )
         try:
             result = await fn(state)

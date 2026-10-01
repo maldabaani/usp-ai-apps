@@ -11,7 +11,7 @@ from devcrew.github.client import GitHubClient
 from devcrew.github.delivery import GitHubDelivery
 from devcrew.graph.runtime import GraphDeps
 from devcrew.llm.client import LLMGateway
-from devcrew.llm.models_config import load_models_config
+from devcrew.llm.models_config import ModelSpec, load_models_config
 from devcrew.prompts import PromptLibrary
 from devcrew.rag.embeddings import Embedder
 from devcrew.rag.service import RagService, chroma_embedded_client
@@ -23,11 +23,25 @@ from devcrew.tools.catalog import RulesCatalog, TemplatesCatalog
 
 
 def build_llm(settings: Settings) -> LLMGateway:
+    cloud_spec = None
+    anthropic_api_key = None
+    if settings.anthropic_api_key is not None:
+        anthropic_api_key = settings.anthropic_api_key.get_secret_value()
+        cloud_spec = ModelSpec(
+            model=settings.anthropic_model,
+            provider="anthropic",
+            num_ctx=200_000,
+            num_predict=8192,
+            temperature=0.1,
+            structured_format="none",
+        )
     return LLMGateway(
         load_models_config(settings.models_config_path),
         base_url=settings.ollama_base_url,
         max_parallel=settings.max_parallel_devs,
         request_timeout_s=settings.llm_request_timeout_s,
+        cloud_spec=cloud_spec,
+        anthropic_api_key=anthropic_api_key,
     )
 
 

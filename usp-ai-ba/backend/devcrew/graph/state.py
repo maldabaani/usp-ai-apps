@@ -577,6 +577,8 @@ class RunState(TypedDict, total=False):
     budget_limit: dict[str, int] | None
     # Phase 16: the run's own model per role (role -> Ollama model); others use models.yaml
     models: dict[str, str]
+    # The run's own LLM engine: "ollama" (default) or "anthropic" (Claude Cloud, every role).
+    engine: str
     request_digest: str | None  # condensed long requirements document (Phase 15)
     wave_checked: int
     wave_fixes: int
@@ -602,6 +604,7 @@ class TaskWorkerState(TypedDict, total=False):
     human_notes: list[dict[str, Any]]  # run-level notes from the human's chat (Phase 13)
     hold_next: str | None  # the step a paused task continues with (Phase 15)
     models: dict[str, str]  # the run's own model per role (Phase 16)
+    engine: str  # the run's own LLM engine: "ollama" (default) or "anthropic"
 
 
 class TaskWorkerOutput(TypedDict, total=False):

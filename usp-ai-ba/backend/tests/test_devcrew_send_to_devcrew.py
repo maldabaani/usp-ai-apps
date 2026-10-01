@@ -125,6 +125,19 @@ def test_out_of_range_epic_index_404s(client: TestClient, monkeypatch: pytest.Mo
     assert resp.status_code == 404
 
 
+def test_anthropic_engine_refused_without_a_configured_key(client: TestClient):
+    # No DEVCREW_ANTHROPIC_API_KEY set in this fixture's env -- the guard fires before even
+    # looking up the StoryForge job, so no job-state monkeypatch is needed here.
+    resp = client.post(
+        "/api/devcrew/runs/from-storyforge-epic",
+        json={"job_id": "job-1", "epic_index": 0, "repo_target": "acme/shop", "engine": "anthropic"},
+        headers=_auth_headers(),
+    )
+
+    assert resp.status_code == 422
+    assert "DEVCREW_ANTHROPIC_API_KEY" in resp.json()["detail"]
+
+
 def test_unapproved_epic_400s(client: TestClient, monkeypatch: pytest.MonkeyPatch):
     import pipeline.runner as runner
 

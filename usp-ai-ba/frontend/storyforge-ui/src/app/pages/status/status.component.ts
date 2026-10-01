@@ -69,6 +69,7 @@ export class StatusComponent implements OnInit, OnDestroy {
   // null if none is open. Only one row's form is open at a time.
   openDevCrewFormFor: number | null = null;
   devCrewRepoInput = '';
+  devCrewEngine: 'ollama' | 'anthropic' = 'ollama';
   // "Test Connection" state, scoped to the single open form.
   testingDevCrewRepo = false;
   devCrewTestStatus: 'idle' | 'success' | 'failed' = 'idle';
@@ -349,6 +350,7 @@ export class StatusComponent implements OnInit, OnDestroy {
     if (this.sendingToDevCrew !== null) return;
     this.openDevCrewFormFor = epicIndex;
     this.devCrewRepoInput = '';
+    this.devCrewEngine = 'ollama';
     this.devCrewError = '';
     this.testingDevCrewRepo = false;
     this.devCrewTestStatus = 'idle';
@@ -358,6 +360,7 @@ export class StatusComponent implements OnInit, OnDestroy {
   cancelDevCrewForm(): void {
     this.openDevCrewFormFor = null;
     this.devCrewRepoInput = '';
+    this.devCrewEngine = 'ollama';
     this.devCrewError = '';
     this.testingDevCrewRepo = false;
     this.devCrewTestStatus = 'idle';
@@ -403,7 +406,7 @@ export class StatusComponent implements OnInit, OnDestroy {
     this.sendingToDevCrew = epicIndex;
     this.devCrewError = '';
 
-    this.storyForgeService.sendEpicToDevCrew(this.jobId, epicIndex, normalized).subscribe({
+    this.storyForgeService.sendEpicToDevCrew(this.jobId, epicIndex, normalized, this.devCrewEngine).subscribe({
       next: (run) => {
         this.sendingToDevCrew = null;
         this.devCrewDispatches[epicIndex] = run.id;

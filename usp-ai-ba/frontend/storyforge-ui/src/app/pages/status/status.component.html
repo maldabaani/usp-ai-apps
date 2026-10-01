@@ -262,6 +262,10 @@
                   (keyup.escape)="cancelDevCrewForm()"
                   autofocus
                 />
+                <select class="sf-select" [(ngModel)]="devCrewEngine" name="devCrewEngine" title="LLM engine for every agent in this run">
+                  <option value="ollama">Local Ollama</option>
+                  <option value="anthropic">Claude Cloud</option>
+                </select>
                 <button
                   class="sf-btn sf-btn-secondary"
                   (click)="testDevCrewConnection()"

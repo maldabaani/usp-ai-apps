@@ -37,6 +37,11 @@ class CreateRunRequest(BaseModel):
     models: dict[Role, str] | None = Field(
         default=None, description="the run's own Ollama model per role (others: models.yaml)"
     )
+    engine: Literal["ollama", "anthropic"] = Field(
+        default="ollama",
+        description="LLM engine for every role in this run: local Ollama, or Claude Cloud "
+        "(requires DEVCREW_ANTHROPIC_API_KEY configured on the server).",
+    )
 
     def budget(self) -> dict[str, int] | None:
         """The run's own budget, or None for the settings' defaults."""
@@ -66,6 +71,11 @@ class SendToDevCrewRequest(BaseModel):
     )
     epic_index: int = Field(ge=0, description="index into that job's approved_stories")
     repo_target: str = Field(pattern=REPO_RE, description="owner/repo on GitHub to work against")
+    engine: Literal["ollama", "anthropic"] = Field(
+        default="ollama",
+        description="LLM engine for every role in this run: local Ollama, or Claude Cloud "
+        "(requires DEVCREW_ANTHROPIC_API_KEY configured on the server).",
+    )
 
 
 class CheckRepoResponse(BaseModel):
@@ -153,6 +163,7 @@ class RunDetail(RunSummary):
     pause_requested: bool = False
     request_digest: str | None = None
     models: dict[str, str] | None = None  # the run's own model per role (Phase 16)
+    engine: str | None = None  # "ollama" (default) or "anthropic"
     code_search: CodeSearchStatus | None = None  # BL-013
     human_notes: list[dict[str, Any]] = Field(default_factory=list)
     plan: dict[str, Any] | None = None

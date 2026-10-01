@@ -314,11 +314,12 @@ export class StoryForgeService {
   sendEpicToDevCrew(
     jobId: string,
     epicIndex: number,
-    repoTarget: string
+    repoTarget: string,
+    engine: 'ollama' | 'anthropic' = 'ollama'
   ): Observable<{ id: string; status: string }> {
     return this.http.post<{ id: string; status: string }>(
       `${API_BASE_URL}/devcrew/runs/from-storyforge-epic`,
-      { job_id: jobId, epic_index: epicIndex, repo_target: repoTarget }
+      { job_id: jobId, epic_index: epicIndex, repo_target: repoTarget, engine }
     );
   }
 

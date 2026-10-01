@@ -25,11 +25,18 @@ class ModelSpec(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     model: str
+    # "ollama" (default): built as ChatOllama, base_url/num_ctx/structured_format all apply. An
+    # "anthropic" spec is built as ChatAnthropic instead -- see LLMGateway._default_chat_factory.
+    # Always "ollama" for a role's models.yaml entry; "anthropic" only appears on the one shared
+    # cloud ModelSpec LLMGateway.cloud_spec builds from Settings (see devcrew/graph/factory.py).
+    provider: Literal["ollama", "anthropic"] = "ollama"
     num_ctx: int = Field(default=16384, ge=1024)
     temperature: float = Field(default=0.1, ge=0.0, le=2.0)
     num_predict: int = Field(default=4096, ge=1)
     # How structured outputs are constrained: Ollama JSON-schema decoding, plain JSON mode,
-    # or unconstrained (prompt + validator only).
+    # or unconstrained (prompt + validator only). Always "none" for an "anthropic" spec --
+    # Ollama's `format=` kwarg has no Claude equivalent, so generate_structured()'s own
+    # provider-agnostic prompt+validate+retry loop drives structured output there instead.
     structured_format: Literal["schema", "json", "none"] = "schema"
 
     @model_validator(mode="after")

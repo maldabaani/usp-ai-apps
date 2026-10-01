@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
+from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage
 from langchain_ollama import ChatOllama, OllamaEmbeddings
@@ -40,6 +41,9 @@ class CallScope:
     # the task's ts.iterations at node entry + 1 (which developer attempt this call belongs
     # to); None for run-level nodes with no task_id (planner, architect, run coordinator)
     iteration: int | None = None
+    # the run's own engine choice ("ollama" default, or "anthropic" for Claude Cloud); None
+    # behaves like "ollama". See LLMGateway.spec()/cloud_spec.
+    engine: str | None = None
 
 
 llm_scope: ContextVar[CallScope | None] = ContextVar("llm_scope", default=None)
@@ -126,6 +130,8 @@ class LLMGateway:
         max_parallel: int,
         request_timeout_s: float = 600.0,
         chat_factory: ChatFactory | None = None,
+        cloud_spec: ModelSpec | None = None,
+        anthropic_api_key: str | None = None,
     ) -> None:
         if max_parallel < 1:
             raise ValueError("max_parallel must be >= 1")
@@ -141,6 +147,12 @@ class LLMGateway:
         self.on_prompt: PromptHook | None = None  # opt-in full prompt/reply capture
         # the models installed in Ollama (the per-run model picker); None: unknown
         self.model_lister: ModelLister | None = None if chat_factory else self._ollama_models
+        # Claude Cloud (opt-in per-run engine, see Settings.anthropic_api_key): one shared spec
+        # for every role, used by spec() when a run's CallScope.engine == "anthropic". None when
+        # no key is configured -- a run requesting "anthropic" then falls back to Ollama rather
+        # than crashing (the API layer is expected to refuse that dispatch up front instead).
+        self.cloud_spec = cloud_spec
+        self._anthropic_api_key = anthropic_api_key
 
     async def _ollama_models(self) -> set[str]:
         async with httpx.AsyncClient(timeout=5.0) as http:
@@ -159,6 +171,14 @@ class LLMGateway:
             return None
 
     def _default_chat_factory(self, spec: ModelSpec) -> BaseChatModel:
+        if spec.provider == "anthropic":
+            return ChatAnthropic(
+                model=spec.model,
+                max_tokens=spec.num_predict,
+                temperature=spec.temperature,
+                api_key=self._anthropic_api_key,
+                timeout=self._timeout,
+            )
         return ChatOllama(
             model=spec.model,
             base_url=self.base_url,
@@ -169,9 +189,12 @@ class LLMGateway:
         )
 
     def spec(self, role: Role) -> ModelSpec:
-        """The role's model; a run can choose its own model per role (other settings kept)."""
-        spec = self.models.for_role(role)
+        """The role's model; a run can choose its own model per role (other settings kept), or
+        switch every role to the shared Claude Cloud spec (CallScope.engine == "anthropic")."""
         scope = llm_scope.get()
+        if scope is not None and scope.engine == "anthropic" and self.cloud_spec is not None:
+            return self.cloud_spec
+        spec = self.models.for_role(role)
         if scope is not None and scope.models:
             chosen = dict(scope.models).get(role.value)
             if chosen and chosen != spec.model:

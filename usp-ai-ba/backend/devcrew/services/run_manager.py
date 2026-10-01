@@ -101,6 +101,7 @@ class RunManager:
         issue: dict[str, Any] | None = None,
         budget: dict[str, int] | None = None,
         models: dict[str, str] | None = None,
+        engine: str | None = None,
         plan: dict[str, Any] | None = None,
         storyforge_epic: dict[str, Any] | None = None,
     ) -> Run:
@@ -119,6 +120,7 @@ class RunManager:
                 issue=issue,
                 budget=budget,
                 models=models,
+                engine=engine,
                 plan=plan,
                 storyforge_epic=storyforge_epic,
             ),

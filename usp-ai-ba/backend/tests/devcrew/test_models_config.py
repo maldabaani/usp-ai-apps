@@ -37,6 +37,13 @@ def test_override_merges_with_defaults() -> None:
     assert cfg.required_models() == {"a", "b", "nomic-embed-text"}
 
 
+def test_provider_defaults_to_ollama_and_accepts_anthropic() -> None:
+    assert ModelSpec(model="m").provider == "ollama"
+    assert ModelSpec(model="claude-sonnet-5", provider="anthropic").provider == "anthropic"
+    with pytest.raises(ValidationError):
+        ModelSpec(model="m", provider="openai")  # type: ignore[arg-type]
+
+
 def test_num_predict_must_fit_context() -> None:
     with pytest.raises(ValidationError):
         ModelSpec(model="a", num_ctx=2048, num_predict=4096)

@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from devcrew.llm.models_config import ModelSpec
 from tests.devcrew.api_harness import Api, api
 
 REQUEST = {"request": "Build a TODO API with CRUD", "repo_target": "me/todo", "create_repo": False}
@@ -73,6 +74,44 @@ async def test_any_model_name_is_accepted_when_ollama_cannot_be_asked(tmp_path: 
         assert resp.status_code == 201, resp.text
         run = await a.settle(resp.json()["id"])
         assert run["models"] == {"reviewer": "other:7b"}
+
+
+async def test_engine_defaults_to_ollama(tmp_path: Path) -> None:
+    async with api(tmp_path) as a:
+        resp = await a.client.post("/runs", json=REQUEST)
+        assert resp.status_code == 201, resp.text
+        run = await a.settle(resp.json()["id"])
+        assert run["engine"] == "ollama"
+
+
+async def test_anthropic_engine_refused_without_a_configured_key(tmp_path: Path) -> None:
+    async with api(tmp_path) as a:  # no anthropic_api_key passed -- the harness default is unset
+        resp = await a.client.post("/runs", json={**REQUEST, "engine": "anthropic"})
+        assert resp.status_code == 422
+        assert "DEVCREW_ANTHROPIC_API_KEY" in resp.json()["detail"]
+
+
+async def test_anthropic_engine_routes_every_role_to_the_cloud_spec(tmp_path: Path) -> None:
+    # make_harness builds its LLMGateway over a fake chat_factory (tests.devcrew.fakes.gateway),
+    # not the real devcrew.graph.factory.build_llm() that reads Settings.anthropic_api_key into
+    # LLMGateway.cloud_spec (see test_llm_gateway.py for that wiring unit-tested directly) --
+    # setting cloud_spec here exercises the *state threading* this test file is about: dispatch
+    # request -> RunState.engine -> the task-dispatch Send() -> TaskWorkerState.engine ->
+    # instrument()'s CallScope -> LLMGateway.spec(), through a real graph run.
+    async with api(tmp_path, anthropic_api_key="fake-key") as a:
+        a.container.llm.cloud_spec = ModelSpec(
+            model="claude-test", provider="anthropic", num_predict=1024, structured_format="none"
+        )
+        resp = await a.client.post("/runs", json={**REQUEST, "engine": "anthropic"})
+        assert resp.status_code == 201, resp.text
+        run_id = resp.json()["id"]
+        run = await a.settle(run_id)
+        assert run["engine"] == "anthropic"
+        await a.approve(run_id)
+        await a.approve(run_id)  # tasks run in the parallel task workers
+        used = await usage_models(a, run_id)
+        assert used["developer"] == ["claude-test"]
+        assert used["planner"] == ["claude-test"] and used["architect"] == ["claude-test"]
 
 
 def test_token_counts_survive_a_cached_prompt() -> None:
