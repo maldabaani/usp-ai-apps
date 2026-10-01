@@ -374,13 +374,24 @@
   margin-bottom: 0;
 }
 
+.dc-prompt-message-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
 .dc-prompt-message-type {
-  display: block;
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   color: var(--sf-muted);
-  margin-bottom: 4px;
+}
+
+.dc-prompt-copy-btn {
+  padding: 2px 10px;
+  font-size: 11px;
+  line-height: 1.6;
 }
 
 .dc-prompt-message pre {

@@ -315,12 +315,30 @@
                 <span class="dc-prompt-toggle">{{ isPromptEntryOpen(entry.id) ? '▾' : '▸' }}</span>
               </button>
               <div class="dc-prompt-detail" *ngIf="isPromptEntryOpen(entry.id)">
-                <div class="dc-prompt-message" *ngFor="let m of entry.messages">
-                  <span class="dc-prompt-message-type">{{ m.type }}</span>
+                <div class="dc-prompt-message" *ngFor="let m of entry.messages; let i = index">
+                  <div class="dc-prompt-message-head">
+                    <span class="dc-prompt-message-type">{{ m.type }}</span>
+                    <button
+                      type="button"
+                      class="sf-btn sf-btn-secondary dc-prompt-copy-btn"
+                      (click)="copyPromptMessage(entry.id + '-m' + i, m.data['content'])"
+                    >
+                      {{ copiedPromptMessageKey === entry.id + '-m' + i ? 'Copied!' : 'Copy' }}
+                    </button>
+                  </div>
                   <pre>{{ m.data['content'] }}</pre>
                 </div>
-                <div class="dc-prompt-message dc-prompt-reply" *ngFor="let m of entry.reply">
-                  <span class="dc-prompt-message-type">reply</span>
+                <div class="dc-prompt-message dc-prompt-reply" *ngFor="let m of entry.reply; let i = index">
+                  <div class="dc-prompt-message-head">
+                    <span class="dc-prompt-message-type">reply</span>
+                    <button
+                      type="button"
+                      class="sf-btn sf-btn-secondary dc-prompt-copy-btn"
+                      (click)="copyPromptMessage(entry.id + '-r' + i, m.data['content'])"
+                    >
+                      {{ copiedPromptMessageKey === entry.id + '-r' + i ? 'Copied!' : 'Copy' }}
+                    </button>
+                  </div>
                   <pre>{{ m.data['content'] }}</pre>
                 </div>
               </div>

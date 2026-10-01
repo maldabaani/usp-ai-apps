@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnDestroy, OnInit } from '@angular/core';
+import { ChangeDetectorRef, Component, OnDestroy, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 
@@ -50,6 +50,7 @@ export class RunDetailComponent implements OnInit, OnDestroy {
   promptFilterTaskId: string | null = null;
   promptFilterNode: string | null = null;
   openPromptEntryIds = new Set<number>();
+  copiedPromptMessageKey: string | null = null;
 
   selectedNodeId: string | null = null;
   readonly humanizeStatus = humanizeStatus;
@@ -89,7 +90,8 @@ export class RunDetailComponent implements OnInit, OnDestroy {
   constructor(
     private route: ActivatedRoute,
     private devCrewService: DevCrewService,
-    private authService: AuthService
+    private authService: AuthService,
+    private changeDetectorRef: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
@@ -425,6 +427,19 @@ export class RunDetailComponent implements OnInit, OnDestroy {
 
   isPromptEntryOpen(id: number): boolean {
     return this.openPromptEntryIds.has(id);
+  }
+
+  copyPromptMessage(key: string, content: unknown): void {
+    navigator.clipboard.writeText(content == null ? '' : String(content)).then(() => {
+      this.copiedPromptMessageKey = key;
+      this.changeDetectorRef.detectChanges();
+      setTimeout(() => {
+        if (this.copiedPromptMessageKey === key) {
+          this.copiedPromptMessageKey = null;
+          this.changeDetectorRef.detectChanges();
+        }
+      }, 2000);
+    });
   }
 
   get promptTaskIds(): string[] {
