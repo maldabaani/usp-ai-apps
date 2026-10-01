@@ -33,9 +33,9 @@ NODE = "developer"
 
 def developer_tools(deps: GraphDeps, ctx: TaskCtx, budget: QuestionBudget) -> list[ToolSpec]:
     tools = [
-        read_file_tool(ctx.workspace),
-        write_file_tool(ctx.workspace),
-        list_dir_tool(ctx.workspace),
+        read_file_tool(ctx.workspace, ctx.project.path),
+        write_file_tool(ctx.workspace, project_path=ctx.project.path),
+        list_dir_tool(ctx.workspace, ctx.project.path),
         read_rules_tool(deps.rules),
         ask_agent_tool(
             deps,

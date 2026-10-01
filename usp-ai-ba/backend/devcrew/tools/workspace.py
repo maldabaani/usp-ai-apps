@@ -117,7 +117,7 @@ MIN_READ_LINES = 100
 
 
 class ReadFileArgs(BaseModel):
-    path: str = Field(description="File path relative to the project root.")
+    path: str = Field(description="File path relative to the repository root.")
     start_line: int = Field(default=1, ge=1)
     max_lines: int = Field(default=200, ge=1, le=MAX_READ_LINES)
 
@@ -130,29 +130,50 @@ class ReadFileArgs(BaseModel):
 
 
 class WriteFileArgs(BaseModel):
-    path: str = Field(description="File path relative to the project root.")
+    path: str = Field(description="File path relative to the repository root.")
     content: str = Field(description="The COMPLETE new file content.")
 
 
 class ListDirArgs(BaseModel):
-    path: str = Field(default=".", description="Directory relative to the project root.")
+    path: str = Field(default=".", description="Directory relative to the repository root.")
     depth: int = Field(default=3, ge=1, le=6)
 
 
-def read_file_tool(ws: Workspace) -> ToolSpec:
+def _repo_root_note(project_path: str) -> str:
+    """These tools always take paths relative to the whole repository -- unlike run_command,
+    whose cwd is already scoped to the task's own project (see sandbox.py's _cwd_note), so a
+    model that assumes the same base for both gets a confusing "not a directory"/"file not
+    found" from these instead (seen in a real run: `list_dir("app/")` failed because the
+    project actually lives in a subdirectory). Only worth spelling out when that's true -- a
+    project at the repo root has nothing to prefix."""
+    if project_path in ("", "."):
+        return ""
+    return (
+        f" Paths here are relative to the REPOSITORY root, not just your task's project "
+        f"('{project_path}') -- prefix paths with '{project_path}/', e.g. "
+        f"'{project_path}/path/to/file'. (Different from run_command, whose cwd is already "
+        f"inside '{project_path}'.)"
+    )
+
+
+def read_file_tool(ws: Workspace, project_path: str = ".") -> ToolSpec:
     async def handler(args: ReadFileArgs) -> str:
         return ws.read(args.path, args.start_line, args.max_lines)
 
     return ToolSpec(
         "read_file",
-        "Read a text file (numbered lines). Page with start_line.",
+        "Read a text file (numbered lines). Page with start_line." + _repo_root_note(project_path),
         ReadFileArgs,
         handler,
     )
 
 
 def write_file_tool(
-    ws: Workspace, allow: Callable[[str], bool] | None = None, *, note: str = ""
+    ws: Workspace,
+    allow: Callable[[str], bool] | None = None,
+    *,
+    note: str = "",
+    project_path: str = ".",
 ) -> ToolSpec:
     async def handler(args: WriteFileArgs) -> str:
         rel = ws.relative(ws.resolve(args.path))
@@ -160,15 +181,22 @@ def write_file_tool(
             raise ToolError(f"writing {rel} is not allowed. {note}".strip())
         return ws.write(rel, args.content)
 
-    description = "Create or overwrite a file with its complete content."
+    description = "Create or overwrite a file with its complete content." + _repo_root_note(
+        project_path
+    )
     if note:
         description += f" {note}"
     return ToolSpec("write_file", description, WriteFileArgs, handler)
 
 
-def list_dir_tool(ws: Workspace) -> ToolSpec:
+def list_dir_tool(ws: Workspace, project_path: str = ".") -> ToolSpec:
     async def handler(args: ListDirArgs) -> str:
         entries = ws.list(args.path, args.depth)
         return "\n".join(entries) if entries else "(empty)"
 
-    return ToolSpec("list_dir", "List files under a directory.", ListDirArgs, handler)
+    return ToolSpec(
+        "list_dir",
+        "List files under a directory." + _repo_root_note(project_path),
+        ListDirArgs,
+        handler,
+    )

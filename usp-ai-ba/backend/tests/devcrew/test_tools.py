@@ -8,7 +8,14 @@ from devcrew.config import DEVCREW_DIR
 from devcrew.tools.base import ToolError
 from devcrew.tools.catalog import RulesCatalog, TemplatesCatalog
 from devcrew.tools.git import GitRepo
-from devcrew.tools.workspace import Workspace, WriteFileArgs, is_test_path, write_file_tool
+from devcrew.tools.workspace import (
+    Workspace,
+    WriteFileArgs,
+    is_test_path,
+    list_dir_tool,
+    read_file_tool,
+    write_file_tool,
+)
 
 
 @pytest.mark.parametrize("path", ["../x", "/etc/passwd", "a/../../x", ".git/hooks/pre-commit", ""])
@@ -56,6 +63,32 @@ async def test_write_file_tool_enforces_filter(tmp_path: Path) -> None:
     with pytest.raises(ToolError, match="not allowed"):
         await tool.handler(WriteFileArgs(path="app/main.py", content="x"))
     assert "wrote" in await tool.handler(WriteFileArgs(path="tests/test_a.py", content="x"))
+
+
+def test_workspace_tools_warn_about_the_repo_root_when_the_project_is_nested(
+    tmp_path: Path,
+) -> None:
+    # Regression case: a model working against a repo whose detected project lives in a
+    # subdirectory (e.g. "shop") called list_dir("app/") expecting the same cwd-scoped base
+    # run_command uses, and got "not a directory: app/" -- these tools are always relative to
+    # the repository root, not the task's own project.
+    ws = Workspace(tmp_path)
+    tools = [
+        read_file_tool(ws, "shop"),
+        write_file_tool(ws, project_path="shop"),
+        list_dir_tool(ws, "shop"),
+    ]
+    for tool in tools:
+        assert "shop" in tool.description
+        assert "REPOSITORY root" in tool.description
+
+
+def test_workspace_tools_say_nothing_extra_when_the_project_is_the_repo_root(
+    tmp_path: Path,
+) -> None:
+    ws = Workspace(tmp_path)
+    for tool in (read_file_tool(ws), write_file_tool(ws), list_dir_tool(ws)):
+        assert "REPOSITORY root" not in tool.description
 
 
 def test_rules_catalog_reads_rule_ids() -> None:

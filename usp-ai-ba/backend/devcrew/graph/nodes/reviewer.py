@@ -91,7 +91,7 @@ def drop_out_of_scope(review: ReviewResult, task: PlanTask, plan: Plan, diff: st
 def reviewer_tools(deps: GraphDeps, ctx: TaskCtx) -> list[ToolSpec]:
     """Read-only by construction: no write_file, no run_command."""
     tools = [
-        read_file_tool(ctx.workspace),
+        read_file_tool(ctx.workspace, ctx.project.path),
         git_diff_tool(ctx.repo, ctx.integration_branch, ctx.branch),
         read_rules_tool(deps.rules),
     ]

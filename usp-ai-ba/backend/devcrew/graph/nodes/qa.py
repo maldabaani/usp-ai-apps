@@ -140,12 +140,13 @@ def qa_may_write(stack: str, others: dict[str, str], path: str) -> bool:
 
 def qa_tools(deps: GraphDeps, ctx: TaskCtx) -> list[ToolSpec]:
     tools = [
-        read_file_tool(ctx.workspace),
+        read_file_tool(ctx.workspace, ctx.project.path),
         write_file_tool(
             ctx.workspace,
             partial(qa_may_write, ctx.task.stack, other_tasks_files(ctx.plan, ctx.task)),
             note=f"QA may only write {ctx.task.stack} test files of this task (not files another "
             "task of the plan delivers).",
+            project_path=ctx.project.path,
         ),
     ]
     if deps.sandbox is not None:
