@@ -5,11 +5,14 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
+import pytest
 from langchain_core.messages import AIMessage
+from pydantic import ValidationError
 
 from devcrew.db.models import RunStatus
 from devcrew.events.types import EventType
 from devcrew.graph.interrupts import ResumePayload
+from devcrew.graph.state import ReviewResult
 from tests.devcrew.fakes import Call, final, tool_call, tool_results
 from tests.devcrew.graph_harness import APPROVE, PLAN, Harness, default_developer, make_harness
 
@@ -213,6 +216,32 @@ async def test_unknown_rule_ref_is_corrected_by_validator(tmp_path: Path) -> Non
     await h.driver.resume(RUN, APPROVE)
     retry = h.brain.calls_for("reviewer")[1]
     assert "PY-999" in retry.text() and "unknown rule_ref" in retry.text()
+
+
+def test_rule_ref_literal_null_string_is_treated_as_no_citation() -> None:
+    # A real run saw a model write "rule_ref": "null" (the word, not JSON null) for an issue
+    # citing no rule -- that string is truthy, so it used to be checked against rule_ids and
+    # (correctly but uselessly) rejected as an unknown rule, failing the whole ReviewResult for
+    # a formatting quirk rather than a genuine citation. "PY-999" is a real-shaped but wrong id
+    # and must still be rejected -- this isn't a blanket bypass of the check.
+    for literal in ("null", "NULL", "none", "", "  null  "):
+        result = ReviewResult.model_validate(
+            {
+                "decision": "changes_requested",
+                "issues": [{"file": "a.py", "severity": "major", "message": "m", "rule_ref": literal}],
+            },
+            context={"rule_ids": {"PY-001"}},
+        )
+        assert result.issues[0].rule_ref is None
+
+    with pytest.raises(ValidationError, match="unknown rule_ref"):
+        ReviewResult.model_validate(
+            {
+                "decision": "changes_requested",
+                "issues": [{"file": "a.py", "severity": "major", "message": "m", "rule_ref": "PY-999"}],
+            },
+            context={"rule_ids": {"PY-001"}},
+        )
 
 
 async def test_iteration_limit_escalates_and_blocks_dependents(tmp_path: Path) -> None:

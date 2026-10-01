@@ -302,6 +302,15 @@ class ReviewIssue(BaseModel):
     message: str
     rule_ref: str | None = Field(default=None, description="Rule id such as PY-003, if any.")
 
+    @field_validator("rule_ref", mode="before")
+    @classmethod
+    def _no_rule_cited_is_none(cls, v: object) -> object:
+        # A model citing no rule sometimes writes the literal string "null"/"none" instead of
+        # JSON null (or omitting the field) -- without this, that string is truthy, so it was
+        # checked against rule_ids and (correctly, but uselessly) rejected as an unknown rule,
+        # failing the whole structured ReviewResult for a formatting quirk, not a real citation.
+        return None if isinstance(v, str) and v.strip().lower() in ("", "null", "none") else v
+
 
 class ReviewResult(BaseModel):
     decision: Literal["approve", "changes_requested"]
