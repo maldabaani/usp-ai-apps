@@ -28,6 +28,17 @@ logger = logging.getLogger(__name__)
 MAX_ERRORS_IN_FEEDBACK = 15
 _FENCE_RE = re.compile(r"```(?:json|JSON)?\s*\n?(.*?)```", re.DOTALL)
 _TRAILING_COMMA_RE = re.compile(r",\s*([}\]])")
+# Zero-width/invisible characters a model occasionally leaks at the start or end of an
+# otherwise-valid reply (stray special-token artifacts). None of these are whitespace per
+# str.isspace(), so plain .strip() leaves them in place -- and because they render as nothing,
+# the resulting text looks like complete, valid JSON everywhere it's displayed (logs, the
+# Prompts tab) while json.loads still fails with "Expecting value at line 1 column 1", making
+# the failure look like a logging bug rather than the parse bug it actually is.
+_INVISIBLE_EDGE_RE = re.compile(r"^[﻿​‌‍⁠\s]+|[﻿​‌‍⁠\s]+$")
+
+
+def _strip_invisible(text: str) -> str:
+    return _INVISIBLE_EDGE_RE.sub("", text)
 
 
 class StructuredOutputError(RuntimeError):
@@ -65,9 +76,9 @@ class StructuredResult[T: BaseModel]:
 
 
 def strip_code_fences(text: str) -> str:
-    text = text.strip()
+    text = _strip_invisible(text)
     match = _FENCE_RE.search(text)
-    return match.group(1).strip() if match else text
+    return _strip_invisible(match.group(1)) if match else text
 
 
 def format_validation_error(exc: ValidationError | json.JSONDecodeError) -> str:

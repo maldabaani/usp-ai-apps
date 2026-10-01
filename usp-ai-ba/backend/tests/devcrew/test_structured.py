@@ -146,6 +146,14 @@ def test_strip_code_fences() -> None:
     assert strip_code_fences('  {"a": 1} ') == '{"a": 1}'
 
 
+def test_strip_code_fences_removes_leading_invisible_characters() -> None:
+    # A zero-width space here would otherwise make json.loads fail with "Expecting value at
+    # line 1 column 1" on text that renders as complete, valid JSON everywhere it's displayed.
+    assert strip_code_fences('​{"a": 1}') == '{"a": 1}'
+    assert strip_code_fences('﻿{"a": 1}​') == '{"a": 1}'
+    assert strip_code_fences('```json\n​{"a": 1}\n```') == '{"a": 1}'
+
+
 def test_extract_unwraps_single_key_wrapper() -> None:
     assert extract_json('{"item": {"name": "x", "qty": 1}}', Item) == Item(name="x", qty=1)
 

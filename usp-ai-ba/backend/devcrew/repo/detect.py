@@ -43,7 +43,13 @@ DEFAULTS: dict[str, dict[str, str]] = {
             'if [ -f "$f" ]; then pip install -q -r "$f"; fi; done; '
             "pip install -q pytest pytest-cov"
         ),
-        "build_cmd": "python -m compileall -q .",
+        # compileall only checks syntax -- it compiles without executing, so it can never catch
+        # a NameError/TypeError that only occurs when a module actually runs at import time
+        # (a decorator referencing a name that was never imported, a dict literal with an
+        # unhashable key, etc.). Collection imports every test module (and transitively
+        # whatever it imports) without executing any test body, catching exactly that class of
+        # bug before spending a Reviewer LLM call and a QA LLM call rediscovering the same thing.
+        "build_cmd": "python -m compileall -q . && python -m pytest --collect-only -q",
         "test_cmd": "python -m pytest -q -p no:cacheprovider",
         "coverage_cmd": "python -m pytest -q -p no:cacheprovider --cov=. --cov-report=term",
     },
