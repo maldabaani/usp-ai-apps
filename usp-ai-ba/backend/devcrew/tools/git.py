@@ -32,6 +32,19 @@ SAFE_CONFIG = (
     "init.defaultBranch=main",
 )
 MAX_DIFF_CHARS = 60_000
+# Build/cache artifacts no commit should ever pick up, regardless of whether the target
+# repo's own .gitignore happens to cover them (agent-run code and test suites routinely
+# generate these as a side effect, e.g. QA running pytest against Python code).
+COMMIT_EXCLUDE_PATHSPECS = (
+    ":(exclude,glob)**/__pycache__/**",
+    ":(exclude,glob)**/*.pyc",
+    ":(exclude,glob)**/*.pyo",
+    ":(exclude,glob)**/.pytest_cache/**",
+    ":(exclude,glob)**/.mypy_cache/**",
+    ":(exclude,glob)**/.ruff_cache/**",
+    ":(exclude,glob)**/node_modules/**",
+    ":(exclude,glob)**/.DS_Store",
+)
 # Minimal environment for git (no inherited credentials). Proxy/CA variables are passed through
 # so pushes work behind a corporate proxy.
 GIT_BASE_ENV: dict[str, str] = {
@@ -126,8 +139,9 @@ class GitRepo:
         await self.run("init", "-q", "-b", "main")
 
     async def commit_all(self, message: str, *, allow_empty: bool = False) -> str | None:
-        """Stage everything and commit. Returns the new sha, or None if nothing changed."""
-        await self.run("add", "-A")
+        """Stage everything except known build/cache artifacts, and commit. Returns the new
+        sha, or None if nothing changed."""
+        await self.run("add", "-A", "--", ".", *COMMIT_EXCLUDE_PATHSPECS)
         if not (await self.run("status", "--porcelain")).strip():
             if not allow_empty:
                 return None
