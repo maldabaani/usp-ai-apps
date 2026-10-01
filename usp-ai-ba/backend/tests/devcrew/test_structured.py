@@ -60,6 +60,23 @@ async def test_invalid_json_error_is_reported() -> None:
     assert "Invalid JSON" in str(calls[1].messages[-1].content)
 
 
+async def test_transport_failure_is_reported_as_transient_and_stops_immediately() -> None:
+    # A timeout/dropped connection isn't a malformed-answer problem retrying the SAME request
+    # would fix -- it would most likely just wait out the same timeout again. Unlike a truncated
+    # or invalid reply, this must not trigger generate_structured's own in-conversation retry.
+    def planner(call: Call) -> AIMessage:
+        raise ConnectionError("ollama is down")
+
+    brain = Brain(responders={"planner": planner})
+    with pytest.raises(StructuredOutputError) as exc_info:
+        await generate_structured(gateway(brain), Role.PLANNER, MESSAGES, Item)
+    exc = exc_info.value
+    assert exc.transient == [True]
+    assert exc.truncated == [False]
+    assert "ConnectionError" in str(exc) and "ollama is down" in str(exc)
+    assert len(brain.calls) == 1
+
+
 async def test_first_response_counts_as_attempt() -> None:
     brain, calls = scripted('{"name": "b", "qty": 1}')
     result = await generate_structured(

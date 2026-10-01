@@ -32,7 +32,12 @@ _TRAILING_COMMA_RE = re.compile(r",\s*([}\]])")
 
 class StructuredOutputError(RuntimeError):
     def __init__(
-        self, schema: str, errors: list[str], raw: list[str], truncated: list[bool] | None = None
+        self,
+        schema: str,
+        errors: list[str],
+        raw: list[str],
+        truncated: list[bool] | None = None,
+        transient: list[bool] | None = None,
     ) -> None:
         self.schema = schema
         self.errors = errors
@@ -41,6 +46,13 @@ class StructuredOutputError(RuntimeError):
         # output-token cap (see _is_truncated) rather than genuinely invalid. Defaults to all
         # False so existing callers that don't pass it (or old pickled state, if any) still work.
         self.truncated = truncated if truncated is not None else [False] * len(raw)
+        # Parallel to `raw`: True where that attempt never got a reply at all -- the call itself
+        # failed (timeout, dropped connection, Ollama restarting mid-request), not a malformed or
+        # truncated answer. Same "worth another fresh attempt" signature as all-empty/all-truncated
+        # for callers like coordinator.py's decide(), but distinct: retrying it immediately in the
+        # SAME conversation (generate_structured's own in-conversation retry) would most likely
+        # just wait out the same timeout again, so this always stops the attempt loop right away.
+        self.transient = transient if transient is not None else [False] * len(raw)
         last = errors[-1] if errors else "no output"
         super().__init__(f"Could not obtain valid {schema} after {len(raw)} attempts: {last[:500]}")
 
@@ -205,6 +217,7 @@ async def generate_structured[T: BaseModel](
     history: list[BaseMessage] = list(messages)
     raw: list[str] = []
     truncated: list[bool] = []
+    transient: list[bool] = []
     errors: list[str] = []
     output_format = _output_format(gateway, role, schema)
 
@@ -215,11 +228,24 @@ async def generate_structured[T: BaseModel](
         if attempt == 1 and first_response is not None:
             text = first_response
         else:
-            reply = await gateway.ainvoke(role, history, output_format=output_format)
+            try:
+                reply = await gateway.ainvoke(role, history, output_format=output_format)
+            except Exception as exc:
+                # The call itself failed (timeout, dropped connection, Ollama restarting
+                # mid-request) -- not a malformed or truncated answer retrying the SAME request
+                # would fix, since that would most likely just wait out the same timeout again.
+                # Stop here and let the caller's own recovery (coordinator.py's decide() outer
+                # retry, or routing to to_coordinator()) decide whether to try again.
+                raw.append("")
+                truncated.append(False)
+                transient.append(True)
+                errors.append(f"LLM call failed: {type(exc).__name__}: {exc}")
+                raise StructuredOutputError(schema.__name__, errors, raw, truncated, transient) from exc
             text = reply.text
             cut_off = _is_truncated(reply)
         raw.append(text)
         truncated.append(cut_off)
+        transient.append(False)
         if cut_off:
             error = (
                 "Response was truncated by the output token limit before it finished "
@@ -255,4 +281,4 @@ async def generate_structured[T: BaseModel](
         value = extract_json(text, schema, context)
         if value is not None:
             return StructuredResult(value, len(raw), True)
-    raise StructuredOutputError(schema.__name__, errors, raw, truncated)
+    raise StructuredOutputError(schema.__name__, errors, raw, truncated, transient)

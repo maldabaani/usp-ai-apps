@@ -84,21 +84,30 @@ async def decide(
 
     A few outer attempts, each a fresh conversation with a short delay between them -- but only
     when every reply in the failed conversation came back empty or was truncated by the model's
-    own output-token cap, both signatures of a transient/systemic issue rather than the model
-    being simply wrong:
+    own output-token cap, or the call itself failed outright, all signatures of a transient/
+    systemic issue rather than the model being simply wrong:
     - all-empty: a real run saw the same empty response on every attempt for several minutes
       straight (a transient Ollama outage -- model reload, momentary overload).
     - all-truncated: a "replan" decision's `guidance`/`revised_task.description` can run long
       enough to hit the coordinator's num_predict cap before the model finishes the JSON object
       (see generate_structured's own in-conversation retry, which already asks for a shorter
-      answer first -- this outer retry is the backstop if that still doesn't fit).
+      answer first -- this outer retry is the backstop if that still doesn't fit). A real run saw
+      this produce byte-identical truncated output on every attempt of a conversation, since a
+      fresh conversation here would otherwise repeat the exact same unconstrained request that
+      truncated the first time -- so once seen, every later attempt's request bakes in the
+      "keep it short" instruction from the start instead of discovering it through its own
+      in-conversation correction again.
+    - transient: the LLM call itself failed (timeout, dropped connection, Ollama restarting
+      mid-request) -- generate_structured() stops immediately rather than retrying into the same
+      conversation, since that would likely just wait out the same timeout again.
     generate_structured()'s own retries repeat within the SAME conversation and won't survive a
     multi-minute Ollama outage. A model that responds promptly but keeps proposing something
     genuinely invalid (e.g. a decision that fails validation) won't be fixed by asking again from
     scratch, so that case still gives up after one conversation, same as before.
     """
     system = deps.prompts.get("coordinator", CoordinatorDecision)
-    request = f"{context}\n## Allowed actions\n{', '.join(allowed)}"
+    base_request = f"{context}\n## Allowed actions\n{', '.join(allowed)}"
+    shorten_hint = ""
     retries = deps.settings.coordinator_decision_retries
     result = None
     last_error = ""
@@ -108,7 +117,7 @@ async def decide(
             result = await generate_structured(
                 deps.llm,
                 Role.COORDINATOR,
-                [SystemMessage(content=system), HumanMessage(content=request)],
+                [SystemMessage(content=system), HumanMessage(content=base_request + shorten_hint)],
                 CoordinatorDecision,
                 context={"allowed_actions": allowed, **(validation or {})},
             )
@@ -117,7 +126,15 @@ async def decide(
             last_error = str(exc)
             all_empty = bool(exc.raw) and all(not r.strip() for r in exc.raw)
             all_truncated = bool(exc.truncated) and all(exc.truncated)
-            if attempt < retries and (all_empty or all_truncated):
+            any_transient = any(exc.transient)
+            if attempt < retries and (all_empty or all_truncated or any_transient):
+                if all_truncated and not shorten_hint:
+                    shorten_hint = (
+                        "\n\nIMPORTANT: your previous answer was cut off by the output length "
+                        "limit before it finished. Keep every text field (reason, guidance, "
+                        "description, etc.) to one short sentence -- a complete, concise answer "
+                        "is required; a longer but truncated one is useless."
+                    )
                 await asyncio.sleep(deps.settings.coordinator_decision_retry_delay_s)
                 continue
             break

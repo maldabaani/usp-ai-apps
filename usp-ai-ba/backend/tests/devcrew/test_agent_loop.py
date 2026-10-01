@@ -190,12 +190,44 @@ async def test_a_tool_call_cut_off_by_the_output_limit_is_retried_not_fatal() ->
     assert out.kind == "error" and "cut off" in (out.error or "")
 
 
-async def test_other_model_errors_still_raise() -> None:
+async def test_empty_reply_gets_one_corrective_retry() -> None:
+    # Neither a tool call nor any text -- a transient Ollama hiccup, not a genuine "I'm done".
+    replies = iter([final(""), final("done")])
+    b = brain(lambda call: next(replies))
+    out = await run_agent(gateway(b), Role.DEVELOPER, MESSAGES, [ECHO], max_steps=6)
+    assert out.kind == "final" and out.final_text == "done"
+    correction = b.calls[1].messages[-1]
+    assert isinstance(correction, HumanMessage) and "empty" in str(correction.content)
+
+
+async def test_second_empty_reply_in_a_row_is_an_error() -> None:
+    def dev(call: Call) -> AIMessage:
+        return final("")
+
+    b = brain(dev)
+    out = await run_agent(gateway(b), Role.DEVELOPER, MESSAGES, [ECHO], max_steps=6)
+    assert out.kind == "error" and "empty reply twice" in out.error
+    assert len(b.calls) == 2
+
+
+async def test_an_empty_reply_after_real_progress_gets_its_own_fresh_retry() -> None:
+    # retried_empty must reset once a normal turn happens, so a later, unrelated empty blip isn't
+    # immediately treated as a second strike against an earlier one.
+    replies = iter([tool_call("echo", text="hi"), final(""), final("done")])
+    b = brain(lambda call: next(replies))
+    out = await run_agent(gateway(b), Role.DEVELOPER, MESSAGES, [ECHO], max_steps=6)
+    assert out.kind == "final" and out.final_text == "done"
+    assert len(b.calls) == 3
+
+
+async def test_other_model_errors_are_a_recoverable_outcome_not_a_crash() -> None:
+    # A call failure that isn't the known Ollama cut-off-mid-tool-call shape (a timeout, a
+    # dropped connection, Ollama restarting mid-request) used to propagate uncaught out of
+    # run_agent, crashing the whole run instead of routing to the Coordinator's own recovery
+    # path the same way a malformed tool call already does.
     def dev(call: Call) -> AIMessage:
         raise ConnectionError("ollama is down")
 
-    try:
-        await run_agent(gateway(brain(dev)), Role.DEVELOPER, MESSAGES, [ECHO], max_steps=3)
-    except ConnectionError:
-        return
-    raise AssertionError("expected ConnectionError")
+    out = await run_agent(gateway(brain(dev)), Role.DEVELOPER, MESSAGES, [ECHO], max_steps=3)
+    assert out.kind == "error"
+    assert "ConnectionError" in out.error and "ollama is down" in out.error

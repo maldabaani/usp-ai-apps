@@ -110,6 +110,7 @@ async def run_agent(
     repeats = 0
     budget = gateway.spec(role).prompt_budget - TOOL_SCHEMA_OVERHEAD_TOKENS * len(tools)
     retried_malformed = False
+    retried_empty = False
     tool_calls_made = 0
 
     async def emit(kind: Literal["tool_call", "tool_result"], payload: dict[str, Any]) -> None:
@@ -121,19 +122,30 @@ async def run_agent(
         try:
             ai = await gateway.ainvoke(role, transcript, tools=schemas or None)
         except Exception as exc:
-            if not any(marker in str(exc) for marker in CUT_OFF_MARKERS):
-                raise
-            if retried_malformed:
-                return AgentOutcome(
-                    kind="error",
-                    messages=transcript,
-                    error=f"tool call cut off at the output limit twice: {exc}",
-                    steps=step,
-                    tool_calls=tool_calls_made,
-                )
-            retried_malformed = True
-            transcript.append(HumanMessage(content=CUT_OFF_FEEDBACK))
-            continue
+            if any(marker in str(exc) for marker in CUT_OFF_MARKERS):
+                if retried_malformed:
+                    return AgentOutcome(
+                        kind="error",
+                        messages=transcript,
+                        error=f"tool call cut off at the output limit twice: {exc}",
+                        steps=step,
+                        tool_calls=tool_calls_made,
+                    )
+                retried_malformed = True
+                transcript.append(HumanMessage(content=CUT_OFF_FEEDBACK))
+                continue
+            # Anything else failing the call itself -- a timeout, a dropped connection, Ollama
+            # restarting mid-request -- is an infra hiccup, not a bug in this turn's conversation.
+            # Hand it to the Coordinator the same way a malformed tool call already is, instead of
+            # letting it propagate uncaught: devcrew/graph/runner.py's top-level handler has no
+            # recovery of its own and would just fail the whole run over one slow call.
+            return AgentOutcome(
+                kind="error",
+                messages=transcript,
+                error=f"LLM call failed: {type(exc).__name__}: {exc}",
+                steps=step,
+                tool_calls=tool_calls_made,
+            )
         transcript.append(ai)
 
         problems: list[str] = []
@@ -179,6 +191,29 @@ async def run_agent(
         retried_malformed = False
 
         if not ai.tool_calls:
+            if not ai.text.strip():
+                # Neither a tool call nor any text: a transient Ollama hiccup (model reload,
+                # momentary overload), the same "all-empty" signature coordinator.py's decide()
+                # already treats as worth retrying for structured decisions -- not a real "I'm
+                # done" answer. Left as-is, this used to end the turn as a final outcome with an
+                # empty summary, silently wasting the attempt.
+                if retried_empty:
+                    return AgentOutcome(
+                        kind="error",
+                        messages=transcript,
+                        error="model returned an empty reply twice in a row",
+                        steps=step,
+                        tool_calls=tool_calls_made,
+                    )
+                retried_empty = True
+                transcript.append(
+                    HumanMessage(
+                        content="Your last reply was empty. Continue the task: call a tool, or "
+                        "give your final summary if the task is actually done."
+                    )
+                )
+                continue
+            retried_empty = False
             return AgentOutcome(
                 kind="final",
                 messages=transcript,
@@ -186,6 +221,7 @@ async def run_agent(
                 steps=step,
                 tool_calls=tool_calls_made,
             )
+        retried_empty = False
 
         pause: tuple[str, str] | None = None
         step_calls: list[tuple[str, str, str]] = []

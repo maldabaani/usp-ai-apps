@@ -261,8 +261,15 @@ async def test_failed_run_is_reported_without_hidden_tests(tmp_path: Path) -> No
 
     h.brain.responders["planner"] = planner
     result = await BenchmarkRunner(h.deps).run_task(fake_task(tmp_path))
+    # The planner's LLM call failing no longer crashes the run outright (see
+    # test_agent_loop.py::test_other_model_errors_are_a_recoverable_outcome_not_a_crash) -- it's
+    # routed to the Coordinator's own escalation path instead, which this harness's
+    # max_coordinator_actions=0 sends straight to a human, exhausting the benchmark's own
+    # escalation budget and ending the run "failed" without ever raising an exception for
+    # run_task's except-branch to capture a message from, so result.error is None here (not a
+    # regression -- the run still correctly ends up "failed" with hidden tests skipped).
     assert result.status == "failed"
-    assert result.error and "ollama exploded" in result.error
+    assert result.error is None
     assert not result.hidden.ran and result.hidden.expected == 3
     assert "no integration branch" in (result.hidden.detail or "")
 
