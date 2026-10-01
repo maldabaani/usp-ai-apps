@@ -8,12 +8,29 @@ from typing import Any
 from langchain_core.messages import AIMessage
 
 from devcrew.db.models import RunStatus
+from devcrew.tools.sandbox import _cwd_note
 from tests.devcrew.fakes import Call, FakeRunner, final, tool_call, tool_results
 from tests.devcrew.graph_harness import APPROVE, DESIGN, PLAN, Harness, default_developer, make_harness
 
 RUN = "run0002aaaabbbbccccdddd"
 PYTEST = "pytest -q"
 NG_TEST = "npx ng test --watch=false --browsers=ChromeHeadless"
+
+
+def test_cwd_note_warns_against_re_prefixing_a_nested_project_root():
+    # Regression case: a model running inside a repo whose detected project lives in a
+    # subdirectory (e.g. "shop") kept re-running `ruff check shop`/`ruff format shop` from
+    # inside that already-cwd'd-into directory, hitting "no such file or directory" (shop/shop)
+    # and burning turns on a self-inflicted path mistake.
+    note = _cwd_note("shop")
+    assert "shop" in note
+    assert "already" in note
+
+
+def test_cwd_note_is_empty_at_the_repo_root():
+    # Nothing to redundantly re-prefix when the project *is* the repo root.
+    assert _cwd_note(".") == ""
+    assert _cwd_note("") == ""
 
 
 async def run_to_final(h: Harness) -> Any:

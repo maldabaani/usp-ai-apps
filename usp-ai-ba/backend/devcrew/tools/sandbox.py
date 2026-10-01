@@ -20,6 +20,21 @@ class RunCommandArgs(BaseModel):
     timeout_s: int | None = Field(default=None, ge=1, description="Optional shorter timeout.")
 
 
+def _cwd_note(default_cwd: str) -> str:
+    """Commands already run from inside the task's own project root (default_cwd) -- a model
+    that doesn't realize that re-prefixes its command with that same directory name (e.g.
+    `ruff check shop` while already inside `shop/`), which just fails with "no such file or
+    directory" and burns a turn. Only worth spelling out when that root isn't "." already,
+    since there's nothing to redundantly re-prefix in that case."""
+    if default_cwd in ("", "."):
+        return ""
+    return (
+        f" Commands run from inside your task's own project root ('{default_cwd}') already -- "
+        "use plain paths relative to it (e.g. `pytest -q tests/...`, `ruff check .`), don't "
+        "prefix a command with that directory's own name again."
+    )
+
+
 def run_command_tool(
     sandbox: Sandbox,
     target: SandboxTarget,
@@ -39,10 +54,11 @@ def run_command_tool(
         return f"{status}\n{tail_text(result.output, OUTPUT_TOKENS)}"
 
     projects = ", ".join(f"{s} in '{e.path}'" for s, e in layout.items())
+    cwd_note = _cwd_note(default_cwd)
     return ToolSpec(
         "run_command",
         "Run a shell command in the project's isolated sandbox (no network; dependencies from "
-        f"the manifest are installed automatically). Projects: {projects}.",
+        f"the manifest are installed automatically).{cwd_note} Projects: {projects}.",
         RunCommandArgs,
         handler,
     )
