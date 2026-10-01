@@ -37,6 +37,9 @@ class CallScope:
     task_id: str | None = None
     # the run's own model per role (Phase 16), as (role, model) pairs
     models: tuple[tuple[str, str], ...] = ()
+    # the task's ts.iterations at node entry + 1 (which developer attempt this call belongs
+    # to); None for run-level nodes with no task_id (planner, architect, run coordinator)
+    iteration: int | None = None
 
 
 llm_scope: ContextVar[CallScope | None] = ContextVar("llm_scope", default=None)
@@ -53,6 +56,23 @@ class CallUsage:
 
 
 UsageHook = Callable[[CallUsage], Awaitable[None]]
+
+
+@dataclass(frozen=True)
+class CallPrompt:
+    """Full request/response of one LLM call (opt-in, DEVCREW_LOG_PROMPTS)."""
+
+    scope: CallScope
+    role: Role
+    model: str
+    messages: Sequence[BaseMessage]
+    reply: AIMessage
+    input_tokens: int
+    output_tokens: int
+    duration_ms: int
+
+
+PromptHook = Callable[[CallPrompt], Awaitable[None]]
 
 
 def token_counts(message: AIMessage) -> tuple[int, int]:
@@ -118,6 +138,7 @@ class LLMGateway:
         self._chat_cache: dict[ModelSpec, BaseChatModel] = {}
         self.usage = UsageTracker()
         self.on_usage: UsageHook | None = None  # per-call usage (run usage and budgets)
+        self.on_prompt: PromptHook | None = None  # opt-in full prompt/reply capture
         # the models installed in Ollama (the per-run model picker); None: unknown
         self.model_lister: ModelLister | None = None if chat_factory else self._ollama_models
 
@@ -194,16 +215,31 @@ class LLMGateway:
             raise TypeError(f"Expected AIMessage from chat model, got {type(result).__name__}")
         self.usage.record(role, result)
         scope = llm_scope.get()
-        if self.on_usage is not None and scope is not None:
+        if (self.on_usage is not None or self.on_prompt is not None) and scope is not None:
             tokens_in, tokens_out = token_counts(result)
-            await self.on_usage(
-                CallUsage(
-                    scope=scope,
-                    role=role,
-                    model=self.spec(role).model,
-                    input_tokens=tokens_in,
-                    output_tokens=tokens_out,
-                    duration_ms=duration_ms,
+            model = self.spec(role).model
+            if self.on_usage is not None:
+                await self.on_usage(
+                    CallUsage(
+                        scope=scope,
+                        role=role,
+                        model=model,
+                        input_tokens=tokens_in,
+                        output_tokens=tokens_out,
+                        duration_ms=duration_ms,
+                    )
                 )
-            )
+            if self.on_prompt is not None:
+                await self.on_prompt(
+                    CallPrompt(
+                        scope=scope,
+                        role=role,
+                        model=model,
+                        messages=list(messages),
+                        reply=result,
+                        input_tokens=tokens_in,
+                        output_tokens=tokens_out,
+                        duration_ms=duration_ms,
+                    )
+                )
         return result

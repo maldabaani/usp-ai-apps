@@ -8,6 +8,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator
 
 from devcrew.db.models import Run
+from devcrew.events.types import Event
 from devcrew.graph.interrupts import ResumeAction, ResumePayload
 from devcrew.graph.runner import PendingInterrupt
 from devcrew.llm.models_config import Role
@@ -225,6 +226,49 @@ class MessageOut(BaseModel):
     reply: str | None
     created_at: datetime | None
     updated_at: datetime | None
+
+
+class PromptEntry(BaseModel):
+    """One captured LLM call: the full messages sent and the model's reply
+    (DEVCREW_LOG_PROMPTS). `messages`/`reply` are save_transcript() output --
+    langchain's messages_to_dict shape, e.g. [{"type": "system", "data": {"content": ...}}]."""
+
+    id: int
+    node: str | None
+    task_id: str | None
+    iteration: int | None
+    role: str
+    model: str
+    input_tokens: int
+    output_tokens: int
+    duration_ms: int
+    messages: list[dict[str, Any]]
+    reply: list[dict[str, Any]]
+    created_at: datetime | None
+
+    @classmethod
+    def of(cls, e: Event) -> PromptEntry:
+        p = e.payload
+        return cls(
+            id=e.id,
+            node=e.node,
+            task_id=e.task_id,
+            iteration=p.get("iteration"),
+            role=p.get("role", ""),
+            model=p.get("model", ""),
+            input_tokens=p.get("input_tokens", 0),
+            output_tokens=p.get("output_tokens", 0),
+            duration_ms=p.get("duration_ms", 0),
+            messages=p.get("messages", []),
+            reply=p.get("reply", []),
+            created_at=e.created_at,
+        )
+
+
+class PromptList(BaseModel):
+    enabled: bool  # DEVCREW_LOG_PROMPTS on this server -- lets the UI explain an empty list
+    entries: list[PromptEntry]
+    next_after_id: int | None  # last entry's id if a full page came back; None otherwise
 
 
 class PauseRequest(BaseModel):

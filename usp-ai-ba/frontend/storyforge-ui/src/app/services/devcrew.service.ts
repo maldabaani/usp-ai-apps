@@ -1,4 +1,4 @@
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 
@@ -174,6 +174,32 @@ export interface RunUsage {
   budget: Record<string, number> | null;
 }
 
+export interface PromptMessage {
+  type: string;
+  data: Record<string, unknown>;
+}
+
+export interface PromptEntry {
+  id: number;
+  node: string | null;
+  task_id: string | null;
+  iteration: number | null;
+  role: string;
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  duration_ms: number;
+  messages: PromptMessage[];
+  reply: PromptMessage[];
+  created_at: string | null;
+}
+
+export interface PromptList {
+  enabled: boolean;
+  entries: PromptEntry[];
+  next_after_id: number | null;
+}
+
 @Injectable({ providedIn: 'root' })
 export class DevCrewService {
   constructor(private http: HttpClient) {}
@@ -226,5 +252,10 @@ export class DevCrewService {
 
   getUsage(runId: string): Observable<RunUsage> {
     return this.http.get<RunUsage>(`${API_BASE_URL}/runs/${runId}/usage`);
+  }
+
+  getPrompts(runId: string, afterId = 0, limit = 500): Observable<PromptList> {
+    const params = new HttpParams().set('after_id', afterId).set('limit', limit);
+    return this.http.get<PromptList>(`${API_BASE_URL}/runs/${runId}/prompts`, { params });
   }
 }

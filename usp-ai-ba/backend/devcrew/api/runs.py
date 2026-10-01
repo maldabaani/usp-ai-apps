@@ -17,6 +17,8 @@ from devcrew.api.schemas import (
     PauseRequest,
     PauseState,
     PendingInput,
+    PromptEntry,
+    PromptList,
     ResumeRequest,
     RunDetail,
     RunSummary,
@@ -241,6 +243,30 @@ async def get_usage(run_id: str, container: ContainerDep) -> RunUsage:
     """Tokens per role and task, model time, working time and the run's budget."""
     run = await _run_or_404(container.manager, run_id)
     return await _usage(container, run, await container.manager.state(run_id))
+
+
+@router.get("/{run_id}/prompts", response_model=PromptList)
+async def get_prompts(
+    run_id: str,
+    container: ContainerDep,
+    task_id: Annotated[str | None, Query()] = None,
+    node: Annotated[str | None, Query()] = None,
+    after_id: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=500)] = 500,
+) -> PromptList:
+    """Full LLM prompts + replies captured during this run (DEVCREW_LOG_PROMPTS only)."""
+    await _run_or_404(container.manager, run_id)
+    events = await container.events.list_after(
+        run_id, after_id, limit, event_type=EventType.PROMPT, task_id=task_id
+    )
+    if node is not None:
+        events = [e for e in events if e.node == node]
+    entries = [PromptEntry.of(e) for e in events]
+    return PromptList(
+        enabled=container.settings.log_prompts,
+        entries=entries,
+        next_after_id=events[-1].id if len(events) == limit else None,
+    )
 
 
 @router.get("/{run_id}/report.md", response_class=PlainTextResponse)

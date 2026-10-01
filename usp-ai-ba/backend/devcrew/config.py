@@ -106,6 +106,11 @@ class Settings(BaseSettings):
     rules_dir: Path = DEVCREW_DIR / "rules"
     templates_dir: Path = DEVCREW_DIR / "templates"
     max_agent_steps: int = Field(default=30, ge=1, description="Tool-loop steps per agent turn.")
+    log_prompts: bool = Field(
+        default=False,
+        description="Record every LLM call's full messages + reply as PROMPT events "
+        "(debugging; off by default -- can be large and includes raw model input/output).",
+    )
 
     # --- Workspaces / sandbox ---------------------------------------------------------------
     workspaces_dir: Path = Path("/tmp/devcrew/workspaces")

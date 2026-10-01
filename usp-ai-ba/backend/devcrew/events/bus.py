@@ -64,6 +64,22 @@ class EventBus:
     def subscriber_count(self, run_id: str) -> int:
         return len(self._subscribers.get(run_id, ()))
 
+    async def list_after(
+        self,
+        run_id: str,
+        after_id: int = 0,
+        limit: int = 500,
+        *,
+        event_type: EventType | None = None,
+        task_id: str | None = None,
+    ) -> list[Event]:
+        """One-shot filtered page of persisted events. Bypasses EventCache deliberately --
+        used by GET /runs/{run_id}/prompts so large PROMPT payloads never bloat the shared
+        in-memory cache that /workflow, /usage and /report.md all read from."""
+        return await self._store.list_after(
+            run_id, after_id, limit, event_type=event_type, task_id=task_id
+        )
+
     async def replay(self, run_id: str, after_id: int = 0) -> AsyncGenerator[Event]:
         """Persisted events after `after_id`, in order (no live events)."""
         async for event in self._replay(run_id, after_id):

@@ -27,7 +27,7 @@ from devcrew.events.types import EventType
 from devcrew.github.delivery import GitHubDelivery
 from devcrew.graph.state import PendingQuestion, QAEntry
 from devcrew.llm.agent import AgentOutcome, ToolEventHook, run_agent
-from devcrew.llm.client import CallScope, CallUsage, LLMGateway, llm_scope
+from devcrew.llm.client import CallPrompt, CallScope, CallUsage, LLMGateway, llm_scope
 from devcrew.llm.models_config import Role
 from devcrew.prompts import PromptLibrary
 from devcrew.rag.service import RagService
@@ -67,6 +67,8 @@ class GraphDeps:
 
     def __post_init__(self) -> None:
         self.llm.on_usage = self._record_usage
+        if self.settings.log_prompts:
+            self.llm.on_prompt = self._record_prompt
         # whole-run event lists for the workflow view, usage and budgets (Phase 15)
         self.event_cache = EventCache(self.events)
 
@@ -81,6 +83,22 @@ class GraphDeps:
             input_tokens=usage.input_tokens,
             output_tokens=usage.output_tokens,
             duration_ms=usage.duration_ms,
+        )
+
+    async def _record_prompt(self, prompt: CallPrompt) -> None:
+        await self.emit(
+            prompt.scope.run_id,
+            EventType.PROMPT,
+            node=prompt.scope.node,
+            task_id=prompt.scope.task_id,
+            role=prompt.role.value,
+            model=prompt.model,
+            iteration=prompt.scope.iteration,
+            input_tokens=prompt.input_tokens,
+            output_tokens=prompt.output_tokens,
+            duration_ms=prompt.duration_ms,
+            messages=save_transcript(prompt.messages),
+            reply=save_transcript([prompt.reply]),
         )
 
     async def emit(
@@ -175,7 +193,13 @@ def instrument(deps: GraphDeps, name: str, fn: NodeFn) -> NodeFn:
         task_id = task.get("id") if isinstance(task, dict) else None
         await deps.emit(run_id, EventType.NODE_STARTED, node=name, task_id=task_id)
         models = tuple(sorted((state.get("models") or {}).items()))
-        scope = llm_scope.set(CallScope(run_id=run_id, node=name, task_id=task_id, models=models))
+        iteration = None
+        if task_id is not None:
+            ts = (state.get("tasks") or {}).get(task_id) or {}
+            iteration = int(ts.get("iterations") or 0) + 1
+        scope = llm_scope.set(
+            CallScope(run_id=run_id, node=name, task_id=task_id, models=models, iteration=iteration)
+        )
         try:
             result = await fn(state)
         except GraphBubbleUp:

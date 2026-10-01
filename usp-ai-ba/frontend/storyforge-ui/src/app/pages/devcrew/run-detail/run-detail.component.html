@@ -279,6 +279,57 @@
       <p class="dc-empty">Loading workflow…</p>
     </ng-template>
 
+    <!-- Prompts (DEVCREW_LOG_PROMPTS) -->
+    <div class="sf-card dc-section" *ngIf="workflow">
+      <div class="dc-prompts-header">
+        <h2 class="dc-section-title">Prompts</h2>
+        <button type="button" class="sf-btn sf-btn-secondary" (click)="togglePrompts()">
+          {{ promptsOpen ? 'Hide' : 'Show' }}
+        </button>
+      </div>
+      <ng-container *ngIf="promptsOpen">
+        <p class="dc-panel-meta" *ngIf="prompts && !prompts.enabled">
+          Prompt logging is off for this server. Set DEVCREW_LOG_PROMPTS=true to capture prompts for new runs.
+        </p>
+        <ng-container *ngIf="prompts?.enabled">
+          <div class="dc-prompts-filters">
+            <select class="sf-input" [(ngModel)]="promptFilterTaskId" name="promptFilterTaskId">
+              <option [ngValue]="null">All tasks / run-level</option>
+              <option *ngFor="let tid of promptTaskIds" [ngValue]="tid">{{ tid }}</option>
+            </select>
+            <select class="sf-input" [(ngModel)]="promptFilterNode" name="promptFilterNode">
+              <option [ngValue]="null">All nodes</option>
+              <option *ngFor="let n of promptNodes" [ngValue]="n">{{ n }}</option>
+            </select>
+            <button type="button" class="sf-btn sf-btn-secondary" (click)="loadPrompts()">Refresh</button>
+          </div>
+          <p class="dc-empty" *ngIf="!promptGroups.length">No LLM calls recorded for this filter yet.</p>
+          <div class="dc-prompt-group" *ngFor="let group of promptGroups">
+            <h3 class="dc-subheading">{{ group.label }}</h3>
+            <div class="dc-prompt-row" *ngFor="let entry of group.entries">
+              <button type="button" class="dc-prompt-row-header" (click)="togglePromptEntry(entry.id)">
+                <span class="dc-prompt-role">{{ entry.role }}</span>
+                <span class="dc-prompt-model">{{ entry.model }}</span>
+                <span class="dc-prompt-tokens">{{ entry.input_tokens }} in / {{ entry.output_tokens }} out</span>
+                <span class="dc-prompt-time" *ngIf="entry.created_at">{{ entry.created_at.slice(11, 19) }}</span>
+                <span class="dc-prompt-toggle">{{ isPromptEntryOpen(entry.id) ? '▾' : '▸' }}</span>
+              </button>
+              <div class="dc-prompt-detail" *ngIf="isPromptEntryOpen(entry.id)">
+                <div class="dc-prompt-message" *ngFor="let m of entry.messages">
+                  <span class="dc-prompt-message-type">{{ m.type }}</span>
+                  <pre>{{ m.data['content'] }}</pre>
+                </div>
+                <div class="dc-prompt-message dc-prompt-reply" *ngFor="let m of entry.reply">
+                  <span class="dc-prompt-message-type">reply</span>
+                  <pre>{{ m.data['content'] }}</pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        </ng-container>
+      </ng-container>
+    </div>
+
     <!-- Usage -->
     <div class="sf-card dc-section" *ngIf="usage">
       <h2 class="dc-section-title">Usage</h2>

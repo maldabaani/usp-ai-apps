@@ -9,6 +9,8 @@ import {
   DevCrewService,
   MessageOut,
   PendingInput,
+  PromptEntry,
+  PromptList,
   RunDetail,
   RunUsage,
   TaskStateOut,
@@ -42,6 +44,12 @@ export class RunDetailComponent implements OnInit, OnDestroy {
   workflow: Workflow | null = null;
   messages: MessageOut[] = [];
   usage: RunUsage | null = null;
+
+  prompts: PromptList | null = null;
+  promptsOpen = false;
+  promptFilterTaskId: string | null = null;
+  promptFilterNode: string | null = null;
+  openPromptEntryIds = new Set<number>();
 
   selectedNodeId: string | null = null;
   readonly humanizeStatus = humanizeStatus;
@@ -391,5 +399,64 @@ export class RunDetailComponent implements OnInit, OnDestroy {
     if (status === 'completed' || status === 'done') return 'dc-status-done';
     if (status === 'failed' || status === 'cancelled') return 'dc-status-error';
     return 'dc-status-active';
+  }
+
+  togglePrompts(): void {
+    this.promptsOpen = !this.promptsOpen;
+    if (this.promptsOpen && !this.prompts) {
+      this.loadPrompts();
+    }
+  }
+
+  loadPrompts(): void {
+    this.devCrewService.getPrompts(this.runId).subscribe({
+      next: (prompts) => (this.prompts = prompts),
+      error: () => {},
+    });
+  }
+
+  togglePromptEntry(id: number): void {
+    if (this.openPromptEntryIds.has(id)) {
+      this.openPromptEntryIds.delete(id);
+    } else {
+      this.openPromptEntryIds.add(id);
+    }
+  }
+
+  isPromptEntryOpen(id: number): boolean {
+    return this.openPromptEntryIds.has(id);
+  }
+
+  get promptTaskIds(): string[] {
+    const ids = (this.prompts?.entries ?? [])
+      .map((e) => e.task_id)
+      .filter((t): t is string => !!t);
+    return Array.from(new Set(ids));
+  }
+
+  get promptNodes(): string[] {
+    const nodes = (this.prompts?.entries ?? [])
+      .map((e) => e.node)
+      .filter((n): n is string => !!n);
+    return Array.from(new Set(nodes));
+  }
+
+  get promptGroups(): { label: string; entries: PromptEntry[] }[] {
+    const entries = (this.prompts?.entries ?? []).filter(
+      (e) =>
+        (!this.promptFilterTaskId || e.task_id === this.promptFilterTaskId) &&
+        (!this.promptFilterNode || e.node === this.promptFilterNode)
+    );
+    const byKey = new Map<string, { label: string; entries: PromptEntry[] }>();
+    for (const e of entries) {
+      const nodeLabel = e.node ?? '(run-level)';
+      const label = e.iteration ? `${nodeLabel} · attempt ${e.iteration}` : nodeLabel;
+      const key = `${e.node ?? ''}:${e.iteration ?? ''}`;
+      if (!byKey.has(key)) {
+        byKey.set(key, { label, entries: [] });
+      }
+      byKey.get(key)!.entries.push(e);
+    }
+    return Array.from(byKey.values());
   }
 }

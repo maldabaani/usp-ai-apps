@@ -20,6 +20,7 @@ class EventType(StrEnum):
     AWAITING_INPUT = "awaiting_input"  # graph interrupted, waiting for the human
     MESSAGE = "message"  # a chat message from the human and what was done with it
     LLM_USAGE = "llm_usage"  # one model call: role, tokens, duration (run usage and budgets)
+    PROMPT = "prompt"  # one model call's full messages + reply (opt-in, DEVCREW_LOG_PROMPTS)
 
 
 class EventIn(BaseModel):
