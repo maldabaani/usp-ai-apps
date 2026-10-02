@@ -16,31 +16,68 @@
 
   <p class="sf-error-text" *ngIf="loadError">{{ loadError }}</p>
 
+  <div class="dc-run-stats" *ngIf="!loading && runs.length">
+    <div class="dc-usage-stat">
+      <span class="dc-usage-value">{{ activeCount }}</span>
+      <span class="dc-usage-label">Active</span>
+    </div>
+    <div class="dc-usage-stat">
+      <span class="dc-usage-value">{{ waitingCount }}</span>
+      <span class="dc-usage-label">Waiting on you</span>
+    </div>
+    <div class="dc-usage-stat">
+      <span class="dc-usage-value">{{ completedThisWeekCount }}</span>
+      <span class="dc-usage-label">Completed this week</span>
+    </div>
+    <div class="dc-usage-stat">
+      <span class="dc-usage-value">{{ failedCount }}</span>
+      <span class="dc-usage-label">Failed</span>
+    </div>
+  </div>
+
+  <div class="dc-filters" *ngIf="!loading && runs.length">
+    <div class="dc-search-wrap">
+      <svg class="dc-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+      <input
+        class="dc-search-input"
+        type="text"
+        placeholder="Search by request or repo"
+        [(ngModel)]="searchQuery"
+      />
+    </div>
+    <div class="dc-filter-pills">
+      <button class="dc-pill" [class.dc-pill-active]="statusFilter === ''" (click)="statusFilter = ''">All</button>
+      <button class="dc-pill" [class.dc-pill-active]="statusFilter === 'active'" (click)="statusFilter = 'active'">Active</button>
+      <button class="dc-pill" [class.dc-pill-active]="statusFilter === 'waiting'" (click)="statusFilter = 'waiting'">Waiting</button>
+      <button class="dc-pill" [class.dc-pill-active]="statusFilter === 'done'" (click)="statusFilter = 'done'">Done</button>
+      <button class="dc-pill" [class.dc-pill-active]="statusFilter === 'error'" (click)="statusFilter = 'error'">Failed</button>
+    </div>
+  </div>
+
   <div class="sf-card" *ngIf="!loading && !runs.length && !loadError">
     <p class="dc-empty">No DevCrew runs yet.</p>
   </div>
 
-  <table class="sf-table" *ngIf="runs.length">
-    <thead>
-      <tr>
-        <th>Request</th>
-        <th>Repo</th>
-        <th>Status</th>
-        <th>PR</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr *ngFor="let run of runs">
-        <td>{{ run.request }}</td>
-        <td>{{ run.repo_target }}</td>
-        <td><span class="dc-status-badge" [ngClass]="statusClass(run.status)">{{ run.status }}</span></td>
-        <td>
-          <a *ngIf="run.pr_url" [href]="run.pr_url" target="_blank">Open PR ↗</a>
-          <span *ngIf="!run.pr_url">—</span>
-        </td>
-        <td><a class="sf-btn sf-btn-secondary" [routerLink]="['/devcrew/runs', run.id]">View</a></td>
-      </tr>
-    </tbody>
-  </table>
+  <div class="sf-card" *ngIf="!loading && runs.length && !filteredRuns.length">
+    <p class="dc-empty">No runs match your filters.</p>
+    <button class="sf-btn sf-btn-secondary" (click)="clearFilters()">Clear filters</button>
+  </div>
+
+  <div class="dc-run-grid" *ngIf="filteredRuns.length">
+    <div class="dc-run-card" *ngFor="let run of filteredRuns">
+      <div class="dc-run-card-head">
+        <span class="dc-status-badge" [ngClass]="statusClass(run.status)">{{ run.status }}</span>
+        <span class="dc-run-time" *ngIf="run.created_at" [title]="fullDate(run.created_at)">
+          {{ relativeTime(run.created_at) }}
+        </span>
+      </div>
+      <p class="dc-run-request" [title]="run.request">{{ run.request }}</p>
+      <p class="dc-run-repo">{{ run.repo_target }}</p>
+      <div class="dc-run-card-footer">
+        <a *ngIf="run.pr_url" class="dc-run-pr" [href]="run.pr_url" target="_blank">Open PR ↗</a>
+        <span *ngIf="!run.pr_url" class="dc-run-pr-dash">—</span>
+        <a class="sf-btn sf-btn-secondary" [routerLink]="['/devcrew/runs', run.id]">View</a>
+      </div>
+    </div>
+  </div>
 </div>

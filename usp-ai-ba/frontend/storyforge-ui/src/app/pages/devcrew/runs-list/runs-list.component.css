@@ -39,3 +39,175 @@
   background: #dbeafe;
   color: #1d4ed8;
 }
+
+/* ── Stat band (tile shape borrowed from run-detail's .dc-usage-stats) ── */
+.dc-run-stats {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin: 0 0 20px;
+  padding: 16px 20px;
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border);
+  border-radius: 12px;
+}
+
+.dc-usage-stat {
+  display: flex;
+  flex-direction: column;
+}
+
+.dc-usage-value {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.dc-usage-label {
+  font-size: 12px;
+  color: var(--sf-muted);
+}
+
+/* ── Search + filter pills (styling borrowed from dashboard's .sf-filters) ── */
+.dc-filters {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.dc-search-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 180px;
+}
+
+.dc-search-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--sf-muted);
+  pointer-events: none;
+}
+
+.dc-search-input {
+  width: 100%;
+  padding: 7px 10px 7px 34px;
+  border: 1px solid var(--sf-border);
+  border-radius: 6px;
+  font-size: 14px;
+  background: var(--sf-surface);
+  color: var(--sf-text);
+  outline: none;
+}
+
+.dc-search-input:focus {
+  border-color: var(--sf-primary);
+  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.15);
+}
+
+.dc-filter-pills {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.dc-pill {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--sf-border);
+  background: var(--sf-surface);
+  color: var(--sf-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.dc-pill:hover {
+  border-color: var(--sf-primary);
+  color: var(--sf-text);
+}
+
+.dc-pill-active,
+.dc-pill-active:hover {
+  background: var(--sf-primary);
+  border-color: var(--sf-primary);
+  color: #fff;
+}
+
+/* ── Card grid (layout borrowed from the landing page's .landing-grid/.landing-card) ── */
+.dc-run-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.dc-run-card {
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border);
+  border-radius: 12px;
+}
+
+.dc-run-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.dc-run-time {
+  font-size: 12px;
+  color: var(--sf-muted);
+  white-space: nowrap;
+}
+
+.dc-run-request {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 6px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.dc-run-repo {
+  font-size: 12px;
+  color: var(--sf-muted);
+  margin: 0 0 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dc-run-card-footer {
+  margin-top: auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.dc-run-pr {
+  font-size: 13px;
+}
+
+.dc-run-pr-dash {
+  color: var(--sf-muted);
+}
+
+@media (max-width: 640px) {
+  .dc-run-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dc-run-stats {
+    overflow-x: auto;
+  }
+}
