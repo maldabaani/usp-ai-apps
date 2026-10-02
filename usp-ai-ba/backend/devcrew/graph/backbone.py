@@ -158,6 +158,7 @@ def make_schedule(deps: GraphDeps) -> NodeFn:
                         "human_notes": state.get("human_notes") or [],
                         "models": state.get("models") or {},
                         "engine": state.get("engine") or "ollama",
+                        "storyforge_epic": state.get("storyforge_epic"),
                     },
                 )
             )

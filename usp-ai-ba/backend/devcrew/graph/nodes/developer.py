@@ -31,23 +31,39 @@ from devcrew.tools.workspace import list_dir_tool, read_file_tool, write_file_to
 NODE = "developer"
 
 
-def developer_tools(deps: GraphDeps, ctx: TaskCtx, budget: QuestionBudget) -> list[ToolSpec]:
+def developer_tools(
+    deps: GraphDeps, ctx: TaskCtx, budget: QuestionBudget, *, bridged: bool
+) -> list[ToolSpec]:
     tools = [
         read_file_tool(ctx.workspace, ctx.project.path),
         write_file_tool(ctx.workspace, project_path=ctx.project.path),
         list_dir_tool(ctx.workspace, ctx.project.path),
         read_rules_tool(deps.rules),
-        ask_agent_tool(
-            deps,
-            run_id=ctx.run_id,
-            asker=NODE,
-            task=ctx.task,
-            plan=ctx.plan,
-            design=ctx.design,
-            budget=budget,
-        ),
         ask_human_tool(limit_reached=lambda: budget.exhausted),
     ]
+    if not bridged:
+        # A bridged run's Plan/Design are deterministic translations of StoryForge's own
+        # already-approved epic (pipeline/devcrew_bridge.py), not DevCrew's Planner/Architect
+        # reasoning about anything -- Design.design_doc is literally each task's own description
+        # concatenated back together, and Design.key_decisions says outright "Design authored by
+        # StoryForge's own assessment pipeline, not DevCrew's Architect". Asking "architect" or
+        # "planner" here spends a real LLM call to have a role with no actual judgment to add
+        # paraphrase content the Developer already has in its own context (developer_context()
+        # already includes the design contracts, key decisions, acceptance criteria and other
+        # tasks) -- observed live: an ask_agent(architect, "what is LineItem for?") on a bridged
+        # run, answerable by read_file alone. Non-bridged runs keep the tool: there a real
+        # Planner/Architect ran and may hold detail the task description doesn't carry verbatim.
+        tools.append(
+            ask_agent_tool(
+                deps,
+                run_id=ctx.run_id,
+                asker=NODE,
+                task=ctx.task,
+                plan=ctx.plan,
+                design=ctx.design,
+                budget=budget,
+            )
+        )
     if deps.sandbox is not None:
         tools.append(
             run_command_tool(deps.sandbox, ctx.target, ctx.layout, default_cwd=ctx.project.path)
@@ -119,7 +135,7 @@ def make_developer(deps: GraphDeps) -> NodeFn:
             task_id=ctx.task.id,
             system=system,
             build_context=context,
-            tools=developer_tools(deps, ctx, budget),
+            tools=developer_tools(deps, ctx, budget, bridged=state.get("storyforge_epic") is not None),
             saved=state.get("task_scratch", {}).get(NODE),
         )
         asked_agents = [dump(e) for e in budget.log]  # ask_agent Q&A of this turn -> qa_log

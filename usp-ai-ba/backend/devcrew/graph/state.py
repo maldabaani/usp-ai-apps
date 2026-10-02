@@ -614,6 +614,9 @@ class TaskWorkerState(TypedDict, total=False):
     hold_next: str | None  # the step a paused task continues with (Phase 15)
     models: dict[str, str]  # the run's own model per role (Phase 16)
     engine: str  # the run's own LLM engine: "ollama" (default) or "anthropic"
+    # Non-None on a bridged run (see RunState.storyforge_epic below) -- developer.py reads this
+    # to decide whether ask_agent(architect/planner) is worth offering at all.
+    storyforge_epic: dict[str, Any] | None
 
 
 class TaskWorkerOutput(TypedDict, total=False):

@@ -339,6 +339,34 @@ async def test_bridged_run_reaches_scaffold_without_calling_planner_or_architect
     assert outcome is not None
 
 
+async def test_bridged_developer_does_not_get_ask_agent(tmp_path: Path) -> None:
+    """A bridged run's Design/Plan are a deterministic translation of StoryForge's own
+    already-approved epic (pipeline/devcrew_bridge.py) -- there is no real Architect/Planner
+    judgment behind them to consult (Design.key_decisions says so outright), so ask_agent would
+    just spend an LLM call to have a role with no extra authority paraphrase content the
+    Developer already has in its own context (developer_context() includes the same design
+    contracts, key decisions and acceptance criteria). See test_backbone.py's
+    test_each_role_gets_only_its_tools for the non-bridged baseline, which still gets ask_agent."""
+    h, gh, sha = java_harness(tmp_path)
+    plan = build_plan(STORY)
+
+    await h.driver.start(
+        RUN,
+        "Add a discount field to todos",
+        "acme/shop",
+        target="existing",
+        mode="quick",
+        plan=dump(plan),
+        storyforge_epic=STORY,
+    )
+
+    developer_calls = [c for c in h.brain.calls if c.role == "developer" and c.has_tools]
+    assert developer_calls, "developer must have been called at least once"
+    for call in developer_calls:
+        assert "ask_agent" not in call.tool_names
+        assert "ask_human" in call.tool_names  # still has a real escalation path
+
+
 async def test_bridged_run_design_reflects_storyforges_own_content(tmp_path: Path) -> None:
     h, gh, sha = java_harness(tmp_path)
     h.brain.responders["planner"] = lambda call: (_ for _ in ()).throw(
