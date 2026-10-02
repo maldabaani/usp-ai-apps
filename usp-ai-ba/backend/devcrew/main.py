@@ -11,7 +11,7 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from devcrew.api import github, health, preview, runs, workspace
+from devcrew.api import github, health, lessons, preview, runs, workspace
 from devcrew.config import Settings, get_settings
 from devcrew.container import Container, default_engine
 from devcrew.graph.factory import build_llm
@@ -93,6 +93,7 @@ def create_app(
     app.include_router(workspace.router)
     app.include_router(github.router)
     app.include_router(preview.router)
+    app.include_router(lessons.router)
     return app
 
 

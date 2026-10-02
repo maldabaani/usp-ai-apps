@@ -30,6 +30,7 @@ from api.user_store import ensure_default_admin
 from config import settings
 from devcrew.api import github as devcrew_github
 from devcrew.api import health as devcrew_health
+from devcrew.api import lessons as devcrew_lessons
 from devcrew.api import preview as devcrew_preview
 from devcrew.api import runs as devcrew_runs
 from devcrew.api import workspace as devcrew_workspace
@@ -122,6 +123,7 @@ def create_app() -> FastAPI:
     app.include_router(devcrew_workspace.router, prefix="/api/devcrew")
     app.include_router(devcrew_github.router, prefix="/api/devcrew")
     app.include_router(devcrew_preview.router, prefix="/api/devcrew")
+    app.include_router(devcrew_lessons.router, prefix="/api/devcrew")
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception):
