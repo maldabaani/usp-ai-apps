@@ -7,6 +7,7 @@ import { AssessComponent } from './pages/assess/assess.component';
 import { ClarifyComponent } from './pages/clarify/clarify.component';
 import { CorpusComponent } from './pages/corpus/corpus.component';
 import { DashboardComponent } from './pages/dashboard/dashboard.component';
+import { LessonsComponent } from './pages/devcrew/lessons/lessons.component';
 import { RunDetailComponent } from './pages/devcrew/run-detail/run-detail.component';
 import { RunsListComponent } from './pages/devcrew/runs-list/runs-list.component';
 import { IngestionComponent } from './pages/ingestion/ingestion.component';
@@ -27,6 +28,7 @@ export const routes: Routes = [
   { path: 'status/:jobId', component: StatusComponent, canActivate: [authGuard] },
   { path: 'devcrew/runs', component: RunsListComponent, canActivate: [authGuard] },
   { path: 'devcrew/runs/:runId', component: RunDetailComponent, canActivate: [authGuard] },
+  { path: 'devcrew/lessons', component: LessonsComponent, canActivate: [authGuard] },
   { path: 'ingestion', component: IngestionComponent, canActivate: [authGuard] },
   { path: 'corpus', component: CorpusComponent, canActivate: [authGuard] },
   { path: 'ask/technical', component: AskTechnicalComponent, canActivate: [authGuard] },

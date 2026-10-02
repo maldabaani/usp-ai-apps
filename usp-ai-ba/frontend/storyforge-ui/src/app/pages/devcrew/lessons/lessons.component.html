@@ -1,0 +1,70 @@
+<div class="sf-page">
+  <a routerLink="/" class="sf-back-link">&larr; Home</a>
+
+  <h1>DevCrew Lessons</h1>
+  <p class="ing-muted">
+    Candidate rules proposed from real run friction -- a Coordinator escalation, a review cycle
+    that eventually got approved, or a real pull-request review comment that led to a merged
+    fix. Approving appends the rule to the stack's own rules file; the Reviewer can cite it on
+    the very next run.
+  </p>
+
+  <div class="lessons-filters">
+    <button
+      class="sf-btn sf-btn-secondary"
+      *ngFor="let f of filters"
+      [class.sf-btn-active]="filter === f"
+      (click)="setFilter(f)"
+    >
+      {{ f | titlecase }}
+    </button>
+    <button class="sf-btn sf-btn-secondary" (click)="load()">Refresh</button>
+  </div>
+
+  <p *ngIf="loading">Loading…</p>
+  <p *ngIf="loadError" class="sf-error-text">{{ loadError }}</p>
+
+  <ng-container *ngIf="!loading && !loadError">
+    <p class="sf-error-text" *ngIf="decideError">{{ decideError }}</p>
+
+    <p *ngIf="!lessons.length" class="ing-muted">No {{ filter === 'all' ? '' : filter }} lessons.</p>
+
+    <div class="sf-card lessons-row" *ngFor="let lesson of lessons">
+      <div class="lessons-row-head">
+        <span class="sf-badge">{{ lesson.stack }}</span>
+        <span class="sf-badge">{{ sourceLabel(lesson.source) }}</span>
+        <span
+          class="sf-badge"
+          [class.sf-badge-done]="lesson.status === 'approved'"
+          [class.lessons-badge-rejected]="lesson.status === 'rejected'"
+        >
+          {{ lesson.status }}
+        </span>
+        <span class="lessons-rule-id" *ngIf="lesson.rule_id">{{ lesson.rule_id }}</span>
+        <span class="lessons-meta">
+          {{ lesson.run_id || 'no run' }}<ng-container *ngIf="lesson.task_id">&nbsp;/&nbsp;{{ lesson.task_id }}</ng-container>
+        </span>
+      </div>
+
+      <p class="lessons-rule-text">{{ lesson.rule_text }}</p>
+
+      <button class="sf-btn sf-btn-secondary lessons-evidence-toggle" (click)="toggleEvidence(lesson)">
+        {{ expandedId === lesson.id ? 'Hide evidence' : 'Show evidence' }}
+      </button>
+      <pre class="lessons-evidence" *ngIf="expandedId === lesson.id">{{ lesson.evidence }}</pre>
+
+      <div class="lessons-actions" *ngIf="lesson.status === 'pending'">
+        <button class="sf-btn" [disabled]="decidingId === lesson.id" (click)="approve(lesson)">
+          {{ decidingId === lesson.id ? 'Approving…' : 'Approve' }}
+        </button>
+        <button
+          class="sf-btn sf-btn-danger"
+          [disabled]="decidingId === lesson.id"
+          (click)="reject(lesson)"
+        >
+          {{ decidingId === lesson.id ? 'Rejecting…' : 'Reject' }}
+        </button>
+      </div>
+    </div>
+  </ng-container>
+</div>

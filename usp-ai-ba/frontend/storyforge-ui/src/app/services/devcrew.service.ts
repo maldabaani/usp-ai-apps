@@ -200,6 +200,20 @@ export interface PromptList {
   next_after_id: number | null;
 }
 
+export interface Lesson {
+  id: number;
+  run_id: string | null;
+  task_id: string | null;
+  stack: string;
+  source: string;
+  rule_text: string;
+  evidence: string;
+  status: string;
+  rule_id: string | null;
+  created_at: string;
+  decided_at: string | null;
+}
+
 @Injectable({ providedIn: 'root' })
 export class DevCrewService {
   constructor(private http: HttpClient) {}
@@ -257,5 +271,18 @@ export class DevCrewService {
   getPrompts(runId: string, afterId = 0, limit = 500): Observable<PromptList> {
     const params = new HttpParams().set('after_id', afterId).set('limit', limit);
     return this.http.get<PromptList>(`${API_BASE_URL}/runs/${runId}/prompts`, { params });
+  }
+
+  listLessons(status?: string): Observable<Lesson[]> {
+    const params = status ? new HttpParams().set('status', status) : undefined;
+    return this.http.get<Lesson[]>(`${API_BASE_URL}/lessons`, { params });
+  }
+
+  approveLesson(lessonId: number): Observable<Lesson> {
+    return this.http.post<Lesson>(`${API_BASE_URL}/lessons/${lessonId}/approve`, {});
+  }
+
+  rejectLesson(lessonId: number): Observable<Lesson> {
+    return this.http.post<Lesson>(`${API_BASE_URL}/lessons/${lessonId}/reject`, {});
   }
 }

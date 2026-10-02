@@ -24,6 +24,10 @@ export class AppComponent {
     return this.authService.getUsername();
   }
 
+  get isAdmin(): boolean {
+    return this.authService.isAdmin();
+  }
+
   logout(): void {
     this.authService.logout();
   }
