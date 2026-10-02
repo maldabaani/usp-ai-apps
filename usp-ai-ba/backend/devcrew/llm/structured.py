@@ -276,6 +276,26 @@ async def generate_structured[T: BaseModel](
         try:
             return StructuredResult(parse_strict(text, schema, context), attempt, False)
         except (json.JSONDecodeError, ValidationError) as exc:
+            # A reply that's valid JSON preceded by a leading prose sentence ("Confirmed no
+            # changes...\n\n{...}") fails parse_strict() outright -- it isn't malformed, just not
+            # the very first character -- even though extract_json()'s balanced-brace scan would
+            # recover it in a heartbeat. Recovering here avoids burning a whole extra model round
+            # trip (and the correction message in history) on the single most common shape of
+            # "technically broke the no-prose instruction" reply, from a tool-calling agent's own
+            # natural wrap-up sentence in particular (first_response callers especially -- that
+            # text was never actually re-prompted with the strict JSON-only instruction).
+            if isinstance(exc, json.JSONDecodeError):
+                recovered = extract_json(text, schema, context)
+                if recovered is not None:
+                    logger.info(
+                        "%s: %s had a leading prose preamble (attempt %d) but was recovered by "
+                        "extraction, not re-prompted [raw=%r]",
+                        role,
+                        schema.__name__,
+                        attempt,
+                        text[:200],
+                    )
+                    return StructuredResult(recovered, attempt, True)
             error = format_validation_error(exc)
             errors.append(error)
             logger.info(

@@ -85,6 +85,19 @@ async def test_first_response_counts_as_attempt() -> None:
     assert result.value.name == "b" and result.attempts == 2 and len(calls) == 1
 
 
+async def test_leading_prose_before_json_is_recovered_without_a_retry() -> None:
+    # Observed live: a Reviewer's reply after a tool-calling loop was
+    # 'Confirmed no changes to loyalty.py...\n\n{"decision": "approve", ...}' -- valid JSON, just
+    # not the very first character, which parse_strict() treats as a hard failure even though
+    # it's trivially recoverable. This must not cost a whole extra model round trip.
+    reply = 'Confirmed no changes needed, consistent with the task scope.\n\n{"name": "a", "qty": 2}'
+    brain, calls = scripted(reply)
+    result = await generate_structured(gateway(brain), Role.PLANNER, MESSAGES, Item)
+    assert result.value == Item(name="a", qty=2)
+    assert (result.attempts, result.used_fallback) == (1, True)
+    assert len(calls) == 1  # no correction round-trip was needed
+
+
 async def test_fallback_extracts_json_from_prose() -> None:
     prose = 'Sure! Here it is:\n```json\n{"name": "c", "qty": 4,}\n```\nHope it helps.'
     # Strict parse fails on every attempt (prose + trailing comma); extraction succeeds.
