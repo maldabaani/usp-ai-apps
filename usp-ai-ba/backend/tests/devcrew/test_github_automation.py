@@ -12,6 +12,7 @@ from typing import Any
 
 from langchain_core.messages import AIMessage
 
+from devcrew.db.models import LessonSource
 from devcrew.graph.nodes.followup import MARKER, forced_big
 from devcrew.services.github_watch import comment_text, issue_request
 from tests.devcrew.api_harness import Api, api
@@ -150,6 +151,25 @@ async def test_small_review_comment_is_fixed_pushed_replied_and_resolved(tmp_pat
         # our own replies are never picked up again: the next poll starts no round
         run = await poll(a, run_id)
         assert run["followup"]["round"] == 1
+
+
+async def test_merged_review_comment_fix_proposes_a_lesson(tmp_path: Path) -> None:
+    h = harness(tmp_path)
+    h.brain.responders["lesson summarizer"] = lambda c: final(
+        {"worth_recording": True, "rule_text": "Name constants for what they represent."}
+    )
+    gh = fake(h)
+    async with api(tmp_path, harness=h) as a:
+        run_id = await run_to_pr(a)
+        gh.add_review_comment("acme", "shop", 1, "alice", "Rename X to TOTAL")
+        run = await poll(a, run_id)
+        assert run["tasks"]["R1-1"]["status"] == "merged"
+
+        lessons = await a.container.lessons.list_lessons()
+        assert len(lessons) == 1
+        assert lessons[0].task_id == "R1-1"
+        assert lessons[0].source == LessonSource.PR_COMMENT
+        assert "Rename X to TOTAL" in lessons[0].evidence
 
 
 async def test_big_change_waits_for_approval_and_rejection_replies(tmp_path: Path) -> None:

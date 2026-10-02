@@ -25,7 +25,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.types import Command
 from pydantic import BaseModel, ValidationInfo, model_validator
 
-from devcrew.db.models import RunStatus
+from devcrew.db.models import LessonSource, RunStatus
 from devcrew.events.types import EventType
 from devcrew.github.client import GitHubError
 from devcrew.github.delivery import DeliveryError
@@ -33,6 +33,7 @@ from devcrew.graph.interrupts import InterruptKind, InterruptRequest, ResumeActi
 from devcrew.graph.runtime import GraphDeps, NodeFn
 from devcrew.graph.state import Design, Plan, PlanTask, Stack, TaskState, dump, get_design, get_plan
 from devcrew.graph.steering import open_run_messages
+from devcrew.learning import propose_lesson
 from devcrew.llm.models_config import Role
 from devcrew.llm.structured import StructuredOutputError, generate_structured
 from devcrew.tools.git import GitError, GitRepo
@@ -480,8 +481,45 @@ def make_approve_followup(deps: GraphDeps) -> NodeFn:
     return approve_followup
 
 
+async def _capture_pr_comment_lesson(
+    deps: GraphDeps, run_id: str, plan: Plan, task_id: str, info: dict[str, Any]
+) -> None:
+    """Best-effort: a real reviewer's PR comment that led to a merged fix is evidence worth
+    generalizing into a candidate lesson (see devcrew/learning.py). Never raises."""
+    review_items = [i for i in info["items"] if i["kind"] in REVIEW_KINDS]
+    if not review_items:
+        return
+    task = next((t for t in plan.tasks if t.id == task_id), None)
+    stack = task.stack if task is not None else plan.tasks[0].stack
+    evidence = "\n".join(
+        f"- PR review comment by @{i.get('user')} on {i.get('path') or 'the PR'}: "
+        f"{str(i.get('body', '')).strip()}\n  Fix: {info['title']}"
+        for i in review_items
+    )
+    try:
+        await propose_lesson(
+            deps.lessons,
+            deps.llm,
+            deps.prompts,
+            run_id=run_id,
+            task_id=task_id,
+            stack=stack,
+            source=LessonSource.PR_COMMENT,
+            evidence=evidence,
+        )
+    except Exception as exc:  # noqa: BLE001 - never let lesson capture fail the report step
+        await deps.emit(
+            run_id,
+            EventType.ERROR,
+            node="report_followup",
+            task_id=task_id,
+            message=f"lesson capture failed: {exc}",
+        )
+
+
 def make_report_followup(deps: GraphDeps) -> NodeFn:
     async def report_followup(state: dict[str, Any]) -> Command[str]:
+        run_id = state["run_id"]
         fs = followup_state(state)
         replies = list(fs["pending_replies"])
         commit = ""
@@ -490,6 +528,7 @@ def make_report_followup(deps: GraphDeps) -> NodeFn:
                 :10
             ]
             tasks = state.get("tasks") or {}
+            plan = get_plan(state)
             for tid, info in fs["round_tasks"].items():
                 ts = tasks.get(tid) or {}
                 merged = ts.get("status") == "merged"
@@ -499,6 +538,8 @@ def make_report_followup(deps: GraphDeps) -> NodeFn:
                     else "Could not complete this automatically: "
                     + str(ts.get("error") or ts.get("status"))
                 )
+                if merged:
+                    await _capture_pr_comment_lesson(deps, run_id, plan, tid, info)
                 for item in info["items"]:
                     if item["kind"] in REPLY_KINDS:
                         replies.append(_reply(item, body, resolve=merged))
