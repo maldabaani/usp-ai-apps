@@ -127,6 +127,28 @@ async def test_git_squash_merge_one_commit_per_task(tmp_path: Path) -> None:
     assert await repo.commit_all("nothing") is None
 
 
+async def test_commit_all_ignores_build_artifacts(tmp_path: Path) -> None:
+    repo = GitRepo(tmp_path)
+    await repo.init()
+    (tmp_path / "a.py").write_text("x = 1\n")
+    await repo.commit_all("init")
+
+    pycache = tmp_path / "__pycache__"
+    pycache.mkdir()
+    (pycache / "a.cpython-312.pyc").write_bytes(b"junk")
+    # Only a build artifact changed on disk: nothing should be staged, and this must return
+    # None rather than crash trying to `git commit` an empty index (the artifact still shows
+    # up as an untracked file in plain `git status`, even though `add -A` never staged it).
+    assert await repo.commit_all("wip") is None
+    assert "a.cpython-312.pyc" not in await repo.run("ls-files")
+
+    # A real change alongside the artifact still commits; the artifact is still excluded.
+    (tmp_path / "a.py").write_text("x = 2\n")
+    sha = await repo.commit_all("real change")
+    assert sha is not None
+    assert "a.cpython-312.pyc" not in await repo.run("ls-files")
+
+
 async def test_git_merge_conflict_is_reported_and_aborted(tmp_path: Path) -> None:
     repo = GitRepo(tmp_path)
     await repo.init()

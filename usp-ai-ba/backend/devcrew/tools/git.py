@@ -142,7 +142,12 @@ class GitRepo:
         """Stage everything except known build/cache artifacts, and commit. Returns the new
         sha, or None if nothing changed."""
         await self.run("add", "-A", "--", ".", *COMMIT_EXCLUDE_PATHSPECS)
-        if not (await self.run("status", "--porcelain")).strip():
+        # Checked against what's actually staged, not plain `status --porcelain`: an excluded
+        # file (e.g. a .pyc QA's test run left behind) still shows there as an untracked `??`
+        # entry even though `add -A` deliberately never staged it, which would otherwise make
+        # this branch think there's something to commit when the index is actually empty --
+        # and `git commit` then fails outright instead of this returning None.
+        if not (await self.run("status", "--porcelain", "--untracked-files=no")).strip():
             if not allow_empty:
                 return None
             await self.run("commit", "-q", "--allow-empty", "-m", message)
