@@ -15,7 +15,6 @@ from devcrew.llm.agent import run_agent
 from devcrew.llm.models_config import Role
 from devcrew.llm.structured import StructuredOutputError, generate_structured
 from devcrew.tools.base import ToolError, ToolSpec
-from devcrew.tools.catalog import read_rules_tool
 from devcrew.tools.git import git_diff_tool
 from devcrew.tools.search import search_codebase_tool
 from devcrew.tools.workspace import read_file_tool
@@ -89,11 +88,16 @@ def drop_out_of_scope(review: ReviewResult, task: PlanTask, plan: Plan, diff: st
 
 
 def reviewer_tools(deps: GraphDeps, ctx: TaskCtx) -> list[ToolSpec]:
-    """Read-only by construction: no write_file, no run_command."""
+    """Read-only by construction: no write_file, no run_command.
+
+    No read_rules tool: the task's own stack rules are already unconditionally folded into the
+    system prompt (for Claude Cloud cache-ability -- see client.py's _with_cache_control()), so
+    the tool could only ever return text the model already has. Observed live: the Reviewer
+    called it anyway and got back the identical text already in its own system prompt.
+    """
     tools = [
         read_file_tool(ctx.workspace, ctx.project.path),
         git_diff_tool(ctx.repo, ctx.integration_branch, ctx.branch),
-        read_rules_tool(deps.rules),
     ]
     if deps.rag is not None:
         tools.append(search_codebase_tool(deps.rag, ctx.run_id))

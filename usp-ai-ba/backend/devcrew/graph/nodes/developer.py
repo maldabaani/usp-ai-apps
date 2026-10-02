@@ -21,7 +21,6 @@ from devcrew.graph.steering import task_notes
 from devcrew.llm.models_config import Role
 from devcrew.tools.agents import QuestionBudget, ask_agent_tool
 from devcrew.tools.base import ToolError, ToolSpec
-from devcrew.tools.catalog import read_rules_tool
 from devcrew.tools.human import ask_human_tool
 from devcrew.tools.sandbox import run_command_tool
 from devcrew.tools.search import search_codebase_tool
@@ -38,9 +37,13 @@ def developer_tools(
         read_file_tool(ctx.workspace, ctx.project.path),
         write_file_tool(ctx.workspace, project_path=ctx.project.path),
         list_dir_tool(ctx.workspace, ctx.project.path),
-        read_rules_tool(deps.rules),
         ask_human_tool(limit_reached=lambda: budget.exhausted),
     ]
+    # No read_rules tool: the task's own stack rules are already unconditionally folded into
+    # the system prompt above (for Claude Cloud cache-ability -- see client.py's
+    # _with_cache_control()), so the tool can only ever return text the model already has.
+    # Observed live: the Reviewer called it anyway and got back the identical text already in
+    # its own system prompt -- a wasted call, not a safety net.
     if not bridged:
         # A bridged run's Plan/Design are deterministic translations of StoryForge's own
         # already-approved epic (pipeline/devcrew_bridge.py), not DevCrew's Planner/Architect

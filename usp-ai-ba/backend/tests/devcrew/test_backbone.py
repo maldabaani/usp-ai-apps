@@ -435,11 +435,10 @@ async def test_each_role_gets_only_its_tools(tmp_path: Path) -> None:
             "read_file",
             "write_file",
             "list_dir",
-            "read_rules",
             "ask_agent",
             "ask_human",
         },
-        "reviewer": {"read_file", "git_diff", "read_rules"},
+        "reviewer": {"read_file", "git_diff"},
         "qa": {"read_file", "write_file"},
     }
     assert "not allowed" in qa_attempts[0]
