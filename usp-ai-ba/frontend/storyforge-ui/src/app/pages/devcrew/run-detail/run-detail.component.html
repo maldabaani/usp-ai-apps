@@ -427,13 +427,23 @@
           <div class="dc-prompt-group" *ngFor="let group of promptGroups">
             <h3 class="dc-subheading">{{ group.label }}</h3>
             <div class="dc-prompt-row" *ngFor="let entry of group.entries">
-              <button type="button" class="dc-prompt-row-header" (click)="togglePromptEntry(entry.id)">
-                <span class="dc-prompt-role">{{ entry.role }}</span>
-                <span class="dc-prompt-model">{{ entry.model }}</span>
-                <span class="dc-prompt-tokens">{{ entry.input_tokens }} in / {{ entry.output_tokens }} out</span>
-                <span class="dc-prompt-time" *ngIf="entry.created_at">{{ entry.created_at.slice(11, 19) }}</span>
-                <span class="dc-prompt-toggle">{{ isPromptEntryOpen(entry.id) ? '▾' : '▸' }}</span>
-              </button>
+              <div class="dc-prompt-row-header">
+                <button type="button" class="dc-prompt-row-toggle" (click)="togglePromptEntry(entry.id)">
+                  <span class="dc-prompt-role">{{ entry.role }}</span>
+                  <span class="dc-prompt-model">{{ entry.model }}</span>
+                  <span class="dc-prompt-tokens">{{ entry.input_tokens }} in / {{ entry.output_tokens }} out</span>
+                  <span class="dc-prompt-time" *ngIf="entry.created_at">{{ entry.created_at.slice(11, 19) }}</span>
+                  <span class="dc-prompt-toggle">{{ isPromptEntryOpen(entry.id) ? '▾' : '▸' }}</span>
+                </button>
+                <button
+                  type="button"
+                  class="sf-btn sf-btn-secondary dc-prompt-copy-btn dc-prompt-copy-entry-btn"
+                  title="Copy this whole call (system/human/tool/AI turns + reply) as clean markdown"
+                  (click)="copyPromptEntry(entry)"
+                >
+                  {{ copiedPromptEntryId === entry.id ? 'Copied!' : 'Copy .md' }}
+                </button>
+              </div>
               <div class="dc-prompt-detail" *ngIf="isPromptEntryOpen(entry.id)">
                 <div class="dc-prompt-message" *ngFor="let m of entry.messages; let i = index">
                   <div class="dc-prompt-message-head">

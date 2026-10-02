@@ -11,6 +11,7 @@ import {
   PendingInput,
   PromptEntry,
   PromptList,
+  PromptMessage,
   RunDetail,
   RunUsage,
   TaskStateOut,
@@ -107,6 +108,7 @@ export class RunDetailComponent implements OnInit, OnDestroy {
   promptFilterNode: string | null = null;
   openPromptEntryIds = new Set<number>();
   copiedPromptMessageKey: string | null = null;
+  copiedPromptEntryId: number | null = null;
 
   selectedNodeId: string | null = null;
   readonly humanizeStatus = humanizeStatus;
@@ -567,6 +569,52 @@ export class RunDetailComponent implements OnInit, OnDestroy {
       setTimeout(() => {
         if (this.copiedPromptMessageKey === key) {
           this.copiedPromptMessageKey = null;
+          this.changeDetectorRef.detectChanges();
+        }
+      }, 2000);
+    });
+  }
+
+  private static readonly PROMPT_MESSAGE_LABELS: Record<string, string> = {
+    system: 'System',
+    human: 'Human',
+    ai: 'AI',
+    tool: 'Tool',
+  };
+
+  private promptMessageText(m: PromptMessage): string {
+    const content = m.data['content'];
+    return content == null ? '' : String(content);
+  }
+
+  private promptMessageLabel(type: string): string {
+    return (
+      RunDetailComponent.PROMPT_MESSAGE_LABELS[type] ?? (type.charAt(0).toUpperCase() + type.slice(1))
+    );
+  }
+
+  // One click, one clean .md document of the whole call (system/human/tool/ai turns, then the
+  // final reply) -- built for pasting elsewhere for review, not just reading one message at a
+  // time via copyPromptMessage above.
+  copyPromptEntry(entry: PromptEntry): void {
+    const meta = [entry.role, entry.task_id, entry.iteration != null ? `attempt ${entry.iteration}` : null]
+      .filter((p): p is string => !!p)
+      .join(' · ');
+    const header =
+      `# ${meta}\n` +
+      `${entry.model} · ${entry.input_tokens} in / ${entry.output_tokens} out` +
+      (entry.created_at ? ` · ${entry.created_at}` : '');
+    const sections = [
+      header,
+      ...entry.messages.map((m) => `## ${this.promptMessageLabel(m.type)}\n\n${this.promptMessageText(m)}`),
+      ...entry.reply.map((m) => `## Reply\n\n${this.promptMessageText(m)}`),
+    ];
+    navigator.clipboard.writeText(sections.join('\n\n')).then(() => {
+      this.copiedPromptEntryId = entry.id;
+      this.changeDetectorRef.detectChanges();
+      setTimeout(() => {
+        if (this.copiedPromptEntryId === entry.id) {
+          this.copiedPromptEntryId = null;
           this.changeDetectorRef.detectChanges();
         }
       }, 2000);
