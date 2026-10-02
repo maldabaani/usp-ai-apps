@@ -26,6 +26,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
+from devcrew.db.models import LessonSource
 from devcrew.events.types import EventType
 from devcrew.graph.coordinator import make_task_coordinator, make_task_escalate
 from devcrew.graph.interrupts import InterruptKind, InterruptRequest, ResumeAction, request_input
@@ -35,6 +36,7 @@ from devcrew.graph.nodes.human import make_ask_human
 from devcrew.graph.nodes.qa import make_qa
 from devcrew.graph.nodes.reviewer import make_reviewer
 from devcrew.graph.nodes.task_common import (
+    TaskCtx,
     load_task_ctx,
     task_branch,
     to_coordinator,
@@ -42,6 +44,7 @@ from devcrew.graph.nodes.task_common import (
 )
 from devcrew.graph.runtime import GraphDeps, NodeFn, instrument, reindex
 from devcrew.graph.state import TaskStatus, TaskWorkerOutput, TaskWorkerState
+from devcrew.learning import propose_lesson
 from devcrew.tools.git import GitRepo, repo_lock
 
 
@@ -91,6 +94,40 @@ def make_prepare(deps: GraphDeps) -> NodeFn:
     return prepare
 
 
+async def _capture_friction_lesson(deps: GraphDeps, ctx: TaskCtx) -> None:
+    """Best-effort: a merged task's friction (review cycles, Coordinator escalations) is real
+    evidence of something the stack rules didn't already cover -- propose it as a candidate
+    lesson, queued for human approval (see devcrew/learning.py). Never blocks the merge."""
+    ts = ctx.ts
+    notes = [*ts.friction, *(f"Human guidance: {g}" for g in ts.human_guidance)]
+    if not notes:
+        return
+    source = (
+        LessonSource.COORDINATOR_ESCALATION
+        if ts.coordinator_actions or ts.human_guidance
+        else LessonSource.REVIEW_CYCLE
+    )
+    try:
+        await propose_lesson(
+            deps.lessons,
+            deps.llm,
+            deps.prompts,
+            run_id=ctx.run_id,
+            task_id=ctx.task.id,
+            stack=ctx.task.stack,
+            source=source,
+            evidence="\n".join(f"- {n}" for n in notes),
+        )
+    except Exception as exc:  # noqa: BLE001 - never let lesson capture fail a merge
+        await deps.emit(
+            ctx.run_id,
+            EventType.ERROR,
+            node="merge",
+            task_id=ctx.task.id,
+            message=f"lesson capture failed: {exc}",
+        )
+
+
 def make_merge(deps: GraphDeps) -> NodeFn:
     async def merge(state: dict[str, Any]) -> Command[str]:
         ctx = load_task_ctx(deps, state)
@@ -119,6 +156,7 @@ def make_merge(deps: GraphDeps) -> NodeFn:
         ctx.ts.worktree = None
         if deps.sandbox is not None:
             await deps.sandbox.release(ctx.run_id, ctx.task.id)
+        await _capture_friction_lesson(deps, ctx)
         await deps.emit(
             ctx.run_id,
             EventType.MERGE,

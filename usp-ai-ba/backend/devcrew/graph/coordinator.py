@@ -232,6 +232,7 @@ def make_task_coordinator(deps: GraphDeps) -> NodeFn:
 
         def escalate(question: str) -> Command[str]:
             ts.status = TaskStatus.NEEDS_HUMAN
+            ts.friction = [*ts.friction, f"Escalated to the human ({kind}): {reason}"]
             return Command(goto="escalate", update=ctx.update(escalation_question=question))
 
         # ---- merge conflicts: deterministic, a Developer resolves them in the worktree
@@ -318,6 +319,8 @@ def make_task_coordinator(deps: GraphDeps) -> NodeFn:
         if decision.action == "retry":
             ts.feedback = f"{ts.feedback or ''}\n\nCoordinator guidance: {decision.guidance}"
             ts.feedback = ts.feedback.strip()
+            note = f"Coordinator retry ({kind}): {reason} -> {decision.guidance}"
+            ts.friction = [*ts.friction, note]
             ts.status = TaskStatus.IN_PROGRESS
             return Command(
                 goto=failed_node if failed_node in ("developer", "reviewer", "qa") else "developer",

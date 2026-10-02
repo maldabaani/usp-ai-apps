@@ -20,6 +20,7 @@ from langchain_core.messages import (
 from langgraph.errors import GraphBubbleUp
 
 from devcrew.config import Settings
+from devcrew.db.lessons import InMemoryLessonStore, LessonStore
 from devcrew.db.steering import InMemorySteeringStore, SteeringStore
 from devcrew.events.bus import EventBus
 from devcrew.events.cache import EventCache
@@ -64,6 +65,9 @@ class GraphDeps:
     steering: SteeringStore = field(default_factory=InMemorySteeringStore)
     # Phase 16: live preview of the generated app (None: sandbox or preview disabled)
     preview: PreviewManager | None = None
+    # Candidate stack-rule bullets proposed from run friction, queued for human approval
+    # (devcrew/learning.py's propose_lesson()). Postgres in production.
+    lessons: LessonStore = field(default_factory=InMemoryLessonStore)
 
     def __post_init__(self) -> None:
         self.llm.on_usage = self._record_usage

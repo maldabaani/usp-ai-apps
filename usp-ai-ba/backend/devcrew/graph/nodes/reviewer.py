@@ -173,6 +173,9 @@ def make_reviewer(deps: GraphDeps) -> NodeFn:
             return Command(goto="qa", update=ctx.update())
         ctx.ts.status = TaskStatus.IN_PROGRESS
         ctx.ts.feedback = render_feedback(review, deps.rules.rule_texts([ctx.task.stack]))
+        top = next((i for i in review.issues if i.severity in ("blocker", "major")), None)
+        if top is not None:
+            ctx.ts.friction = [*ctx.ts.friction, f"Review requested changes: {top.message}"]
         return Command(goto="developer", update=ctx.update())
 
     return reviewer

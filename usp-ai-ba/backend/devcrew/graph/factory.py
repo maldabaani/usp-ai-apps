@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 
 from devcrew.config import Settings
+from devcrew.db.lessons import InMemoryLessonStore, LessonStore
 from devcrew.db.steering import InMemorySteeringStore, SteeringStore
 from devcrew.events.bus import EventBus
 from devcrew.github.client import GitHubClient
@@ -67,6 +68,7 @@ def build_deps(
     rag: RagService | None = None,
     github: GitHubDelivery | None = None,
     steering: SteeringStore | None = None,
+    lessons: LessonStore | None = None,
     storyforge_retrieval: (
         Callable[[str, int], Awaitable[dict[str, list[dict]]]] | None
     ) = _storyforge_retrieval,
@@ -108,4 +110,5 @@ def build_deps(
         steering=steering if steering is not None else InMemorySteeringStore(),
         preview=preview,
         storyforge_retrieval=storyforge_retrieval,
+        lessons=lessons if lessons is not None else InMemoryLessonStore(),
     )

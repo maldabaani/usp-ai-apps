@@ -11,7 +11,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from devcrew.config import Settings
-from devcrew.db.lessons import InMemoryLessonStore, LessonRepository, LessonStore
+from devcrew.db.lessons import LessonRepository, LessonStore
 from devcrew.db.repository import RunRepository, RunStore
 from devcrew.db.session import create_engine, create_sessionmaker
 from devcrew.db.steering import SteeringRepository
@@ -52,12 +52,10 @@ class Container:
         checkpointer: BaseCheckpointSaver[Any],
         engine: AsyncEngine | None = None,
         watch: WatchStore | None = None,
-        lessons: LessonStore | None = None,
     ) -> Container:
         driver = RunDriver(build_graph(deps, checkpointer), deps.events, runs)
         manager = RunManager(driver, runs, deps.events, deps)
         watch = watch if watch is not None else InMemoryWatchStore()
-        lessons = lessons if lessons is not None else InMemoryLessonStore()
         return cls(
             settings=settings,
             engine=engine,
@@ -69,7 +67,7 @@ class Container:
             manager=manager,
             watch=watch,
             watcher=GitHubWatcher(settings, manager, watch, deps.github),
-            lessons=lessons,
+            lessons=deps.lessons,
         )
 
     @classmethod
@@ -79,7 +77,11 @@ class Container:
         sessionmaker = create_sessionmaker(engine)
         events = EventBus(PostgresEventStore(sessionmaker))
         deps = build_deps(
-            settings, events, llm=build_llm(settings), steering=SteeringRepository(sessionmaker)
+            settings,
+            events,
+            llm=build_llm(settings),
+            steering=SteeringRepository(sessionmaker),
+            lessons=LessonRepository(sessionmaker),
         )
         async with postgres_checkpointer(settings.database_url) as saver:
             container = cls.assemble(
@@ -89,7 +91,6 @@ class Container:
                 checkpointer=saver,
                 engine=engine,
                 watch=WatchRepository(sessionmaker),
-                lessons=LessonRepository(sessionmaker),
             )
             try:
                 yield container

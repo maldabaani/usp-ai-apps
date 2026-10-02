@@ -398,6 +398,11 @@ class TaskState(BaseModel):
     # PR follow-up: merge this ref (the PR base) into the task branch first; the task result
     # is then fast-forwarded (not squashed) so the merge commit keeps the base as a parent.
     merge_from: str | None = None
+    # Short notes of what went wrong along the way (a changes_requested review, an automatic
+    # Coordinator retry) -- unlike `feedback`/`human_guidance` these never get cleared, so a
+    # merged task's friction survives to be summarized into a candidate lesson (see
+    # devcrew/learning.py and task_subgraph.py's make_merge()).
+    friction: list[str] = Field(default_factory=list)
 
 
 UNFINISHED_LABELS = (("failed", "failed"), ("blocked", "blocked"), ("needs_human", "unresolved"))
