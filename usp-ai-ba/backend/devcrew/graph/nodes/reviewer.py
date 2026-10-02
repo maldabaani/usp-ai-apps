@@ -125,11 +125,14 @@ def make_reviewer(deps: GraphDeps) -> NodeFn:
             except ToolError:
                 rules = ""
             system = deps.prompts.get(NODE, ReviewResult)
+            if rules:
+                # Folded into the system prompt so a Claude Cloud run can cache this prefix
+                # instead of repaying for the same rules on every re-review of this task.
+                system = f"{system}\n\n## {ctx.task.stack} rules\n{rules}"
             context = reviewer_context(
                 ctx.task,
                 ctx.plan,
                 ctx.design,
-                rules,
                 diff,
                 budget_for(deps.llm.spec(Role.REVIEWER).prompt_budget, system),
                 related_code=await retrieve(deps, ctx.run_id, task_query(ctx.task)),

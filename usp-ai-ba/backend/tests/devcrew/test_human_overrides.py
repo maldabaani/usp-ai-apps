@@ -20,7 +20,6 @@ def test_human_instructions_come_last_and_override() -> None:
         plan,
         Design.model_validate(DESIGN),
         TaskState(id="T2", iterations=1, feedback="Return a dictionary"),
-        "rules",
         "app/main.py",
         budget=4000,
         notes=["(for this task) Return the Bookmark Pydantic model, not a dict"],

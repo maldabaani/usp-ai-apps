@@ -42,12 +42,31 @@ def truncated(content: str) -> AIMessage:
     )
 
 
+def message_text(message: BaseMessage) -> str:
+    """Plain text of a message's content, whether it's a plain string (Ollama, and every
+    Anthropic message except the system prompt) or a list of content blocks (the system
+    message on a Claude Cloud call, wrapped with a cache_control breakpoint -- see
+    devcrew.llm.client._with_cache_control)."""
+    content = message.content
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, dict):
+                parts.append(str(block.get("text", "")))
+            else:
+                parts.append(str(block))
+        return "\n".join(parts)
+    return str(content)
+
+
 def role_of(messages: Sequence[BaseMessage]) -> str:
     first = messages[0]
     assert isinstance(first, SystemMessage), "first message must be the role's system prompt"
-    header = str(first.content).splitlines()[0]
-    role = header.removeprefix("# Role: ").strip().lower()
-    if "summarize a test run" in str(first.content).lower():
+    text = message_text(first)
+    role = text.splitlines()[0].removeprefix("# Role: ").strip().lower()
+    if "summarize a test run" in text.lower():
         return "qa_report"
     return role
 
@@ -70,7 +89,7 @@ class Call:
         return len(self.messages) == 2 and isinstance(self.messages[1], HumanMessage)
 
     def text(self) -> str:
-        return "\n".join(str(m.content) for m in self.messages)
+        return "\n".join(message_text(m) for m in self.messages)
 
 
 Responder = Callable[[Call], AIMessage]

@@ -80,12 +80,18 @@ def make_developer(deps: GraphDeps) -> NodeFn:
             limit=deps.settings.max_questions_per_task,
         )
         system = deps.prompts.get(NODE)
+        try:
+            rules = deps.rules.read(ctx.task.stack)
+        except ToolError:
+            rules = ""
+        if rules:
+            # Folded into the system prompt, not a context section: stack rules are static
+            # across every attempt of this task (and every other task of this stack), so a
+            # Claude Cloud run can cache this whole prefix instead of paying full price for the
+            # same rules text on every single retry (see client.py's _with_cache_control()).
+            system = f"{system}\n\n## {ctx.task.stack} rules\n{rules}"
 
         async def context() -> str:
-            try:
-                rules = deps.rules.read(ctx.task.stack)
-            except ToolError:
-                rules = ""
             related = await retrieve(deps, ctx.run_id, task_query(ctx.task))
             notes = await task_notes(deps, state, ctx.task.id, deliver=True)
             # Empty on a first attempt (nothing committed yet); on a retry this is the real diff
@@ -97,7 +103,6 @@ def make_developer(deps: GraphDeps) -> NodeFn:
                 ctx.plan,
                 ctx.design,
                 ctx.ts,
-                rules,
                 "\n".join(ctx.workspace.list(".", depth=4)),
                 budget_for(deps.llm.spec(Role.DEVELOPER).prompt_budget, system),
                 qa=qa_entries(qa_log, task_id=ctx.task.id),

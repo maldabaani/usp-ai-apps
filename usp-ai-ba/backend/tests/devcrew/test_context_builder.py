@@ -39,7 +39,7 @@ def test_developer_context_scoped_to_task() -> None:
     task = plan.task("T2")
     ts = TaskState(id="T2", iterations=1, feedback="Fix the 404 handling")
     out = developer_context(
-        task, plan, Design.model_validate(DESIGN), ts, "rules", "app/main.py", budget=4000
+        task, plan, Design.model_validate(DESIGN), ts, "app/main.py", budget=4000
     )
     assert "id: T2" in out and "Fix the 404 handling" in out and "attempt 2" in out
     # other tasks appear only as a boundary (title and files), not with their descriptions
@@ -59,7 +59,6 @@ def test_developer_context_lists_files_already_touched() -> None:
         plan,
         Design.model_validate(DESIGN),
         ts,
-        "rules",
         "app/main.py",
         budget=4000,
         touched_files=["app/routers/todos.py", "app/schemas/todo.py"],
@@ -77,7 +76,6 @@ def test_developer_context_bounds_a_long_touched_files_list() -> None:
         plan,
         Design.model_validate(DESIGN),
         TaskState(id="T2", iterations=1),
-        "rules",
         "app/main.py",
         budget=4000,
         touched_files=files,
@@ -94,7 +92,6 @@ def test_developer_context_omits_touched_files_section_on_a_first_attempt() -> N
         plan,
         Design.model_validate(DESIGN),
         TaskState(id="T1"),
-        "rules",
         "app/main.py",
         budget=4000,
     )
@@ -108,7 +105,6 @@ def test_developer_context_respects_small_budget() -> None:
         plan,
         Design.model_validate(DESIGN),
         TaskState(id="T1"),
-        "rule\n" * 5000,
         "file\n" * 5000,
         budget=800,
     )
@@ -123,7 +119,6 @@ def test_retrieved_code_is_truncated_to_fit_budget() -> None:
         plan,
         Design.model_validate(DESIGN),
         TaskState(id="T2"),
-        "rules",
         "app/main.py",
         budget=900,
         related_code="\n\n".join([chunk] * 50),

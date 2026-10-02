@@ -172,13 +172,16 @@ def make_qa(deps: GraphDeps) -> NodeFn:
         except ToolError:
             rules = ""
         system = deps.prompts.get(NODE)
+        if rules:
+            # Folded into the system prompt so a Claude Cloud run can cache this prefix instead
+            # of repaying for the same testing rules on every QA call of this task.
+            system = f"{system}\n\n## {ctx.task.stack} testing rules\n{rules}"
         context = qa_context(
             ctx.task,
             ctx.plan,
             ctx.design,
             changed,
             command,
-            rules,
             budget_for(deps.llm.spec(Role.QA).prompt_budget, system),
             existing_tests=await retrieve(
                 deps,

@@ -98,7 +98,7 @@ def test_a_task_that_changes_another_tasks_file_is_still_reviewed_on_it() -> Non
 
 def test_the_reviewer_sees_the_other_tasks() -> None:
     p = plan()
-    text = reviewer_context(p.tasks[0], p, Design.model_validate(DESIGN), "", DIFF, 8000)
+    text = reviewer_context(p.tasks[0], p, Design.model_validate(DESIGN), DIFF, 8000)
     assert "Other tasks of the plan" in text
     assert "T3 Bookmarks router (files: app/routers/bookmarks.py)" in text
     assert "T1 Define Bookmark Model (files" not in text
@@ -125,7 +125,7 @@ def test_developer_and_qa_see_the_other_tasks() -> None:
 
     p = plan()
     design = Design.model_validate(DESIGN)
-    dev = developer_context(p.tasks[0], p, design, TaskState(id="T1"), "", "", 8000)
+    dev = developer_context(p.tasks[0], p, design, TaskState(id="T1"), "", 8000)
     assert "Other tasks of the plan" in dev and "T4 Endpoint tests" in dev
-    qa = qa_context(p.tasks[0], p, design, ["app/schemas/bookmark.py"], "pytest -q", "", 8000)
+    qa = qa_context(p.tasks[0], p, design, ["app/schemas/bookmark.py"], "pytest -q", 8000)
     assert "do NOT test their code" in qa and "T3 Bookmarks router" in qa

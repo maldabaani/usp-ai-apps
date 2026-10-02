@@ -271,7 +271,6 @@ def developer_context(
     plan: Plan,
     design: Design,
     task_state: TaskState,
-    rules: str,
     file_tree: str,
     budget: int,
     *,
@@ -280,6 +279,10 @@ def developer_context(
     notes: Sequence[str] = (),
     touched_files: Sequence[str] = (),
 ) -> str:
+    # Stack rules are no longer a section here: the caller folds them into the system prompt
+    # instead (see developer.py), since they're static across every attempt of a task -- putting
+    # them in the system message lets a Claude Cloud run cache that prefix instead of paying
+    # full price for the same rules text on every single retry.
     sections = [
         Section("Your task", render_task(task), priority=0, required=True),
         Section(
@@ -300,7 +303,6 @@ def developer_context(
         ),
         Section("Key design decisions", "\n".join(f"- {d}" for d in design.key_decisions), 4),
         Section("Relevant existing code (retrieved; may be partial)", related_code, priority=3),
-        Section(f"{task.stack} rules", rules, priority=5),
         Section("Project files", file_tree, priority=6),
     ]
     if task_state.feedback:
@@ -352,13 +354,14 @@ def reviewer_context(
     task: PlanTask,
     plan: Plan,
     design: Design,
-    rules: str,
     diff: str,
     budget: int,
     *,
     related_code: str = "",
     notes: Sequence[str] = (),
 ) -> str:
+    # Stack rules: folded into the system prompt by the caller (see reviewer.py), not a section
+    # here -- same caching reasoning as developer_context().
     return fit_sections(
         [
             Section("Task under review", render_task(task), priority=0, required=True),
@@ -376,7 +379,6 @@ def reviewer_context(
             ),
             Section("Design contracts", render_contracts(design, task.target_files), 2),
             Section("Diff (integration...task branch)", diff or "(no changes)", 3),
-            Section(f"{task.stack} rules", rules, priority=4),
             Section("Existing code the change interacts with (retrieved)", related_code, 5),
         ],
         budget,
@@ -389,11 +391,12 @@ def qa_context(
     design: Design,
     changed_files: Sequence[str],
     test_cmd: str,
-    rules: str,
     budget: int,
     *,
     existing_tests: str = "",
 ) -> str:
+    # Stack rules: folded into the system prompt by the caller (see qa.py), not a section here --
+    # same caching reasoning as developer_context().
     return fit_sections(
         [
             Section("Task to test", render_task(task), priority=0, required=True),
@@ -413,7 +416,6 @@ def qa_context(
             Section("Design contracts", render_contracts(design, task.target_files), 3),
             Section("Test command (run for you after you finish)", test_cmd, 1),
             Section("Existing tests (follow their fixtures and style)", existing_tests, 4),
-            Section(f"{task.stack} testing rules", rules, priority=5),
         ],
         budget,
     )

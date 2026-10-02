@@ -18,7 +18,7 @@ from typing import Any
 import httpx
 from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
 from langchain_ollama import ChatOllama, OllamaEmbeddings
 
 from devcrew.llm.models_config import ModelsConfig, ModelSpec, Role
@@ -77,6 +77,33 @@ class CallPrompt:
 
 
 PromptHook = Callable[[CallPrompt], Awaitable[None]]
+
+
+def _with_cache_control(messages: Sequence[BaseMessage]) -> list[BaseMessage]:
+    """Mark the leading SystemMessage as cacheable for a Claude Cloud call.
+
+    The role's system prompt (its instructions, output schema, and -- as of the prompt-caching
+    change -- the stack rules folded in by developer.py/reviewer.py/qa.py) is identical across
+    every call of that role within a run, often across many retries of the same task. Anthropic
+    prices a cache *read* at roughly a tenth of the normal input rate (after a one-time premium
+    to write it), so marking this prefix cacheable turns repeated calls from paying full price
+    for the same static text into near-free reads. Below Anthropic's minimum cacheable size
+    (1024 tokens for Sonnet/Opus) the breakpoint is silently ignored, not an error -- so this is
+    always safe to apply, it just has no effect on a role/stack combination too small to clear
+    that floor. Only ever called for the "anthropic" provider; Ollama has no such mechanism and
+    ChatOllama would not understand this content shape.
+    """
+    if not messages or not isinstance(messages[0], SystemMessage):
+        return list(messages)
+    system = messages[0]
+    if not isinstance(system.content, str):
+        return list(messages)  # already a structured content list; don't double-wrap it
+    cached = SystemMessage(
+        content=[
+            {"type": "text", "text": system.content, "cache_control": {"type": "ephemeral"}}
+        ]
+    )
+    return [cached, *messages[1:]]
 
 
 def token_counts(message: AIMessage) -> tuple[int, int]:
@@ -235,9 +262,12 @@ class LLMGateway:
         kwargs: dict[str, Any] = {}
         if output_format is not None:
             kwargs["format"] = output_format
+        sent = (
+            _with_cache_control(messages) if self.spec(role).provider == "anthropic" else list(messages)
+        )
         async with self._semaphore:
             started = time.monotonic()
-            result = await model.ainvoke(list(messages), **kwargs)
+            result = await model.ainvoke(sent, **kwargs)
             duration_ms = int((time.monotonic() - started) * 1000)
         if not isinstance(result, AIMessage):
             raise TypeError(f"Expected AIMessage from chat model, got {type(result).__name__}")

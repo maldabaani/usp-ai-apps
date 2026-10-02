@@ -6,23 +6,25 @@ from typing import Any, cast
 import pytest
 from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
-from devcrew.llm.client import CallScope, LLMGateway, llm_scope
+from devcrew.llm.client import CallScope, LLMGateway, _with_cache_control, llm_scope
 from devcrew.llm.models_config import ModelsConfig, ModelSpec, Role
 
 
 class FakeChat:
-    """Records peak concurrency; Ollama is never contacted."""
+    """Records peak concurrency and every call's messages; Ollama is never contacted."""
 
     def __init__(self) -> None:
         self.active = 0
         self.peak = 0
         self.specs: list[ModelSpec] = []
+        self.received: list[list[BaseMessage]] = []
 
     async def ainvoke(self, messages: list[BaseMessage], **kwargs: Any) -> AIMessage:
         self.active += 1
         self.peak = max(self.peak, self.active)
+        self.received.append(messages)
         await asyncio.sleep(0.02)
         self.active -= 1
         return AIMessage(
@@ -148,3 +150,56 @@ def test_spec_ignores_engine_when_not_anthropic() -> None:
         assert gw.spec(Role.DEVELOPER).model == "m"
     finally:
         llm_scope.reset(token)
+
+
+def test_with_cache_control_marks_the_system_message() -> None:
+    out = _with_cache_control([SystemMessage(content="instructions"), HumanMessage(content="hi")])
+    assert out[0].content == [
+        {"type": "text", "text": "instructions", "cache_control": {"type": "ephemeral"}}
+    ]
+    assert out[1].content == "hi"  # untouched
+
+
+def test_with_cache_control_is_a_noop_without_a_leading_system_message() -> None:
+    messages = [HumanMessage(content="hi")]
+    assert _with_cache_control(messages) == messages
+
+
+def test_with_cache_control_does_not_double_wrap_structured_content() -> None:
+    already = SystemMessage(content=[{"type": "text", "text": "x", "cache_control": {}}])
+    out = _with_cache_control([already, HumanMessage(content="hi")])
+    assert out[0] is already
+
+
+async def test_ainvoke_caches_the_system_message_only_for_anthropic_calls() -> None:
+    fake = FakeChat()
+
+    def factory(spec: ModelSpec) -> BaseChatModel:
+        return cast(BaseChatModel, fake)
+
+    models = ModelsConfig.model_validate({"defaults": {"model": "m"}})
+    gw = LLMGateway(
+        models,
+        base_url="http://ollama:11434",
+        max_parallel=1,
+        chat_factory=factory,
+        cloud_spec=_cloud_spec(),
+    )
+    messages = [SystemMessage(content="rules and instructions"), HumanMessage(content="go")]
+
+    # Plain Ollama call: the system message is sent as-is.
+    await gw.ainvoke(Role.DEVELOPER, messages)
+    assert fake.received[-1][0].content == "rules and instructions"
+
+    # Claude Cloud call (engine="anthropic" in scope): the gateway wraps it for caching.
+    token = llm_scope.set(CallScope(run_id="r", node="developer", engine="anthropic"))
+    try:
+        await gw.ainvoke(Role.DEVELOPER, messages)
+    finally:
+        llm_scope.reset(token)
+    sent_system = fake.received[-1][0].content
+    assert isinstance(sent_system, list)
+    assert sent_system[0]["cache_control"] == {"type": "ephemeral"}
+    assert sent_system[0]["text"] == "rules and instructions"
+    # The caller's own messages list is never mutated in place.
+    assert messages[0].content == "rules and instructions"
