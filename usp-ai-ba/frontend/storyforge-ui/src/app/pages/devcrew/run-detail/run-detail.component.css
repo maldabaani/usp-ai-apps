@@ -192,6 +192,45 @@
   margin-top: 10px;
 }
 
+.dc-gate-question {
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 0 0 14px;
+}
+
+.dc-gate-task {
+  border: 1px solid var(--sf-border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+
+.dc-gate-task-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.dc-gate-check {
+  border: 1px solid var(--sf-border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.dc-gate-issues {
+  margin: 4px 0 8px;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.dc-gate-issues li {
+  margin-bottom: 2px;
+}
+
 /* ── Plan / design ────────────────────────────────────────────────────────── */
 .dc-plan-summary {
   margin: 0;

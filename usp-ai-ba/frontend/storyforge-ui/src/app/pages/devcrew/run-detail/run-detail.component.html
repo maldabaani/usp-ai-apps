@@ -125,7 +125,123 @@
           <ng-container *ngIf="pendingGate as gate">
             <h2 class="dc-section-title">Action needed: {{ gate.title }}</h2>
             <p class="dc-gate-kind">{{ gate.kind }}</p>
-            <pre class="dc-gate-data" *ngIf="gate.data && (gate.data | json) !== '{}'">{{ gate.data | json }}</pre>
+
+            <!-- Final approval: tasks, integration summary, quality gates -->
+            <ng-container *ngIf="gateShape === 'final-approval'">
+              <p class="dc-gate-question" *ngIf="finalApprovalUnfinished">
+                Incomplete: {{ finalApprovalUnfinished }}
+              </p>
+
+              <h3 class="dc-subheading">Tasks</h3>
+              <div class="dc-gate-task" *ngFor="let task of finalApprovalTasks">
+                <div class="dc-gate-task-head">
+                  <strong>{{ task.id }}</strong>
+                  <span class="dc-status-badge" [ngClass]="statusClass(task.status)">{{ humanizeStatus(task.status) }}</span>
+                  <span class="dc-panel-meta">{{ task.iterations }} iteration(s)</span>
+                </div>
+                <ng-container *ngIf="task.review as review">
+                  <p class="dc-panel-meta">
+                    Review:
+                    <span class="dc-status-badge" [ngClass]="statusClass(review.decision)">{{ humanizeStatus(review.decision) }}</span>
+                    {{ review.summary }}
+                  </p>
+                  <ul class="dc-gate-issues" *ngIf="review.issues.length">
+                    <li *ngFor="let issue of review.issues">
+                      <span class="dc-status-badge" [ngClass]="statusClass(issue.severity)">{{ issue.severity }}</span>
+                      <span *ngIf="issue.rule_ref">[{{ issue.rule_ref }}]</span>
+                      {{ issue.file }}<span *ngIf="issue.line !== null">:{{ issue.line }}</span> — {{ issue.message }}
+                    </li>
+                  </ul>
+                </ng-container>
+                <p class="dc-panel-meta" *ngIf="task.test_results as tr">
+                  Tests:
+                  <span class="dc-status-badge" [ngClass]="testBadgeClass(tr.passed)">{{ tr.passed ? 'passed' : 'failed' }}</span>
+                  <span *ngIf="tr.failed.length"> — {{ tr.failed.join(', ') }}</span>
+                </p>
+                <p class="sf-error-text" *ngIf="task.error">{{ task.error }}</p>
+              </div>
+
+              <ng-container *ngIf="finalApprovalIntegration as integ">
+                <h3 class="dc-subheading">Integration</h3>
+                <dl class="dc-detail-list">
+                  <dt>Merged</dt>
+                  <dd>{{ integ.merged.join(', ') || '—' }}</dd>
+                  <ng-container *ngIf="integ.failed.length">
+                    <dt>Failed</dt>
+                    <dd>{{ integ.failed.join(', ') }}</dd>
+                  </ng-container>
+                  <ng-container *ngIf="integ.blocked.length">
+                    <dt>Blocked</dt>
+                    <dd>{{ integ.blocked.join(', ') }}</dd>
+                  </ng-container>
+                  <ng-container *ngFor="let t of integ.tests | keyvalue">
+                    <dt>{{ t.key }} tests</dt>
+                    <dd>
+                      <span class="dc-status-badge" [ngClass]="testBadgeClass(t.value.passed)">{{ t.value.passed ? 'passed' : 'failed' }}</span>
+                    </dd>
+                  </ng-container>
+                  <ng-container *ngFor="let c of integ.coverage | keyvalue">
+                    <dt>{{ c.key }} coverage</dt>
+                    <dd>{{ c.value }}%</dd>
+                  </ng-container>
+                </dl>
+              </ng-container>
+
+              <ng-container *ngIf="finalApprovalGates.length">
+                <h3 class="dc-subheading">Quality gates</h3>
+                <div class="dc-gate-check" *ngFor="let g of finalApprovalGates">
+                  <span class="dc-status-badge" [ngClass]="statusClass(g.status)">{{ g.status }}</span>
+                  <strong>{{ g.name }}</strong> — {{ g.summary }}
+                  <span class="dc-panel-meta" *ngIf="!g.allowable">(blocking)</span>
+                  <ul class="dc-gate-issues" *ngIf="g.details.length">
+                    <li *ngFor="let d of g.details">{{ d }}</li>
+                  </ul>
+                </div>
+              </ng-container>
+            </ng-container>
+
+            <!-- Task escalation (iteration limit / agent error routed to the Coordinator) -->
+            <ng-container *ngIf="gateShape === 'task-escalation'">
+              <p class="dc-panel-meta" *ngIf="escalationTaskTitle">
+                <strong>{{ escalationTaskTitle }}</strong>
+                <span *ngIf="escalationIterations !== null"> · attempt {{ escalationIterations }}</span>
+              </p>
+              <p class="dc-gate-question">{{ escalationQuestion || escalationReason }}</p>
+
+              <ng-container *ngIf="escalationReview as review">
+                <h3 class="dc-subheading">
+                  Review:
+                  <span class="dc-status-badge" [ngClass]="statusClass(review.decision)">{{ humanizeStatus(review.decision) }}</span>
+                </h3>
+                <p class="dc-panel-meta" *ngIf="review.summary">{{ review.summary }}</p>
+                <ul class="dc-gate-issues" *ngIf="review.issues.length">
+                  <li *ngFor="let issue of review.issues">
+                    <span class="dc-status-badge" [ngClass]="statusClass(issue.severity)">{{ issue.severity }}</span>
+                    <span *ngIf="issue.rule_ref">[{{ issue.rule_ref }}]</span>
+                    {{ issue.file }}<span *ngIf="issue.line !== null">:{{ issue.line }}</span> — {{ issue.message }}
+                  </li>
+                </ul>
+              </ng-container>
+
+              <ng-container *ngIf="escalationTestResults as tr">
+                <h3 class="dc-subheading">
+                  Tests:
+                  <span class="dc-status-badge" [ngClass]="testBadgeClass(tr.passed)">{{ tr.passed ? 'passed' : 'failed' }}</span>
+                </h3>
+                <p class="dc-panel-meta" *ngIf="tr.failed.length">{{ tr.failed.join(', ') }}</p>
+                <pre class="dc-gate-data" *ngIf="tr.logs_excerpt">{{ tr.logs_excerpt }}</pre>
+              </ng-container>
+            </ng-container>
+
+            <!-- GitHub delivery failure -->
+            <ng-container *ngIf="gateShape === 'delivery-failure'">
+              <p class="dc-gate-question">{{ escalationQuestion || escalationReason }}</p>
+            </ng-container>
+
+            <!-- Fallback for gate shapes without a dedicated view yet (plan/design approval,
+                 ask_human, budget/pause/watch): the raw data, at least pretty-printed. -->
+            <pre class="dc-gate-data" *ngIf="gateShape === 'generic' && gate.data && (gate.data | json) !== '{}'">{{ gate.data | json }}</pre>
+
             <textarea
               class="sf-textarea"
               rows="3"
@@ -246,10 +362,14 @@
           </ng-container>
         </div>
 
-        <!-- Generic fallback: prepare_repo, scaffold, integration, gates, delivery, follow-up nodes -->
+        <!-- Generic fallback: prepare_repo, scaffold, integration, gates, delivery, follow-up nodes.
+             A pending gate (e.g. a GitHub-delivery failure) can land on one of these -- they are
+             'output'/'system' kind, not 'approval'/'task', so without this they'd show the
+             activity log with no way to act on the gate at all. -->
         <div *ngSwitchDefault>
           <ng-container *ngIf="selectedNode as node">
             <h2 class="dc-section-title">{{ node.label }}</h2>
+            <ng-container *ngIf="selectedNodeNeedsGate" [ngTemplateOutlet]="gateForm"></ng-container>
             <span class="dc-status-badge" [ngClass]="statusClass(node.status)">
               {{ humanizeStatus(node.status) }}
             </span>

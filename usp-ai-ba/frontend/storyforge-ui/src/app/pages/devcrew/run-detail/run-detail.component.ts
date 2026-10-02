@@ -24,6 +24,62 @@ import { CanvasViewMode, WorkflowCanvasComponent } from './workflow-canvas/workf
 const POLL_MS = 3000;
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
 
+// Shapes of PendingInput.data this component renders structured (not raw JSON) views for.
+// All three come straight off the matching Python dataclasses/Pydantic models in
+// devcrew/graph/nodes/approvals.py (final approval), the Coordinator escalation payload, and
+// devcrew/graph/nodes/finish.py's delivery_failed node -- kept loosely typed (optional fields)
+// since this is JSON crossing a process boundary, not a compile-time guarantee.
+interface GateReviewIssue {
+  file: string;
+  line: number | null;
+  severity: string;
+  message: string;
+  rule_ref: string | null;
+}
+
+interface GateReview {
+  decision: string;
+  summary: string;
+  issues: GateReviewIssue[];
+}
+
+interface GateTestResults {
+  ran: boolean;
+  passed: boolean;
+  failed: string[];
+  logs_excerpt: string;
+  command: string;
+}
+
+interface FinalApprovalTask {
+  id: string;
+  status: string;
+  branch: string | null;
+  iterations: number;
+  review: GateReview | null;
+  test_results: GateTestResults | null;
+  feedback: string | null;
+  error: string | null;
+  coordinator_actions: number;
+}
+
+interface GateCheckResult {
+  name: string;
+  status: string;
+  summary: string;
+  details: string[];
+  allowable: boolean;
+}
+
+interface FinalApprovalIntegration {
+  merged: string[];
+  failed: string[];
+  blocked: string[];
+  cancelled: string[];
+  tests: Record<string, GateTestResults>;
+  coverage: Record<string, number>;
+}
+
 function formatDuration(seconds: number): string {
   const total = Math.round(seconds);
   const m = Math.floor(total / 60);
@@ -157,6 +213,67 @@ export class RunDetailComponent implements OnInit, OnDestroy {
     }
     const text = (options as Record<string, unknown>)[action];
     return typeof text === 'string' ? text : null;
+  }
+
+  // Which structured view (if any) the gate-resolve form below renders for the pending gate's
+  // data, instead of the raw-JSON fallback every gate used to get regardless of shape.
+  get gateShape(): 'final-approval' | 'task-escalation' | 'delivery-failure' | 'generic' {
+    const gate = this.pendingGate;
+    if (!gate) return 'generic';
+    if (gate.kind === 'approval' && gate.artifact === 'final') return 'final-approval';
+    if (gate.kind === 'escalation' && gate.data?.['task_id']) return 'task-escalation';
+    if (gate.kind === 'escalation' && gate.data?.['node'] === 'github_delivery') {
+      return 'delivery-failure';
+    }
+    return 'generic';
+  }
+
+  get finalApprovalTasks(): FinalApprovalTask[] {
+    const tasks = (this.pendingGate?.data?.['tasks'] ?? {}) as Record<string, FinalApprovalTask>;
+    return Object.values(tasks);
+  }
+
+  get finalApprovalIntegration(): FinalApprovalIntegration | null {
+    return (this.pendingGate?.data?.['integration'] as FinalApprovalIntegration | undefined) ?? null;
+  }
+
+  get finalApprovalGates(): GateCheckResult[] {
+    const gates = this.pendingGate?.data?.['gates'] as { results?: GateCheckResult[] } | undefined;
+    return gates?.results ?? [];
+  }
+
+  get finalApprovalUnfinished(): string {
+    return (this.pendingGate?.data?.['unfinished'] as string) || '';
+  }
+
+  get escalationTaskTitle(): string {
+    const task = this.pendingGate?.data?.['task'] as { title?: string } | undefined;
+    return task?.title ?? '';
+  }
+
+  get escalationReason(): string {
+    return (this.pendingGate?.data?.['reason'] as string) ?? '';
+  }
+
+  get escalationQuestion(): string {
+    return (this.pendingGate?.data?.['question'] as string) ?? '';
+  }
+
+  get escalationIterations(): number | null {
+    const v = this.pendingGate?.data?.['iterations'];
+    return typeof v === 'number' ? v : null;
+  }
+
+  get escalationReview(): GateReview | null {
+    return (this.pendingGate?.data?.['review'] as GateReview | null) ?? null;
+  }
+
+  get escalationTestResults(): GateTestResults | null {
+    return (this.pendingGate?.data?.['test_results'] as GateTestResults | null) ?? null;
+  }
+
+  testBadgeClass(passed: boolean): string {
+    return this.statusClass(passed ? 'passed' : 'failed');
   }
 
   get selectedNode(): WorkflowNode | null {
@@ -394,12 +511,26 @@ export class RunDetailComponent implements OnInit, OnDestroy {
     });
   }
 
+  // Also doubles as the badge color for gate-form vocabulary that isn't a node/task run status:
+  // review decisions (approve/changes_requested), gate check results (passed/failed/error),
+  // and review issue severities (blocker/major/minor/info).
   statusClass(status: string): string {
     if (status.startsWith('awaiting_') || status === 'needs_human' || status === 'paused') {
       return 'dc-status-waiting';
     }
-    if (status === 'completed' || status === 'done') return 'dc-status-done';
-    if (status === 'failed' || status === 'cancelled') return 'dc-status-error';
+    if (['completed', 'done', 'approve', 'approved', 'passed', 'merged'].includes(status)) {
+      return 'dc-status-done';
+    }
+    if (
+      ['failed', 'cancelled', 'error', 'changes_requested', 'blocked', 'blocker', 'major'].includes(
+        status
+      )
+    ) {
+      return 'dc-status-error';
+    }
+    if (['skipped', 'minor', 'info'].includes(status)) {
+      return 'dc-status-waiting';
+    }
     return 'dc-status-active';
   }
 
