@@ -13,6 +13,10 @@ from devcrew.tools.base import ToolError, ToolSpec
 RULE_ID_RE = re.compile(r"\*\*([A-Z]{2,5}-\d{3})\*\*")
 RULE_LINE_RE = re.compile(r"^- \*\*([A-Z]{2,5}-\d{3})\*\* (.+)$", re.MULTILINE)
 RULE_STACKS = ("python", "java", "angular")
+# 900-999 is reserved for rules learned from run friction (devcrew/learning.py) so an approved
+# lesson never renumbers or collides with the hand-curated 0xx-8xx ids above.
+LEARNED_RULE_PREFIXES = {"python": "PY", "java": "JAVA", "angular": "NG"}
+LEARNED_RULE_HEADING = "## Learned from experience"
 
 
 class RulesCatalog:
@@ -48,6 +52,34 @@ class RulesCatalog:
             except ToolError:
                 continue
         return texts
+
+    def append_rule(self, stack: str, rule_text: str) -> str:
+        """Append an approved lesson as a new rule bullet under a "Learned from experience"
+        heading, in the 900-999 id range reserved for it. Returns the assigned rule id (e.g.
+        "PY-901"). read() is uncached, so the new rule is citable by the Reviewer (rule_ref)
+        on the very next run -- no backend restart needed."""
+        prefix = LEARNED_RULE_PREFIXES.get(stack)
+        if prefix is None:
+            raise ToolError(
+                f"unknown stack '{stack}'. Use one of: {', '.join(LEARNED_RULE_PREFIXES)}"
+            )
+        text = self.read(stack)
+        used = {
+            int(rid.rsplit("-", 1)[1])
+            for rid in RULE_ID_RE.findall(text)
+            if rid.startswith(f"{prefix}-9")
+        }
+        next_n = max(used, default=900) + 1
+        if next_n > 999:
+            raise ToolError(f"no learned-rule ids left for {stack} (900-999 exhausted)")
+        rule_id = f"{prefix}-{next_n}"
+        line = f"- **{rule_id}** {rule_text.strip()}"
+        if LEARNED_RULE_HEADING in text:
+            text = text.rstrip("\n") + f"\n{line}\n"
+        else:
+            text = text.rstrip("\n") + f"\n\n{LEARNED_RULE_HEADING}\n{line}\n"
+        (self.rules_dir / f"{stack}.md").write_text(text, encoding="utf-8")
+        return rule_id
 
 
 class TemplateInfo(BaseModel):
