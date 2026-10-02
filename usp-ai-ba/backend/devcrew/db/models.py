@@ -126,6 +126,46 @@ class IssueRun(Base):
     )
 
 
+class LessonStatus(StrEnum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
+class LessonSource(StrEnum):
+    COORDINATOR_ESCALATION = "coordinator_escalation"
+    REVIEW_CYCLE = "review_cycle"
+    PR_COMMENT = "pr_comment"
+
+
+class Lesson(Base):
+    """A candidate rule bullet proposed from real run friction (Coordinator escalation, a
+    changes_requested -> approve review cycle, or a merged fix for a real PR comment) --
+    queued for human approval before it's appended to the stack's rules file (see
+    RulesCatalog.append_rule()). Durable organizational knowledge: kept even if the run it was
+    observed on is gone, so run_id is nullable and SET NULL on delete rather than CASCADE."""
+
+    __tablename__ = "lessons"
+    __table_args__ = (Index("ix_lessons_status", "status"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    run_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("runs.id", ondelete="SET NULL")
+    )
+    task_id: Mapped[str | None] = mapped_column(String(64))
+    stack: Mapped[str] = mapped_column(String(32), nullable=False)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    rule_text: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default=LessonStatus.PENDING)
+    # Assigned on approval (e.g. "PY-901"); None while pending/rejected.
+    rule_id: Mapped[str | None] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class RunMessage(Base):
     """A chat message from the human to a run (task_id None) or to one task (Phase 13)."""
 

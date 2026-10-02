@@ -11,6 +11,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from devcrew.config import Settings
+from devcrew.db.lessons import InMemoryLessonStore, LessonRepository, LessonStore
 from devcrew.db.repository import RunRepository, RunStore
 from devcrew.db.session import create_engine, create_sessionmaker
 from devcrew.db.steering import SteeringRepository
@@ -39,6 +40,7 @@ class Container:
     manager: RunManager
     watch: WatchStore
     watcher: GitHubWatcher
+    lessons: LessonStore
 
     @classmethod
     def assemble(
@@ -50,10 +52,12 @@ class Container:
         checkpointer: BaseCheckpointSaver[Any],
         engine: AsyncEngine | None = None,
         watch: WatchStore | None = None,
+        lessons: LessonStore | None = None,
     ) -> Container:
         driver = RunDriver(build_graph(deps, checkpointer), deps.events, runs)
         manager = RunManager(driver, runs, deps.events, deps)
         watch = watch if watch is not None else InMemoryWatchStore()
+        lessons = lessons if lessons is not None else InMemoryLessonStore()
         return cls(
             settings=settings,
             engine=engine,
@@ -65,6 +69,7 @@ class Container:
             manager=manager,
             watch=watch,
             watcher=GitHubWatcher(settings, manager, watch, deps.github),
+            lessons=lessons,
         )
 
     @classmethod
@@ -84,6 +89,7 @@ class Container:
                 checkpointer=saver,
                 engine=engine,
                 watch=WatchRepository(sessionmaker),
+                lessons=LessonRepository(sessionmaker),
             )
             try:
                 yield container
