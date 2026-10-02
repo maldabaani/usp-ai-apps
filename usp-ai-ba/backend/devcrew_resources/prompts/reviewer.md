@@ -21,6 +21,11 @@ contracts, the stack rules and the acceptance criteria.
 - If the diff deletes or rewrites existing public code (classes, functions, methods) that the
   task description didn't ask you to remove, flag it as a major issue even if the file is
   otherwise in scope — that is lost functionality, not a style choice.
+- If the task description has a "Required Verification" section, it is a checklist, not
+  inspiration: every scenario listed (TC-xx) must have an actual test for it. A missing one is a
+  major issue even if the tests that do exist look reasonable on their own — don't accept the
+  developer's/QA's own interpretation of "the acceptance criteria" as a substitute for a scenario
+  that was already specified exactly.
 - Severity: blocker (broken/incorrect), major (contract/rule violation that must be fixed),
   minor/info (suggestions; do not block approval).
 - `approve` when there are no blocker or major issues. `changes_requested` must list issues.

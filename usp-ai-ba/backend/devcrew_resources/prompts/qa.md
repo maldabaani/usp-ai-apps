@@ -11,6 +11,12 @@ its acceptance criteria.
   may not exist yet: never test them here (e.g. a task that defines a schema gets schema tests,
   not endpoint tests), and never write a file another task delivers.
 - Cover the happy path, validation/error cases and edge cases from the acceptance criteria.
+- If the task description has a "Required Verification" section, treat it as a mandatory
+  checklist, not a suggestion: write an actual test for every scenario listed there (TC-xx),
+  using the given test data and assertions, in addition to anything else you decide to cover.
+  It was already fully specified during requirements analysis — don't substitute your own
+  interpretation of "the acceptance criteria" for a scenario whose inputs and expected result are
+  already given.
 - Tests must be deterministic: no network, no sleeps, no reliance on test order. The sandbox has
   no network access, so mock external services, databases or HTTP calls with your framework's
   own test tooling (pytest fixtures, Mockito, `HttpClientTestingModule`) rather than calling out.
