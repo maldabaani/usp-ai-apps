@@ -32,7 +32,9 @@ def build_llm(settings: Settings) -> LLMGateway:
             provider="anthropic",
             num_ctx=200_000,
             num_predict=8192,
-            temperature=0.1,
+            # temperature left at its default: _default_chat_factory() never passes it to
+            # ChatAnthropic for the "anthropic" provider -- current-generation Claude models
+            # reject an explicit temperature outright, so this field is simply unused here.
             structured_format="none",
         )
     return LLMGateway(

@@ -108,7 +108,9 @@ def test_default_factory_builds_chat_anthropic_when_provider_is_anthropic() -> N
     gw = LLMGateway(models, base_url="http://ollama:11434", max_parallel=1, anthropic_api_key="k")
     model = gw._default_chat_factory(_cloud_spec())
     assert isinstance(model, ChatAnthropic)
-    assert (model.model, model.max_tokens, model.temperature) == ("claude-sonnet-5", 8192, 0.2)
+    assert (model.model, model.max_tokens) == ("claude-sonnet-5", 8192)
+    # Not sent at all: current-generation Claude models reject an explicit temperature outright.
+    assert model.temperature is None
 
 
 def test_spec_returns_cloud_spec_when_scope_engine_is_anthropic() -> None:

@@ -172,10 +172,15 @@ class LLMGateway:
 
     def _default_chat_factory(self, spec: ModelSpec) -> BaseChatModel:
         if spec.provider == "anthropic":
+            # No explicit temperature: current-generation Claude models (the Claude 5 family)
+            # reject it outright ("`temperature` is deprecated for this model") rather than
+            # just ignoring it, so passing spec.temperature here -- a value meaningful for
+            # Ollama's per-role tuning -- breaks every Claude Cloud call regardless of its
+            # value. Omitting the kwarg leaves it unset, which langchain_anthropic treats as
+            # "don't send the field" rather than "send the default".
             return ChatAnthropic(
                 model=spec.model,
                 max_tokens=spec.num_predict,
-                temperature=spec.temperature,
                 api_key=self._anthropic_api_key,
                 timeout=self._timeout,
             )
