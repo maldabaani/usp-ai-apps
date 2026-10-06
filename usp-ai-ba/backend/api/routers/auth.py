@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from api.deps import require_auth
-from api.user_store import verify_password
+from api.user_store import set_password, verify_password
 from config import settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -24,6 +24,12 @@ class LoginResponse(BaseModel):
     access_token: str
     username: str
     role: str
+    must_change_password: bool = False
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
 
 
 def _issue_token(username: str, role: str) -> str:
@@ -43,7 +49,26 @@ async def login(body: LoginRequest) -> LoginResponse:
     if user is None:
         raise HTTPException(status_code=401, detail="Invalid username or password")
     token = _issue_token(user["username"], user["role"])
-    return LoginResponse(access_token=token, username=user["username"], role=user["role"])
+    return LoginResponse(
+        access_token=token,
+        username=user["username"],
+        role=user["role"],
+        must_change_password=user["must_change_password"],
+    )
+
+
+@router.post("/change-password")
+async def change_password(
+    body: ChangePasswordRequest, user: dict = Depends(require_auth)
+) -> dict:
+    if verify_password(user["username"], body.current_password) is None:
+        raise HTTPException(status_code=401, detail="Current password is incorrect")
+    if len(body.new_password) < 8:
+        raise HTTPException(
+            status_code=422, detail="New password must be at least 8 characters"
+        )
+    set_password(user["username"], body.new_password)
+    return {"status": "password_changed"}
 
 
 @router.post("/logout")

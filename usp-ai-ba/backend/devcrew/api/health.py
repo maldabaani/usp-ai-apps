@@ -10,6 +10,16 @@ from devcrew.llm.models_config import Role
 
 router = APIRouter(tags=["health"], dependencies=[Depends(require_auth)])
 
+# Unauthenticated on purpose, and kept separate from `router` above (whose
+# router-level require_auth dependency applies to every route added to it,
+# with no per-route opt-out): a Docker HEALTHCHECK or external monitor can't
+# reasonably carry a JWT (8-hour expiry, no service-account flow), but
+# /health (full detail -- DB connectivity, Docker daemon version, GitHub
+# token validity) is more sensitive than that and should stay admin-useful-
+# dashboard-only. This route runs the same checks and returns only a bare
+# ok/not-ok, with none of the detail strings.
+live_router = APIRouter(tags=["health"])
+
 
 @router.get("/health", response_model=HealthReport)
 async def health(container: ContainerDep, response: Response) -> HealthReport:
@@ -21,6 +31,18 @@ async def health(container: ContainerDep, response: Response) -> HealthReport:
     if not report.ok:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     return report
+
+
+@live_router.get("/health/live")
+async def health_live(container: ContainerDep, response: Response) -> dict:
+    if container.engine is None:  # in-memory container (tests / headless)
+        return {"ok": True}
+    report = await run_health_checks(
+        container.settings, container.engine, container.llm.models.required_models()
+    )
+    if not report.ok:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    return {"ok": report.ok}
 
 
 class ClientConfig(BaseModel):

@@ -29,3 +29,6 @@ usp-ai-ba/backend/.pytest_cache/
 # usp-ai-ba frontend (Angular)
 usp-ai-ba/frontend/storyforge-ui/node_modules/
 usp-ai-ba/frontend/storyforge-ui/dist/
+
+# Gateway TLS cert/key (deploy/tls/ -- generated per-deployment, never committed)
+deploy/tls/

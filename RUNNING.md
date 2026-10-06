@@ -8,15 +8,18 @@ Business) grounded in that same corpus.
 ## Authentication (read this first)
 
 The FastAPI backend issues a JWT on `POST /auth/login` and every route checks
-it. There's no user management UI or endpoint yet: the first time the
-backend starts with no `users.json`, it seeds a default `admin` / `admin`
-account (logged loudly to the console when it happens), and that's the only
-account that exists until you add more. To add a real account (and/or retire
-this one), the only way today is calling `user_store.create_user(username,
-password, role)` directly (e.g. from a `python -c` one-liner run inside the
-backend's venv, with `JOBS_DIR` pointed at the same directory the running
-server uses) — don't expose this beyond local testing while `admin`/`admin`
-is still the only login.
+it. There's no user management UI yet: the first time the backend starts
+with no `users.json`, it seeds a default `admin` account with a **random,
+one-time password**, printed once to the server log (never the literal
+`"admin"`) — grep the startup log for `created default admin account` to
+find it. That account is flagged `must_change_password`, surfaced in the
+login response, so log in with the printed password and immediately call
+`POST /auth/change-password` (`{"current_password", "new_password"}`,
+needs the JWT from login) to rotate it. To add further real accounts, the
+only way today is calling `user_store.create_user(username, password,
+role)` directly (e.g. from a `python -c` one-liner run inside the backend's
+venv, with `JOBS_DIR` pointed at the same directory the running server
+uses).
 
 `JWT_SECRET` signs that token. Leave it unset for local dev and the backend
 auto-generates and persists one under `JOBS_DIR/.jwt_secret`, so restarting
@@ -65,7 +68,12 @@ ollama serve                # if not already running
 uvicorn api.main:app --reload --port 8000
 ```
 
-> ⚠️ `backend/.env.example` currently has a real-looking `NOTION_API_KEY` value checked in — rotate that token and treat it as compromised; don't reuse it.
+> `backend/.env.example` previously had a real-looking `NOTION_API_KEY` value checked in
+> (and in git history, across a few commits). That token has been removed from the working
+> tree and must be treated as compromised regardless — it was rotated/revoked in Notion's
+> integration settings as part of this change. If your clone predates this fix, don't reuse
+> that old value, and ask whoever maintains the remote whether a history rewrite
+> (`git filter-repo --replace-text`) has been coordinated yet.
 
 ### 2. Frontend (separate terminal)
 
@@ -176,22 +184,82 @@ open a real pull request.
 
 `storyforge-ui`'s landing page ("/") has the same cards described above. In
 production this is served through a single nginx gateway in front of one
-backend container:
+backend container, over **TLS** (self-signed by default — internal/VPN
+deployment, no public DNS assumed):
 
 - `/` → Angular shell (all pages)
 - `/api/*` → the FastAPI backend
 
-Run everything with Docker Compose from the repo root:
+### Day-0 checklist (do this once, before the first `docker compose up`)
+
+These are required, not optional — `docker-compose.yml` will refuse to start
+without `DEVCREW_DB_PASSWORD` (compose's `:?` required-variable syntax), and
+skipping the others leaves real gaps (a predictable default credential, an
+unencrypted login, sandboxed DevCrew runs that can't build their images).
+
+1. **Generate secrets.**
+   ```bash
+   export ANTHROPIC_API_KEY=sk-ant-...
+   export JWT_SECRET=$(openssl rand -hex 32)
+   export DEVCREW_DB_PASSWORD=$(openssl rand -hex 16)
+   ```
+   Put these in `usp-ai-ba/backend/.env` (not just the shell) so they survive
+   a new shell session, and `chmod 600 usp-ai-ba/backend/.env`.
+2. **Generate the gateway's TLS certificate** (self-signed; see "TLS" below
+   for when to use a real CA instead):
+   ```bash
+   mkdir -p deploy/tls
+   openssl req -x509 -nodes -days 825 -newkey rsa:2048 \
+     -keyout deploy/tls/server.key -out deploy/tls/server.crt \
+     -subj "/CN=usp-ai-apps.internal"
+   ```
+   `deploy/tls/` is gitignored — this never gets committed.
+3. **Build DevCrew's sandbox images** (needed before any run that actually
+   executes code — see "DevCrew requirements" above):
+   ```bash
+   ./scripts/build_sandbox_images.sh
+   ```
+4. **Confirm the backend container's non-root user can reach the Docker
+   socket.** The backend `Dockerfile` creates `appuser` in a group matching
+   `docker.sock`'s GID (default `999`, the common value on Debian/Ubuntu).
+   Check your host's actual value and rebuild with an override if it
+   differs:
+   ```bash
+   stat -c '%g' /var/run/docker.sock
+   # if not 999:
+   docker compose build --build-arg DOCKER_GID=<that number> storyforge-backend devcrew-migrate
+   ```
+5. **Pre-create/own the named volumes** so the non-root container isn't
+   handed a root-owned `/data` it can't write to. Docker creates a named
+   volume root-owned (`755`) on first use, which a non-root `appuser` can't
+   write into. Fix it once via `docker compose run` (which already knows
+   the real, project-prefixed volume names, so there's nothing to guess):
+   ```bash
+   docker compose run --rm --user root --entrypoint "" storyforge-backend \
+     chown -R 1000:1000 /data /devcrew-workspaces
+   ```
+   (`1000` is `appuser`'s UID in the backend `Dockerfile` — confirm it
+   matches if you ever change that.) This also builds the image and brings
+   `devcrew-postgres`/`devcrew-migrate` up as a side effect of satisfying
+   `storyforge-backend`'s `depends_on`, so it's a reasonable first command
+   to run regardless.
+
+### Running it
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-export JWT_SECRET=$(openssl rand -hex 32)   # see "Authentication" above
 docker compose up --build
 ```
 
-Open **http://localhost/** — pick a card to enter a flow. Only the
-`gateway` service publishes a host port (`80`); `storyforge-backend` is
-reachable only inside the compose network.
+Open **https://localhost/** (self-signed cert — your browser will warn once;
+trust it, or import `deploy/tls/server.crt` into your client's trust store
+for a clean VPN-wide rollout). Plain `http://localhost/` redirects to
+`https://`. Only the `gateway` service publishes host ports (`443`, `80`);
+`storyforge-backend` is reachable only inside the compose network.
+
+Migrations run automatically: `devcrew-migrate` (a one-shot service) runs
+`alembic upgrade head` and `storyforge-backend` waits for it to finish
+before starting — `alembic -c devcrew_alembic.ini upgrade head` by hand is
+still available as a fallback/debug path, not the normal one anymore.
 
 Ollama is expected to run on the host, not in a container. It's used by
 StoryForge's `clarify_node`/`generate_node` (`qwen2.5:14b`) and by
@@ -201,6 +269,21 @@ Ollama enrichment agent. `OLLAMA_BASE_URL` defaults to
 `http://host.docker.internal:11434`, mapped via `extra_hosts: host-gateway`
 in `docker-compose.yml` so it resolves on Linux too — make sure `ollama
 serve` is running on the host before starting the compose stack.
+
+Each service has a `restart: unless-stopped` policy, a `healthcheck`, and
+memory/CPU limits (`mem_limit`/`cpus` — the plain-`docker compose` syntax;
+`deploy.resources.limits` is silently ignored outside Swarm, so don't add
+that instead if you ever edit this). Container logs are capped via a shared
+`x-logging` anchor (`json-file`, 50MB × 5 files per service) so they don't
+grow unbounded on the host.
+
+`GET /health` is a real liveness check (confirms StoryForge's own
+checkpointer DB is reachable), used by the backend's own Docker
+`HEALTHCHECK`. `GET /api/devcrew/health` (needs a JWT) gives the full
+dependency breakdown (Postgres/Chroma/Ollama/Docker/sandbox
+images/GitHub); `GET /api/devcrew/health/live` is the unauthenticated
+`{"ok": true/false}` version of the same checks, for infra tooling that
+can't carry a token.
 
 Data persistence: ChromaDB, the job registries, uploads/exports, and
 ingestion's enrichment manifests are all written under `/data` inside the
@@ -216,3 +299,36 @@ for its per-run git worktrees. Mounting the host socket is a real trust
 boundary — the backend container can start other containers on the host —
 accepted as part of the DevCrew merge; don't run this compose stack
 somewhere that boundary isn't acceptable.
+
+### TLS
+
+The self-signed cert generated above is the right default for an
+internal/VPN-only deployment with no public DNS — there's no HTTP-01/DNS-01
+challenge path for Let's Encrypt without one. If this ever gets a real
+public-facing domain, switch to a real CA (Let's Encrypt via certbot, or
+your org's own) and point `deploy/tls/server.crt`/`server.key` at the
+issued cert instead; the nginx config doesn't need to change, only the
+files it reads.
+
+### Backups
+
+Three things matter: the `devcrew-pgdata` volume (Postgres), the
+`storyforge-data` volume (everything under `/data`), and `.env` (lives in
+the source tree, not a volume). `scripts/backup.sh` handles all three —
+`pg_dump`, a volume tarball, and a copy of `.env`, optionally shipped
+off-box via `rsync` if `USP_BACKUP_OFFBOX_TARGET` is set, with a 14-day
+local retention by default.
+
+Add to the host's crontab:
+```
+0 2 * * * /opt/usp-ai-apps/scripts/backup.sh >> /var/log/usp-ai-apps-backup.log 2>&1
+0 3 * * 0 docker system prune -af --volumes >> /var/log/usp-ai-apps-prune.log 2>&1
+```
+The weekly prune only ever removes *unused/dangling* images, containers,
+networks and volumes — the three named volumes above are always referenced
+by a running compose service, so it never touches them.
+
+**Test the restore path before relying on it** — an untested backup isn't a
+backup. The exact steps are documented at the top of `scripts/backup.sh`:
+stop the stack, restore the volume tarball, restore the Postgres dump, start
+the stack again.

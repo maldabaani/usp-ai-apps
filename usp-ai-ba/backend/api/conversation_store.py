@@ -31,6 +31,13 @@ def _conversation_path(owner: str, conversation_id: str) -> str:
     return os.path.join(_owner_dir(owner), f"{conversation_id}.json")
 
 
+def _write_conversation(path: str, conversation: dict) -> None:
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "w") as f:
+        json.dump(conversation, f)
+    os.replace(tmp_path, path)
+
+
 def _default_title(kind: Kind) -> str:
     return f"New {kind} conversation"
 
@@ -48,8 +55,7 @@ def create_conversation(owner: str, kind: Kind, title: str | None = None) -> dic
         "messages": [],
     }
     os.makedirs(_owner_dir(owner), exist_ok=True)
-    with open(_conversation_path(owner, conversation_id), "w") as f:
-        json.dump(conversation, f)
+    _write_conversation(_conversation_path(owner, conversation_id), conversation)
     return conversation
 
 
@@ -101,8 +107,7 @@ def append_message(owner: str, conversation_id: str, role: str, text: str, sourc
         return None
     conversation["messages"].append({"role": role, "text": text, "sources": sources, "created_at": time.time()})
     conversation["updated_at"] = time.time()
-    with open(_conversation_path(owner, conversation_id), "w") as f:
-        json.dump(conversation, f)
+    _write_conversation(_conversation_path(owner, conversation_id), conversation)
     return conversation
 
 

@@ -1,7 +1,31 @@
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "50m"
+    max-file: "5"
+
 services:
+  # One-shot: applies Alembic migrations, then exits. storyforge-backend
+  # waits for this to complete successfully before it starts, so
+  # `alembic upgrade head` is no longer a manually-remembered deploy step.
+  # Safe to re-run on every `docker compose up` (idempotent).
+  devcrew-migrate:
+    build:
+      context: ./usp-ai-ba/backend
+    restart: "no"
+    logging: *default-logging
+    environment:
+      DEVCREW_DATABASE_URL: postgresql+asyncpg://devcrew:${DEVCREW_DB_PASSWORD:?DEVCREW_DB_PASSWORD must be set}@devcrew-postgres:5432/devcrew
+    depends_on:
+      devcrew-postgres:
+        condition: service_healthy
+    command: ["alembic", "-c", "devcrew_alembic.ini", "upgrade", "head"]
+
   storyforge-backend:
     build:
       context: ./usp-ai-ba/backend
+    restart: unless-stopped
+    logging: *default-logging
     environment:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
@@ -9,12 +33,13 @@ services:
       # Falls back to an auto-generated, persisted-under-/data secret if
       # left unset (see config.py's _default_jwt_secret()) -- fine for a
       # single-container deployment where nothing else needs to verify
-      # tokens it issues.
+      # tokens it issues. Set it explicitly before any real deployment
+      # (see RUNNING.md's Day-0 checklist).
       JWT_SECRET: ${JWT_SECRET}
       # --- DevCrew (merged sibling package, see usp-ai-ba/backend/devcrew/) ---
       # DEVCREW_-prefixed so these never collide with StoryForge's own
       # same-named-but-differently-typed settings (see devcrew/config.py).
-      DEVCREW_DATABASE_URL: postgresql+asyncpg://devcrew:${DEVCREW_DB_PASSWORD:-devcrew}@devcrew-postgres:5432/devcrew
+      DEVCREW_DATABASE_URL: postgresql+asyncpg://devcrew:${DEVCREW_DB_PASSWORD:?DEVCREW_DB_PASSWORD must be set}@devcrew-postgres:5432/devcrew
       DEVCREW_GITHUB_TOKEN: ${DEVCREW_GITHUB_TOKEN}
       DEVCREW_OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       DEVCREW_WORKSPACES_DIR: /devcrew-workspaces
@@ -31,9 +56,20 @@ services:
       # deliberate, explicitly-flagged tradeoff, not incidental.
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
-      - devcrew-postgres
+      devcrew-postgres:
+        condition: service_healthy
+      devcrew-migrate:
+        condition: service_completed_successfully
     expose:
       - "8000"
+    mem_limit: 4g
+    cpus: 2.0
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=4)"]
+      interval: 30s
+      timeout: 8s
+      start_period: 30s
+      retries: 3
 
   # New infra this merge requires (previously SQLite-only): DevCrew's own
   # LangGraph checkpointer and run-tracking tables are Postgres-backed
@@ -42,23 +78,43 @@ services:
   # (backups, Alembic migrations) added by this merge, not cosmetic.
   devcrew-postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
+    logging: *default-logging
     environment:
       POSTGRES_USER: devcrew
-      POSTGRES_PASSWORD: ${DEVCREW_DB_PASSWORD:-devcrew}
+      POSTGRES_PASSWORD: ${DEVCREW_DB_PASSWORD:?DEVCREW_DB_PASSWORD must be set}
       POSTGRES_DB: devcrew
     volumes:
       - devcrew-pgdata:/var/lib/postgresql/data
     expose:
       - "5432"
+    mem_limit: 1g
+    cpus: 1.0
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U devcrew -d devcrew"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   gateway:
     build:
       context: .
       dockerfile: deploy/gateway.Dockerfile
+    restart: unless-stopped
+    logging: *default-logging
     ports:
+      - "443:443"
       - "80:80"
+    volumes:
+      - ./deploy/tls:/etc/nginx/tls:ro
     depends_on:
-      - storyforge-backend
+      storyforge-backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-check-certificate", "-qO-", "https://localhost/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
 
 volumes:
   storyforge-data:

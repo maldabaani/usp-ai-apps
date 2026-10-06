@@ -32,8 +32,10 @@ def _load() -> list[dict]:
 
 def _save() -> None:
     os.makedirs(settings.JOBS_DIR, exist_ok=True)
-    with open(_REGISTRY_PATH, "w") as f:
+    tmp_path = _REGISTRY_PATH + ".tmp"
+    with open(tmp_path, "w") as f:
         json.dump(_jobs, f)
+    os.replace(tmp_path, _REGISTRY_PATH)
 
 
 def register_assess_job(

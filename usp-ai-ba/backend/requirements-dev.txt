@@ -1,0 +1,7 @@
+# Dev/test-only tooling, kept out of the production image (see Dockerfile, which only
+# installs requirements.txt). Pinned the same way: regenerate from a known-working venv with
+# `pip freeze | grep -i '^pytest'`.
+-r requirements.txt
+pytest==9.1.1
+pytest-asyncio==1.4.0
+pytest-cov==7.1.0

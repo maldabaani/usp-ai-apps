@@ -34,8 +34,11 @@ def _load() -> list[dict]:
 
 def _save() -> None:
     os.makedirs(settings.JOBS_DIR, exist_ok=True)
-    with open(_registry_path(), "w") as f:
+    path = _registry_path()
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "w") as f:
         json.dump(_entries, f)
+    os.replace(tmp_path, path)
 
 
 def add_target(path: str, kind: str) -> dict:

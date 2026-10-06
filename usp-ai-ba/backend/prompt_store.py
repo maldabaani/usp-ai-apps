@@ -42,8 +42,11 @@ def _load() -> dict[str, str | None]:
 
 def _save() -> None:
     os.makedirs(settings.JOBS_DIR, exist_ok=True)
-    with open(_store_path(), "w") as f:
+    path = _store_path()
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "w") as f:
         json.dump(_cache, f)
+    os.replace(tmp_path, path)
 
 
 def validate_ask_prompt_template(template: str) -> None:

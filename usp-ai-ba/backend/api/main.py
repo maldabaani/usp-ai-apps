@@ -30,6 +30,7 @@ from api.user_store import ensure_default_admin
 from config import settings
 from devcrew.api import github as devcrew_github
 from devcrew.api import health as devcrew_health
+from devcrew.api.health import live_router as devcrew_health_live
 from devcrew.api import preview as devcrew_preview
 from devcrew.api import runs as devcrew_runs
 from devcrew.api import workspace as devcrew_workspace
@@ -118,6 +119,7 @@ def create_app() -> FastAPI:
     # namespaced under /api/devcrew so its /health, /runs, etc. never
     # collide with StoryForge's own same-named top-level routes.
     app.include_router(devcrew_health.router, prefix="/api/devcrew")
+    app.include_router(devcrew_health_live, prefix="/api/devcrew")
     app.include_router(devcrew_runs.router, prefix="/api/devcrew")
     app.include_router(devcrew_workspace.router, prefix="/api/devcrew")
     app.include_router(devcrew_github.router, prefix="/api/devcrew")
@@ -132,13 +134,28 @@ def create_app() -> FastAPI:
         return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
     async def health():
-        return {
-            "status": "ok",
-            "output_mode": settings.OUTPUT_MODE,
-            "notion_configured": bool(settings.NOTION_API_KEY and settings.NOTION_DATABASE_ID),
-            "ado_configured": bool(settings.ADO_ORGANIZATION and settings.ADO_PROJECT),
-            "anthropic_configured": bool(settings.ANTHROPIC_API_KEY),
-        }
+        # Real liveness check (not just static config booleans): confirms StoryForge's own
+        # checkpointer DB is actually reachable, since this is what both the Docker
+        # HEALTHCHECK and any external monitoring poll. get_graph() is cheap after the first
+        # call (cached singleton), so this stays lightweight on every 30s poll.
+        checkpoint_ok = True
+        detail = "ok"
+        try:
+            await get_graph()
+        except Exception as exc:
+            checkpoint_ok = False
+            detail = str(exc)
+        return JSONResponse(
+            status_code=200 if checkpoint_ok else 503,
+            content={
+                "status": "ok" if checkpoint_ok else "degraded",
+                "checkpointer": detail,
+                "output_mode": settings.OUTPUT_MODE,
+                "notion_configured": bool(settings.NOTION_API_KEY and settings.NOTION_DATABASE_ID),
+                "ado_configured": bool(settings.ADO_ORGANIZATION and settings.ADO_PROJECT),
+                "anthropic_configured": bool(settings.ANTHROPIC_API_KEY),
+            },
+        )
 
     app.get("/health")(health)
     app.get("/api/health")(health)

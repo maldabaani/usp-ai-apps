@@ -76,7 +76,9 @@ class Container:
         deps = build_deps(
             settings, events, llm=build_llm(settings), steering=SteeringRepository(sessionmaker)
         )
-        async with postgres_checkpointer(settings.database_url) as saver:
+        async with postgres_checkpointer(
+            settings.database_url, open_timeout_s=settings.checkpointer_open_timeout_s
+        ) as saver:
             container = cls.assemble(
                 settings,
                 deps=deps,

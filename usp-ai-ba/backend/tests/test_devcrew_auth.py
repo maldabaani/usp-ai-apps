@@ -60,6 +60,14 @@ def test_devcrew_health_works_with_a_plain_user_token(client: TestClient) -> Non
     assert resp.status_code != 401
 
 
+def test_devcrew_health_live_needs_no_token(client: TestClient) -> None:
+    # Unauthenticated on purpose: a Docker HEALTHCHECK or external monitor can't carry a
+    # JWT. Unlike /api/devcrew/health, it returns only {"ok": ...}, no connectivity detail.
+    resp = client.get("/api/devcrew/health/live")
+    assert resp.status_code != 401
+    assert set(resp.json()) == {"ok"}
+
+
 def test_devcrew_runs_query_param_token_works_like_storyforges_own_sse_routes(
     client: TestClient,
 ) -> None:

@@ -36,6 +36,13 @@ class Settings(BaseSettings):
         default="postgresql+asyncpg://devcrew:devcrew@localhost:5432/devcrew",
         description="SQLAlchemy async URL for app tables.",
     )
+    # How long postgres_checkpointer() waits for its connection pool to open. Runs inside
+    # api/main.py's single shared lifespan, so this is also how long a Postgres outage delays
+    # StoryForge's own startup. Short by design -- docker-compose.yml's `condition:
+    # service_healthy` on devcrew-postgres already ensures Postgres is accepting connections
+    # before the backend container starts, so this only needs to cover a healthy connection
+    # setup, not mask a real outage.
+    checkpointer_open_timeout_s: float = 5.0
 
     # --- Ollama -----------------------------------------------------------------------------
     ollama_base_url: str = "http://localhost:11434"

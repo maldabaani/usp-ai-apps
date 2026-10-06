@@ -29,8 +29,10 @@ def _load() -> list[dict]:
 
 def _save() -> None:
     os.makedirs(settings.JOBS_DIR, exist_ok=True)
-    with open(_ERROR_LOG_PATH, "w") as f:
+    tmp_path = _ERROR_LOG_PATH + ".tmp"
+    with open(tmp_path, "w") as f:
         json.dump(_errors, f)
+    os.replace(tmp_path, _ERROR_LOG_PATH)
 
 
 def record_error(logger_name: str, level: str, message: str, traceback: str | None) -> None:

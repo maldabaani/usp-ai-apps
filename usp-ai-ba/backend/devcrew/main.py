@@ -89,6 +89,7 @@ def create_app(
         expose_headers=["*"],
     )
     app.include_router(health.router)
+    app.include_router(health.live_router)
     app.include_router(runs.router)
     app.include_router(workspace.router)
     app.include_router(github.router)

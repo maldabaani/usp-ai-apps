@@ -176,7 +176,7 @@ class Settings:
     # writes Epic pages into. NOTION_PARENT_PAGE_ID is only needed once, to run
     # scripts/setup_notion_database.py, which creates the database and prints the
     # NOTION_DATABASE_ID to put here.
-    NOTION_API_KEY: str = os.getenv("NOTION_API_KEY", "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")
+    NOTION_API_KEY: str = os.getenv("NOTION_API_KEY", "")
     NOTION_DATABASE_ID: str = os.getenv("NOTION_DATABASE_ID", "ai-ba")
     NOTION_PARENT_PAGE_ID: str = os.getenv("NOTION_PARENT_PAGE_ID", "https://app.notion.com/p/c45ed9a6cb4f46a9b59823b0a73198ee?v=f187017a5e9b4e0ea1220a6107402931&source=copy_link")
 
