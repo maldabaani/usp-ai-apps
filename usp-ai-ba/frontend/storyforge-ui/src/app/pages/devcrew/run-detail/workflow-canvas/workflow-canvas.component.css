@@ -45,7 +45,7 @@
 .dc-canvas-scroll {
   overflow: auto;
   border-radius: 10px;
-  background: #12131a;
+  background: radial-gradient(ellipse 900px 500px at 50% 0%, #1a1e2e 0%, #12131a 65%);
   height: calc(100vh - 260px);
   min-height: 480px;
 }
@@ -70,8 +70,9 @@
 }
 
 .dc-edge-active {
-  stroke: #3b82f6;
-  stroke-width: 2.5;
+  stroke: #60a5fa;
+  stroke-width: 3;
+  filter: drop-shadow(0 0 5px rgba(96, 165, 250, 0.85)) drop-shadow(0 0 10px rgba(96, 165, 250, 0.4));
 }
 
 .dc-edge-loop {
@@ -79,6 +80,7 @@
   stroke: #d97706;
   stroke-width: 1.5;
   stroke-dasharray: 5 4;
+  filter: drop-shadow(0 0 4px rgba(217, 119, 6, 0.6));
 }
 
 .dc-edge-label {
@@ -154,15 +156,15 @@
 }
 
 .status-waiting {
-  box-shadow: 0 0 12px rgba(234, 179, 8, 0.3), 0 2px 6px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 0 20px rgba(234, 179, 8, 0.4), 0 0 44px rgba(234, 179, 8, 0.12), 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 
 .status-done {
-  box-shadow: 0 0 10px rgba(34, 197, 94, 0.22), 0 2px 6px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 0 16px rgba(34, 197, 94, 0.3), 0 0 36px rgba(34, 197, 94, 0.1), 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 
 .status-failed {
-  box-shadow: 0 0 12px rgba(239, 68, 68, 0.32), 0 2px 6px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.42), 0 0 44px rgba(239, 68, 68, 0.14), 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 
 .status-running {
@@ -172,58 +174,76 @@
 @keyframes dc-running-glow {
   0%,
   100% {
-    box-shadow: 0 0 10px rgba(59, 130, 246, 0.28), 0 2px 6px rgba(0, 0, 0, 0.35);
+    box-shadow: 0 0 16px rgba(59, 130, 246, 0.35), 0 0 36px rgba(59, 130, 246, 0.14), 0 2px 6px rgba(0, 0, 0, 0.35);
   }
   50% {
-    box-shadow: 0 0 20px rgba(59, 130, 246, 0.55), 0 2px 6px rgba(0, 0, 0, 0.35);
+    box-shadow: 0 0 30px rgba(59, 130, 246, 0.7), 0 0 60px rgba(59, 130, 246, 0.3), 0 2px 6px rgba(0, 0, 0, 0.35);
   }
 }
 
+/* Icon badge: a filled glowing orb (à la the reference designs' central
+   agent icon) rather than a thin outline glyph -- the status color now
+   lives on the badge's gradient + halo, so the glyph itself stays a plain
+   light color for contrast against any status. */
 .dc-node-icon-wrap {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
+  align-self: center;
+  width: 40px;
+  height: 40px;
+  margin: 0 0 0 8px;
   flex-shrink: 0;
-  color: #4b5563;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #6b7280, #374151 75%);
+  box-shadow: 0 0 10px rgba(75, 85, 99, 0.35), inset 0 0 6px rgba(255, 255, 255, 0.08);
+  color: #f1f5f9;
 }
 
 .dc-node-icon {
-  width: 18px;
-  height: 18px;
-}
-
-.status-pending .dc-node-icon-wrap {
-  color: #4b5563;
+  width: 20px;
+  height: 20px;
 }
 
 .status-running .dc-node-icon-wrap {
-  color: #3b82f6;
+  background: radial-gradient(circle at 35% 30%, #93c5fd, #1d4ed8 75%);
+  box-shadow: 0 0 16px rgba(59, 130, 246, 0.85), 0 0 30px rgba(59, 130, 246, 0.4),
+    inset 0 0 6px rgba(255, 255, 255, 0.25);
 }
 
 .status-waiting .dc-node-icon-wrap {
-  color: #eab308;
+  background: radial-gradient(circle at 35% 30%, #fde68a, #b45309 75%);
+  box-shadow: 0 0 16px rgba(234, 179, 8, 0.8), 0 0 30px rgba(234, 179, 8, 0.35),
+    inset 0 0 6px rgba(255, 255, 255, 0.25);
 }
 
 .status-done .dc-node-icon-wrap {
-  color: #22c55e;
+  background: radial-gradient(circle at 35% 30%, #86efac, #15803d 75%);
+  box-shadow: 0 0 14px rgba(34, 197, 94, 0.75), 0 0 26px rgba(34, 197, 94, 0.3),
+    inset 0 0 6px rgba(255, 255, 255, 0.2);
 }
 
 .status-failed .dc-node-icon-wrap {
-  color: #ef4444;
+  background: radial-gradient(circle at 35% 30%, #fca5a5, #b91c1c 75%);
+  box-shadow: 0 0 16px rgba(239, 68, 68, 0.8), 0 0 30px rgba(239, 68, 68, 0.35),
+    inset 0 0 6px rgba(255, 255, 255, 0.25);
 }
 
 .status-skipped .dc-node-icon-wrap {
-  color: #374151;
+  background: radial-gradient(circle at 35% 30%, #4b5563, #1f2937 75%);
+  box-shadow: none;
+  color: #6b7280;
 }
 
 .dc-node-compact .dc-node-icon-wrap {
-  width: 22px;
+  width: 28px;
+  height: 28px;
+  margin: 0 0 0 6px;
 }
 
 .dc-node-compact .dc-node-icon {
-  width: 14px;
-  height: 14px;
+  width: 15px;
+  height: 15px;
 }
 
 .dc-node-body {
