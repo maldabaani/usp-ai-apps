@@ -24,6 +24,7 @@ import {
 import { nodeIconPaths } from './node-icons.util';
 
 const LOOP_DROP = 40;
+const WRAP_CORNER_RADIUS = 14;
 const CANVAS_PADDING = 24;
 const MINIMAP_WIDTH = 160;
 const MINIMAP_HEIGHT = 110;
@@ -129,6 +130,25 @@ export class WorkflowCanvasComponent implements OnChanges, AfterViewInit {
     });
     const byId = new Map(positioned.map((p) => [p.node.id, p]));
 
+    // Wrap edges that share a source (e.g. one node fanning out to several
+    // parallel tasks in the next band) would otherwise all depart from the
+    // exact same point and run through the exact same gutter path, visually
+    // merging into one line -- group them so buildWrapPath can fan them out.
+    const wrapSiblingsBySource = new Map<string, string[]>();
+    for (const edge of this.edges) {
+      if (edge.kind === 'loop') {
+        continue;
+      }
+      const from = byId.get(edge.source);
+      const to = byId.get(edge.target);
+      if (!from || !to || from.band === to.band) {
+        continue;
+      }
+      const list = wrapSiblingsBySource.get(edge.source) ?? [];
+      list.push(edge.id);
+      wrapSiblingsBySource.set(edge.source, list);
+    }
+
     const flowPaths: FlowEdgePath[] = [];
     const loopPaths: LoopEdgePath[] = [];
     for (const edge of this.edges) {
@@ -139,6 +159,13 @@ export class WorkflowCanvasComponent implements OnChanges, AfterViewInit {
       }
       if (edge.kind === 'loop') {
         loopPaths.push(this.buildLoopPath(edge, from, to, dims));
+      } else if (from.band !== to.band) {
+        // A plain "flow" edge can still cross a row-band boundary once the
+        // layout wraps long runs into multiple rows -- detected positionally
+        // (by the bands layoutWorkflow() assigned), not by edge.kind.
+        const siblings = wrapSiblingsBySource.get(edge.source) ?? [edge.id];
+        const spreadIndex = siblings.indexOf(edge.id) - (siblings.length - 1) / 2;
+        flowPaths.push(this.buildWrapPath(edge, from, to, dims, spreadIndex));
       } else {
         flowPaths.push(this.buildFlowPath(edge, from, to, dims));
       }
@@ -267,6 +294,41 @@ export class WorkflowCanvasComponent implements OnChanges, AfterViewInit {
       d: `M ${sx},${sy} C ${midX},${sy} ${midX},${ty} ${tx},${ty}`,
       active: edge.active,
     };
+  }
+
+  // Connects a node to one in the next row-band: drop from the source's
+  // bottom-center into the gutter between bands, run back horizontally to
+  // the target's x (bands always restart at x=0, so this usually runs
+  // right-to-left), then enter the target's left edge -- same convention
+  // buildFlowPath uses for a same-band connection, just reached via the
+  // inter-band gutter instead of a direct horizontal curve. Small quadratic
+  // corners give it the rounded-elbow look instead of a plain right angle.
+  private buildWrapPath(
+    edge: WorkflowEdge,
+    from: PositionedNode,
+    to: PositionedNode,
+    dims: LayoutDims,
+    spreadIndex = 0
+  ): FlowEdgePath {
+    const r = WRAP_CORNER_RADIUS;
+    const spread = 14 * spreadIndex;
+    const sx = from.x + dims.nodeWidth / 2 + CANVAS_PADDING + spread;
+    const sy = from.y + dims.nodeHeight + CANVAS_PADDING;
+    const tx = to.x + CANVAS_PADDING;
+    const ty = to.y + dims.nodeHeight / 2 + CANVAS_PADDING;
+    const dropY = sy + dims.bandGap / 2 + spread;
+    const goingLeft = tx < sx;
+    const cornerX = goingLeft ? sx - r : sx + r;
+    const targetCornerX = goingLeft ? tx + r : tx - r;
+    const d = [
+      `M ${sx},${sy}`,
+      `L ${sx},${dropY - r}`,
+      `Q ${sx},${dropY} ${cornerX},${dropY}`,
+      `L ${targetCornerX},${dropY}`,
+      `Q ${tx},${dropY} ${tx},${dropY + r}`,
+      `L ${tx},${ty}`,
+    ].join(' ');
+    return { id: edge.id, d, active: edge.active };
   }
 
   private buildLoopPath(

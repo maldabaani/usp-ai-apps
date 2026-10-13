@@ -5,6 +5,16 @@
 // Planner) are excluded here -- including them would create cycles in the
 // layering pass -- and are instead drawn separately by the canvas as
 // curved backlinks over the positions this produces.
+//
+// Long sequential runs (a dozen-plus stages) are wrapped into row-bands --
+// at most `maxColumnsPerBand` DAG-columns per band -- instead of one very
+// long single-row strip. A whole DAG-column (including any stacked
+// parallel nodes) always moves as one atomic unit into whichever band it
+// falls in; it is never split across two bands. Every band runs
+// left-to-right from x=0 (never alternating/boustrophedon), matching how a
+// typical n8n-style canvas wraps. The canvas component detects a
+// band-crossing edge positionally (`from.band !== to.band`) and routes it
+// with its own elbow connector instead of the normal same-row curve.
 
 import { WorkflowEdge, WorkflowNode } from './devcrew.service';
 
@@ -18,6 +28,8 @@ export interface LayoutDims {
   nodeHeight: number;
   colGap: number;
   rowGap: number;
+  maxColumnsPerBand: number;
+  bandGap: number;
 }
 
 export const DEFAULT_DIMS: LayoutDims = {
@@ -25,21 +37,27 @@ export const DEFAULT_DIMS: LayoutDims = {
   nodeHeight: NODE_HEIGHT,
   colGap: COL_GAP,
   rowGap: ROW_GAP,
+  maxColumnsPerBand: 3,
+  bandGap: 90,
 };
 
 // Compact view mode: smaller cards, tighter gaps -- lets a wide run fit in
 // less horizontal scroll without changing the layout algorithm itself.
+// Smaller cards legibly fit more per row before wrapping is needed.
 export const COMPACT_DIMS: LayoutDims = {
   nodeWidth: 120,
   nodeHeight: 44,
   colGap: 56,
   rowGap: 12,
+  maxColumnsPerBand: 5,
+  bandGap: 56,
 };
 
 export interface PositionedNode {
   node: WorkflowNode;
   x: number;
   y: number;
+  band: number;
 }
 
 export interface WorkflowLayout {
@@ -48,12 +66,21 @@ export interface WorkflowLayout {
   height: number;
 }
 
+// Splits `columnCount` columns into `numBands` contiguous, evenly-sized
+// chunks (e.g. 7 columns / 3 bands -> [3, 2, 2]) so no trailing band ends
+// up lopsided.
+function bandSizes(columnCount: number, numBands: number): number[] {
+  const base = Math.floor(columnCount / numBands);
+  const remainder = columnCount % numBands;
+  return Array.from({ length: numBands }, (_, i) => base + (i < remainder ? 1 : 0));
+}
+
 export function layoutWorkflow(
   nodes: WorkflowNode[],
   edges: WorkflowEdge[],
   dims: LayoutDims = DEFAULT_DIMS
 ): WorkflowLayout {
-  const { nodeWidth, nodeHeight, colGap, rowGap } = dims;
+  const { nodeWidth, nodeHeight, colGap, rowGap, maxColumnsPerBand, bandGap } = dims;
   const flowEdges = edges.filter((e) => e.kind !== 'loop');
   const predecessors = new Map<string, string[]>();
   nodes.forEach((n) => predecessors.set(n.id, []));
@@ -92,26 +119,51 @@ export function layoutWorkflow(
     byColumn.get(c)!.push(n);
   }
 
-  const maxRows = Math.max(1, ...Array.from(byColumn.values()).map((col) => col.length));
-  const columnHeight = (count: number) => count * nodeHeight + (count - 1) * rowGap;
-  const canvasHeight = columnHeight(maxRows);
+  const columnCount = maxColumn + 1;
+  const numBands = Math.max(1, Math.ceil(columnCount / maxColumnsPerBand));
+  const sizes = bandSizes(columnCount, numBands);
+  const bandStartColumn: number[] = [];
+  {
+    let col = 0;
+    sizes.forEach((size, b) => {
+      bandStartColumn[b] = col;
+      col += size;
+    });
+  }
 
+  const columnHeight = (count: number) => count * nodeHeight + Math.max(0, count - 1) * rowGap;
+
+  let yCursor = 0;
+  let maxBandWidth = 0;
   const positioned: PositionedNode[] = [];
-  for (const [c, colNodes] of byColumn) {
-    const thisHeight = columnHeight(colNodes.length);
-    const offsetY = (canvasHeight - thisHeight) / 2;
-    colNodes.forEach((node, row) => {
-      positioned.push({
-        node,
-        x: c * (nodeWidth + colGap),
-        y: offsetY + row * (nodeHeight + rowGap),
+  for (let b = 0; b < numBands; b++) {
+    const size = sizes[b];
+    const cols = Array.from({ length: size }, (_, i) => bandStartColumn[b] + i);
+    const bandMaxRows = Math.max(1, ...cols.map((c) => (byColumn.get(c) ?? []).length));
+    const thisBandHeight = columnHeight(bandMaxRows);
+    const bandWidth = size * nodeWidth + Math.max(0, size - 1) * colGap;
+    maxBandWidth = Math.max(maxBandWidth, bandWidth);
+
+    cols.forEach((c, colInBand) => {
+      const colNodes = byColumn.get(c) ?? [];
+      const thisColHeight = columnHeight(colNodes.length);
+      const offsetY = (thisBandHeight - thisColHeight) / 2;
+      colNodes.forEach((node, row) => {
+        positioned.push({
+          node,
+          band: b,
+          x: colInBand * (nodeWidth + colGap),
+          y: yCursor + offsetY + row * (nodeHeight + rowGap),
+        });
       });
     });
+
+    yCursor += thisBandHeight + (b < numBands - 1 ? bandGap : 0);
   }
 
   return {
     positioned,
-    width: (maxColumn + 1) * nodeWidth + maxColumn * colGap,
-    height: canvasHeight,
+    width: maxBandWidth,
+    height: yCursor,
   };
 }
