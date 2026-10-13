@@ -133,11 +133,15 @@ export class StatusComponent implements OnInit, OnDestroy {
         // run is dead and will never resume, so don't permanently block
         // re-sending that epic just because an earlier attempt didn't work
         // out (older dispatches for the same epic are otherwise ignored).
+        // run_status is null when the dispatched run_id no longer exists in
+        // DevCrew's own store at all (e.g. a dev DB reset) -- that's just as
+        // dead as cancelled/failed, so treat it the same rather than locking
+        // the button on a run that can never be viewed or resumed.
         const seen = new Set<number>();
         for (const d of dispatches) {
           if (seen.has(d.epic_index)) continue;
           seen.add(d.epic_index);
-          if (d.run_status === 'cancelled' || d.run_status === 'failed') continue;
+          if (d.run_status === 'cancelled' || d.run_status === 'failed' || d.run_status == null) continue;
           this.devCrewDispatches[d.epic_index] = d.run_id;
         }
       },
