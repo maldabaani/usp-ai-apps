@@ -23,26 +23,42 @@
   flex-direction: column;
   align-items: center;
   text-align: center;
-  padding: 40px 24px;
+  padding: 36px 24px;
   background: var(--sf-surface);
   border: 1px solid var(--sf-border);
   border-radius: 12px;
   text-decoration: none;
   color: var(--sf-text);
+  box-shadow: 0 1px 3px rgba(48, 54, 59, 0.06);
   transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
 }
 
 .landing-card:hover {
   border-color: var(--sf-primary);
-  box-shadow: 0 4px 16px rgba(22, 163, 74, 0.12);
-  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(225, 10, 0, 0.14);
+  transform: translateY(-3px);
+}
+
+.landing-icon-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  margin-bottom: 20px;
+  border-radius: 50%;
+  background: var(--sf-primary-tint);
+  transition: transform 0.15s;
+}
+
+.landing-card:hover .landing-icon-badge {
+  transform: scale(1.06);
 }
 
 .landing-icon {
-  width: 48px;
-  height: 48px;
+  width: 30px;
+  height: 30px;
   color: var(--sf-primary);
-  margin-bottom: 16px;
 }
 
 .landing-card-title {
