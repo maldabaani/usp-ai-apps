@@ -1,6 +1,7 @@
 import { CommonModule } from '@angular/common';
 import {
   AfterViewInit,
+  ChangeDetectorRef,
   Component,
   ElementRef,
   EventEmitter,
@@ -208,6 +209,8 @@ export class WorkflowCanvasComponent implements OnChanges, AfterViewInit {
     };
   }
 
+  constructor(private cdr: ChangeDetectorRef) {}
+
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['runId']) {
       this.loadOverrides();
@@ -220,6 +223,14 @@ export class WorkflowCanvasComponent implements OnChanges, AfterViewInit {
   ngAfterViewInit(): void {
     if (this.viewMode === 'follow') {
       this.scrollToSelected();
+    } else if (this.viewMode === 'overview') {
+      // scrollElRef (used by the fitScale getter) only resolves once the
+      // view has finished initializing, which is *after* the template's
+      // first [style.transform]="...fitScale..." binding was evaluated --
+      // without this, fitScale reads `!el` and sticks at 1 (no shrink)
+      // until something else happens to trigger another change-detection
+      // pass. Force one explicitly so overview mode fits on first render.
+      this.cdr.detectChanges();
     }
   }
 

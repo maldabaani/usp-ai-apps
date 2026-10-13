@@ -132,7 +132,11 @@ export class RunDetailComponent implements OnInit, OnDestroy {
   cancelBusy = false;
   cancelError = '';
 
-  canvasViewMode: CanvasViewMode = 'follow';
+  // 'overview' scales the whole canvas down to fit the visible container
+  // (fitScale in workflow-canvas.component.ts) -- default to it so a run
+  // with many sequential stages is visible in one frame on first load,
+  // instead of requiring horizontal scrolling/panning to see the whole flow.
+  canvasViewMode: CanvasViewMode = 'overview';
   canvasShowMinimap = false;
 
   notifyEnabled = false;
