@@ -20,7 +20,7 @@
 
 .sf-dropzone-active {
   border-color: var(--sf-primary);
-  background: #f0fdf4;
+  background: var(--sf-primary-tint);
 }
 
 .sf-file-label {

@@ -326,7 +326,7 @@
 }
 
 .sf-rag-count-badge {
-  background: #dcfce7;
+  background: var(--sf-primary-tint);
   color: var(--sf-primary);
   font-size: 12px;
   font-weight: 700;
@@ -400,7 +400,7 @@
 
 .sf-rag-tag {
   font-size: 11px;
-  background: #dcfce7;
+  background: var(--sf-primary-tint);
   color: var(--sf-primary);
   padding: 1px 6px;
   border-radius: 4px;

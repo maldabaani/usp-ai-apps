@@ -77,7 +77,7 @@
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--sf-primary);
-  background: #dcfce7;
+  background: var(--sf-primary-tint);
   padding: 3px 8px;
   border-radius: 10px;
   white-space: nowrap;
@@ -166,7 +166,7 @@
 }
 
 .sf-add-btn:hover {
-  background: #dcfce7;
+  background: var(--sf-primary-tint);
 }
 
 .sf-add-btn-sm {
@@ -181,7 +181,7 @@
 }
 
 .sf-add-btn-sm:hover {
-  background: #dcfce7;
+  background: var(--sf-primary-tint);
 }
 
 .sf-icon-btn {

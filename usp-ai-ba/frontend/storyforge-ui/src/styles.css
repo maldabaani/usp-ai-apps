@@ -1,12 +1,21 @@
 :root {
-  --sf-bg: #f0fdf4;
+  /* Palette from USP_AI_Use_Cases_last.pptx's theme (ppt/theme/theme1.xml) --
+     dk1/lt1/dk2/lt2 map directly; accent1 (brand red) replaces the old brand
+     green as --sf-primary, accent2 (green) keeps --sf-success distinct from
+     it. --sf-error/--sf-warning have no equivalent in that theme, so they're
+     left as they were. --sf-primary-tint is new: a pale tint of the new
+     primary red, for badges/hovers that used to reuse the old success-green
+     tint (#dcfce7) only because primary and success happened to be the same
+     color before -- see the status/review/assess/dashboard component CSS. */
+  --sf-bg: #fafafa;
   --sf-surface: #ffffff;
-  --sf-border: #d4e8d8;
-  --sf-text: #1a2332;
-  --sf-muted: #6b7280;
-  --sf-primary: #16a34a;
-  --sf-primary-dark: #15803d;
-  --sf-success: #16a34a;
+  --sf-border: #eaebeb;
+  --sf-text: #30363b;
+  --sf-muted: #64686c;
+  --sf-primary: #e10a00;
+  --sf-primary-dark: #b80800;
+  --sf-primary-tint: #fdeceb;
+  --sf-success: #2e9b3e;
   --sf-error: #dc2626;
   --sf-warning: #d97706;
 }

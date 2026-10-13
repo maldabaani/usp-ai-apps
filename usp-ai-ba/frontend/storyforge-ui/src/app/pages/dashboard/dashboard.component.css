@@ -167,7 +167,7 @@
 }
 
 .sf-row-selected td {
-  background: #f0fdf4;
+  background: var(--sf-primary-tint);
 }
 
 .sf-action-btn {
