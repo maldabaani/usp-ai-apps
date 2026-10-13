@@ -76,6 +76,11 @@
       (pointercancel)="onNodePointerCancel($event)"
     >
       <div class="dc-node-bar"></div>
+      <div class="dc-node-icon-wrap">
+        <svg class="dc-node-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path *ngFor="let d of nodeIconPaths(p.node.kind)" [attr.d]="d" />
+        </svg>
+      </div>
       <div class="dc-node-body">
         <div class="dc-node-top">
           <span class="dc-node-label">{{ p.node.label }}</span>

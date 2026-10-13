@@ -20,6 +20,7 @@ import {
   PositionedNode,
   layoutWorkflow,
 } from '../../../../services/workflow-layout.util';
+import { nodeIconPaths } from './node-icons.util';
 
 const LOOP_DROP = 40;
 const CANVAS_PADDING = 24;
@@ -101,6 +102,7 @@ export class WorkflowCanvasComponent implements OnChanges, AfterViewInit {
   readonly minimapWidth = MINIMAP_WIDTH;
   readonly minimapHeight = MINIMAP_HEIGHT;
   readonly humanizeStatus = humanizeStatus;
+  readonly nodeIconPaths = nodeIconPaths;
   readonly modes: CanvasViewMode[] = ['follow', 'overview', 'compact'];
 
   // Positions the user has dragged a node to, keyed by node id, for the

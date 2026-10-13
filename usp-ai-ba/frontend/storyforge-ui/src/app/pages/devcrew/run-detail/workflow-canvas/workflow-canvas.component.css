@@ -107,7 +107,7 @@
   cursor: grabbing;
 }
 
-.dc-node-selected {
+.dc-node-card.dc-node-selected {
   border-color: #60a5fa;
   box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.45);
 }
@@ -144,6 +144,86 @@
 
 .status-skipped .dc-node-bar {
   background: #374151;
+}
+
+/* Status-colored glow, layered on top of the existing drop shadow -- gives
+   running/waiting/failed nodes the "live" look from the reference design
+   without changing card shape, layout, or any interaction logic. */
+.status-pending {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.status-waiting {
+  box-shadow: 0 0 12px rgba(234, 179, 8, 0.3), 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.status-done {
+  box-shadow: 0 0 10px rgba(34, 197, 94, 0.22), 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.status-failed {
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.32), 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.status-running {
+  animation: dc-running-glow 2.2s ease-in-out infinite;
+}
+
+@keyframes dc-running-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 10px rgba(59, 130, 246, 0.28), 0 2px 6px rgba(0, 0, 0, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.55), 0 2px 6px rgba(0, 0, 0, 0.35);
+  }
+}
+
+.dc-node-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  flex-shrink: 0;
+  color: #4b5563;
+}
+
+.dc-node-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.status-pending .dc-node-icon-wrap {
+  color: #4b5563;
+}
+
+.status-running .dc-node-icon-wrap {
+  color: #3b82f6;
+}
+
+.status-waiting .dc-node-icon-wrap {
+  color: #eab308;
+}
+
+.status-done .dc-node-icon-wrap {
+  color: #22c55e;
+}
+
+.status-failed .dc-node-icon-wrap {
+  color: #ef4444;
+}
+
+.status-skipped .dc-node-icon-wrap {
+  color: #374151;
+}
+
+.dc-node-compact .dc-node-icon-wrap {
+  width: 22px;
+}
+
+.dc-node-compact .dc-node-icon {
+  width: 14px;
+  height: 14px;
 }
 
 .dc-node-body {
