@@ -1,6 +1,10 @@
 <header class="sf-header">
   <a routerLink="/" class="sf-brand">
     <svg class="sf-brand-icon" viewBox="0 0 100 100" width="24" height="24" aria-hidden="true">
+      <!-- mix-blend-mode:multiply below is designed to composite against
+           white -- this backing plate gives it one locally, so the mark
+           still reads correctly now the header itself is colored. -->
+      <rect x="10" y="10" width="80" height="80" rx="20" fill="#ffffff"/>
       <rect x="16" y="16" width="52" height="52" rx="15" fill="#C85A26" opacity="0.94"/>
       <rect x="32" y="32" width="52" height="52" rx="15" fill="#35688F" opacity="0.94" style="mix-blend-mode:multiply"/>
     </svg>
