@@ -43,7 +43,7 @@ STAGES: list[tuple[str, NodeKind, str, str | None]] = [
     ("approve_design", "approval", "Design approval", "approve_design"),
     ("scaffold", "system", "Scaffold", "scaffold"),
     (DEVELOPMENT, "system", "Development", None),
-    ("integration", "system", "Integration tests", "integration"),
+    ("integration", "system", "Local Code Merge", "integration"),
     ("gates", "system", "Quality gates", "gates"),
     ("approve_final", "approval", "Final approval", "approve_final"),
     ("delivery", "output", "GitHub PR", "github_delivery"),
