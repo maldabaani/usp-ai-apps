@@ -432,13 +432,14 @@ async def test_bridged_run_against_a_python_only_repo_reaches_scaffold(tmp_path:
 
 
 async def test_bridged_run_workflow_detail_is_not_mislabeled_quick_fix(tmp_path: Path) -> None:
-    """Regression test: workflow.py used to mark a bridged run's Architect/Design
-    approval/Requirements nodes with the same "quick fix: no design step" text a
-    genuine quick-fix run gets, even though a bridged run *does* have a real,
-    StoryForge-authored design (see build_bridged_run_design_reflects_storyforges_own_content
-    above) -- both cases set target="existing", mode="quick", and only
-    storyforge_epic tells them apart. The workflow UI should say so, not imply
-    there's no design at all."""
+    """Regression test: a bridged run has a real, StoryForge-authored design (see
+    build_bridged_run_design_reflects_storyforges_own_content above), unlike a
+    genuine quick-fix run which has none -- both cases set target="existing",
+    mode="quick", and only storyforge_epic tells them apart. Architect/
+    approve_design are dropped from the workflow canvas entirely for both cases
+    (neither ever runs them), so there's no longer a detail string on those nodes
+    that could mislabel one as the other; what remains worth checking is that the
+    Requirements node still correctly credits StoryForge as the design's source."""
     h, gh, sha = java_harness(tmp_path)
     h.brain.responders["planner"] = lambda call: (_ for _ in ()).throw(
         AssertionError("planner must not be called")
@@ -472,8 +473,5 @@ async def test_bridged_run_workflow_detail_is_not_mislabeled_quick_fix(tmp_path:
         max_dev_iterations=3,
     )
     nodes = {n.id: n for n in wf.nodes}
-    assert nodes["architect"].status == "skipped" and nodes["approve_design"].status == "skipped"
-    assert "StoryForge" in (nodes["architect"].detail or "")
-    assert "StoryForge" in (nodes["approve_design"].detail or "")
-    assert "quick fix" not in (nodes["architect"].detail or "")
+    assert "architect" not in nodes and "approve_design" not in nodes
     assert "StoryForge" in (nodes["requirements"].detail or "")

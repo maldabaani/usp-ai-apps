@@ -276,9 +276,18 @@ def build_workflow(
     followup = state.get("followup") or {}
     rounds = int(followup.get("round") or 0)
     watching = bool(followup) or run_status is RunStatus.WATCHING
+    # No design step runs at all for a quick fix on an existing repo (including
+    # a StoryForge-bridged run) -- the graph jumps straight from approve_plan to
+    # scaffold via a deterministically-built Design, so Architect/approve_design
+    # are dead placeholders here. Drop them from the canvas entirely rather than
+    # showing two nodes that can never do anything; _edges()'s chain-splice
+    # already reconnects straight to approve_plan -> scaffold once they're gone.
+    design_is_skipped = existing and state.get("mode") == "quick"
     nodes: dict[str, WorkflowNode] = {}
     for sid, kind, label, _ in STAGES:
         if (sid == DEVELOPMENT and task_ids) or (sid == "prepare_repo" and not existing):
+            continue
+        if sid in ("architect", "approve_design") and design_is_skipped:
             continue
         nodes[sid] = WorkflowNode(id=sid, kind=kind, label=label)
     plan_by_id = {str(t["id"]): t for t in plan_tasks}
@@ -350,15 +359,6 @@ def _apply_repository_and_gates(
     if "prepare_repo" in nodes and repo:
         projects = ", ".join(f"{p['stack']} ({p['path']})" for p in repo.get("projects") or [])
         nodes["prepare_repo"].detail = f"{projects} · base {repo.get('base_branch')}"
-    if state.get("target") == "existing" and state.get("mode") == "quick":
-        detail = (
-            "design provided by StoryForge"
-            if state.get("storyforge_epic")
-            else "quick fix: no design step"
-        )
-        for sid in ("architect", "approve_design"):
-            nodes[sid].status = "skipped"
-            nodes[sid].detail = detail
     gates = state.get("gates") or {}
     results = gates.get("results") or []
     if results:
@@ -490,8 +490,8 @@ def _apply_stage_status(
         delivery.status = "skipped"
         delivery.detail = "finished without a PR"
     for sid in ("planner", "architect"):
-        node = nodes[sid]
-        if node.runs > 1:
+        node = nodes.get(sid)
+        if node is not None and node.runs > 1:
             node.detail = f"revised {node.runs - 1} times"
 
 
@@ -732,7 +732,7 @@ def _edges(
                 add(task_node_id(tid), "integration")
 
     for sid, gate in (("planner", "approve_plan"), ("architect", "approve_design")):
-        if nodes[sid].runs > 1:
+        if sid in nodes and nodes[sid].runs > 1:
             edges.append(
                 WorkflowEdge(
                     id=f"{gate}->{sid}:loop",

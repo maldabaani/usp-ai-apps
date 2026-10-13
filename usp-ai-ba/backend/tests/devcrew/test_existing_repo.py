@@ -213,7 +213,12 @@ async def test_quick_fix_skips_the_architect(tmp_path: Path) -> None:
         max_dev_iterations=3,
     )
     nodes = {n.id: n for n in wf.nodes}
-    assert nodes["architect"].status == "skipped" and nodes["approve_design"].status == "skipped"
+    # A quick fix never runs Architect/approve_design at all -- dropped from the
+    # canvas entirely rather than shown as two permanently-skipped dead nodes.
+    assert "architect" not in nodes and "approve_design" not in nodes
+    assert ("approve_plan", "scaffold", "flow") in {
+        (e.source, e.target, e.kind) for e in wf.edges
+    }
     assert nodes["prepare_repo"].status == "done"
     assert nodes["prepare_repo"].detail == "python (.) · base master"
     assert "quick fix change" in (nodes["requirements"].detail or "")
