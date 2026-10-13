@@ -41,6 +41,15 @@
         <pattern id="dc-grid-dots" width="18" height="18" patternUnits="userSpaceOnUse">
           <circle cx="1.5" cy="1.5" r="1.5" fill="#2a2d3d" />
         </pattern>
+        <marker id="dc-arrow-flow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 Z" fill="#4b5569" />
+        </marker>
+        <marker id="dc-arrow-active" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 Z" fill="#60a5fa" />
+        </marker>
+        <marker id="dc-arrow-loop" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 Z" fill="#d97706" />
+        </marker>
       </defs>
       <rect width="100%" height="100%" fill="url(#dc-grid-dots)" />
 
@@ -49,10 +58,11 @@
         [attr.d]="p.d"
         class="dc-edge-flow"
         [class.dc-edge-active]="p.active"
+        [attr.marker-end]="p.active ? 'url(#dc-arrow-active)' : 'url(#dc-arrow-flow)'"
       />
 
       <ng-container *ngFor="let p of render.loopPaths">
-        <path [attr.d]="p.d" class="dc-edge-loop" />
+        <path [attr.d]="p.d" class="dc-edge-loop" marker-end="url(#dc-arrow-loop)" />
         <text *ngIf="p.label" [attr.x]="p.labelX" [attr.y]="p.labelY + 4" class="dc-edge-label" text-anchor="middle">
           {{ p.label }}
         </text>
